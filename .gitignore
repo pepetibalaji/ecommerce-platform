@@ -1,16 +1,17 @@
-# Compiled class file
+# =========================
+# Maven / Build
+# =========================
+target/
 *.class
 
-# Log file
+# =========================
+# Logs
+# =========================
 *.log
 
-# BlueJ files
-*.ctxt
-
-# Mobile Tools for Java (J2ME)
-.mtj.tmp/
-
-# Package Files #
+# =========================
+# Package Files
+# =========================
 *.jar
 *.war
 *.nar
@@ -19,6 +20,43 @@
 *.tar.gz
 *.rar
 
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+# =========================
+# IDE Files
+# =========================
+.idea/
+.vscode/
+*.iml
+
+# =========================
+# OS Files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Java Crash Logs
+# =========================
 hs_err_pid*
 replay_pid*
+
+# =========================
+# Environment Files
+# =========================
+.env
+.env.*
+
+# =========================
+# Docker
+# =========================
+docker-data/
+
+# =========================
+# Kubernetes
+# =========================
+*.kubeconfig
+
+# =========================
+# Temporary Files
+# =========================
+temp/
+tmp/
