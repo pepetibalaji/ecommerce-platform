@@ -5,14 +5,76 @@
 
     <modelVersion>4.0.0</modelVersion>
 
+    <!-- ===================================================== -->
+    <!-- Parent -->
+    <!-- ===================================================== -->
+
     <parent>
         <groupId>com.ecommerce</groupId>
         <artifactId>ecommerce-platform</artifactId>
         <version>1.0.0</version>
     </parent>
 
+    <!-- ===================================================== -->
+    <!-- Project -->
+    <!-- ===================================================== -->
+
     <artifactId>config-server</artifactId>
 
     <name>config-server</name>
+
+    <description>
+        Centralized configuration server for ecommerce platform
+    </description>
+
+    <!-- ===================================================== -->
+    <!-- Dependencies -->
+    <!-- ===================================================== -->
+
+    <dependencies>
+
+        <!-- Spring Web -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- Config Server -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-config-server</artifactId>
+        </dependency>
+
+        <!-- Actuator -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Test -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+    <!-- ===================================================== -->
+    <!-- Build -->
+    <!-- ===================================================== -->
+
+    <build>
+
+        <plugins>
+
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+
+        </plugins>
+
+    </build>
 
 </project>
