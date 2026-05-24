@@ -30,6 +30,7 @@
         <module>gateway-service</module>
         <module>auth-service</module>
         <module>product-service</module>
+        <module>common/common-exception</module>
     </modules>
 
     <!-- ===================================================== -->
