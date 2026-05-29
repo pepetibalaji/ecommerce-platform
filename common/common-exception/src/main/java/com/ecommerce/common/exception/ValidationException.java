@@ -6,5 +6,6 @@ public class ValidationException
     public ValidationException(String message) {
 
         super(message);
+        
     }
 }
