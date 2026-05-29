@@ -6,5 +6,6 @@ public class ResourceAlreadyExistsException
     public ResourceAlreadyExistsException(String message) {
 
         super(message);
+        
     }
 }

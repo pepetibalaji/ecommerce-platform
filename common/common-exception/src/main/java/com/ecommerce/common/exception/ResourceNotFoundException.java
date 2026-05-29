@@ -6,5 +6,6 @@ public class ResourceNotFoundException
     public ResourceNotFoundException(String message) {
 
         super(message);
+        
     }
 }
