@@ -120,3 +120,30 @@ services:
             interval: 15s
             timeout: 10s
             retries: 10
+
+    zipkin:
+        image: openzipkin/zipkin
+        container_name: zipkin
+
+        ports:
+            - "9411:9411"
+
+    prometheus:
+        image: prom/prometheus
+        container_name: prometheus
+
+        ports:
+            - "9090:9090"
+
+        volumes:
+            - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+
+    grafana:
+        image: grafana/grafana
+        container_name: grafana
+
+        ports:
+            - "3000:3000"
+
+        depends_on:
+            - prometheus
