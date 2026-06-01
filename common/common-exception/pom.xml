@@ -11,6 +11,8 @@
         <groupId>com.ecommerce</groupId>
         <artifactId>ecommerce-platform</artifactId>
         <version>1.0.0</version>
+
+        <relativePath>../../pom.xml</relativePath>
     </parent>
 
     <artifactId>common-exception</artifactId>

@@ -6,7 +6,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 @SpringBootTest
 class AuthServiceApplicationTests {
 
-	// @Test // to avoid test context load without db
+	// @Test 
 	// void contextLoads() {
 	// }
 
