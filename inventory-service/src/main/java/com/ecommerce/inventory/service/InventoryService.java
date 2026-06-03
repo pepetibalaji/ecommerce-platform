@@ -34,6 +34,41 @@ public class InventoryService {
             Integer quantity
     ) {
 
+        Inventory inventory = inventoryRepository
+                .findByProductId(productId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Inventory not found"));
+
+        if (inventory.getAvailableStock() < quantity) {
+
+            throw new IllegalArgumentException(
+                    "Insufficient stock available");
+        }
+
+        inventory.setAvailableStock(
+                inventory.getAvailableStock()
+                        - quantity);
+
+        inventory.setReservedStock(
+                inventory.getReservedStock()
+                        + quantity);
+
+        inventory.setUpdatedAt(
+                LocalDateTime.now());
+
+        Inventory savedInventory = inventoryRepository.save(
+                inventory);
+
+        return inventoryMapper.toResponse(
+                savedInventory);
+    }
+    
+    @Transactional
+    public InventoryResponse releaseStock(
+            UUID productId,
+            Integer quantity
+    ) {
+
         Inventory inventory =
                 inventoryRepository
                         .findByProductId(productId)
@@ -43,20 +78,20 @@ public class InventoryService {
                                 )
                         );
 
-        if (inventory.getAvailableStock() < quantity) {
+        if (inventory.getReservedStock() < quantity) {
 
             throw new IllegalArgumentException(
-                    "Insufficient stock available"
+                    "Reserved stock is insufficient"
             );
         }
 
-        inventory.setAvailableStock(
-                inventory.getAvailableStock()
+        inventory.setReservedStock(
+                inventory.getReservedStock()
                         - quantity
         );
 
-        inventory.setReservedStock(
-                inventory.getReservedStock()
+        inventory.setAvailableStock(
+                inventory.getAvailableStock()
                         + quantity
         );
 
