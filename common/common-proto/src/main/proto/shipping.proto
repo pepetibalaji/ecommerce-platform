@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.ecommerce.proto.shipping";
+
+service ShippingService {
+
+  rpc AssignShipment(
+      ShipmentRequest
+  ) returns (
+      ShipmentResponse
+  );
+
+  rpc UpdateShipmentStatus(
+      ShipmentStatusRequest
+  ) returns (
+      ShipmentResponse
+  );
+
+  rpc GetShipment(
+      ShipmentLookupRequest
+  ) returns (
+      ShipmentDetails
+  );
+}
+
+message ShipmentRequest {
+
+  string orderId = 1;
+}
+
+message ShipmentStatusRequest {
+
+  string trackingNumber = 1;
+
+  string status = 2;
+}
+
+message ShipmentLookupRequest {
+
+  string orderId = 1;
+}
+
+message ShipmentResponse {
+
+  bool success = 1;
+
+  string trackingNumber = 2;
+
+  string message = 3;
+}
+
+message ShipmentDetails {
+
+  string orderId = 1;
+
+  string trackingNumber = 2;
+
+  string status = 3;
+}
