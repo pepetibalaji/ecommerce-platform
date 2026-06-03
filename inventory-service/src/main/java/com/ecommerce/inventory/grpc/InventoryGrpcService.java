@@ -1,7 +1,5 @@
 package com.ecommerce.inventory.grpc;
 
-import com.ecommerce.inventory.dto.InventoryResponse;
-
 import com.ecommerce.inventory.service.InventoryService;
 
 import com.ecommerce.proto.inventory.*;
@@ -27,65 +25,104 @@ public class InventoryGrpcService
             StreamObserver<InventoryDetails> responseObserver
     ) {
 
-        InventoryResponse inventory = inventoryService.getInventory(
-                UUID.fromString(
-                        request.getProductId()));
+        com.ecommerce.inventory.dto.InventoryResponse inventory =
+                inventoryService.getInventory(
+                        UUID.fromString(
+                                request.getProductId()
+                        )
+                );
 
-        InventoryDetails response = InventoryDetails.newBuilder()
-                .setProductId(
-                        inventory.getProductId().toString())
-                .setAvailableStock(
-                        inventory.getAvailableStock())
-                .setReservedStock(
-                        inventory.getReservedStock())
-                .build();
+        InventoryDetails response =
+                InventoryDetails.newBuilder()
+                        .setProductId(
+                                inventory.getProductId().toString()
+                        )
+                        .setAvailableStock(
+                                inventory.getAvailableStock()
+                        )
+                        .setReservedStock(
+                                inventory.getReservedStock()
+                        )
+                        .build();
 
         responseObserver.onNext(response);
 
         responseObserver.onCompleted();
     }
-    
+
     @Override
     public void reserveStock(
             ReserveStockRequest request,
-            StreamObserver<InventoryResponse> responseObserver
+            StreamObserver<com.ecommerce.proto.inventory.InventoryResponse> responseObserver
     ) {
 
-        com.ecommerce.inventory.dto.InventoryResponse inventory = inventoryService.reserveStock(
+        inventoryService.reserveStock(
                 UUID.fromString(
-                        request.getProductId()),
-                request.getQuantity());
+                        request.getProductId()
+                ),
+                request.getQuantity()
+        );
 
-        InventoryResponse response = InventoryResponse.newBuilder()
-                .setSuccess(true)
-                .setMessage(
-                        "Stock reserved successfully")
-                .build();
+        com.ecommerce.proto.inventory.InventoryResponse response =
+                com.ecommerce.proto.inventory.InventoryResponse
+                        .newBuilder()
+                        .setSuccess(true)
+                        .setMessage(
+                                "Stock reserved successfully"
+                        )
+                        .build();
 
         responseObserver.onNext(response);
 
         responseObserver.onCompleted();
     }
-    
+
     @Override
     public void releaseStock(
             ReleaseStockRequest request,
-            StreamObserver<InventoryResponse> responseObserver
+            StreamObserver<com.ecommerce.proto.inventory.InventoryResponse> responseObserver
     ) {
 
-        com.ecommerce.inventory.dto.InventoryResponse inventory =
-                inventoryService.releaseStock(
-                        UUID.fromString(
-                                request.getProductId()
-                        ),
-                        request.getQuantity()
-                );
+        inventoryService.releaseStock(
+                UUID.fromString(
+                        request.getProductId()
+                ),
+                request.getQuantity()
+        );
 
-        InventoryResponse response =
-                InventoryResponse.newBuilder()
+        com.ecommerce.proto.inventory.InventoryResponse response =
+                com.ecommerce.proto.inventory.InventoryResponse
+                        .newBuilder()
                         .setSuccess(true)
                         .setMessage(
                                 "Stock released successfully"
+                        )
+                        .build();
+
+        responseObserver.onNext(response);
+
+        responseObserver.onCompleted();
+    }
+
+    @Override
+    public void deductStock(
+            DeductStockRequest request,
+            StreamObserver<com.ecommerce.proto.inventory.InventoryResponse> responseObserver
+    ) {
+
+        inventoryService.deductStock(
+                UUID.fromString(
+                        request.getProductId()
+                ),
+                request.getQuantity()
+        );
+
+        com.ecommerce.proto.inventory.InventoryResponse response =
+                com.ecommerce.proto.inventory.InventoryResponse
+                        .newBuilder()
+                        .setSuccess(true)
+                        .setMessage(
+                                "Stock deducted successfully"
                         )
                         .build();
 

@@ -28,6 +28,12 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- Spring Security -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
         <!-- Spring Data JPA -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -69,7 +75,7 @@
             <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
 
-        <!-- OpenAPI / Swagger -->
+        <!-- Swagger / OpenAPI -->
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
