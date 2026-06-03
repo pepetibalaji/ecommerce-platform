@@ -51,8 +51,30 @@ public class InventoryGrpcService
             StreamObserver<InventoryResponse> responseObserver
     ) {
 
+        com.ecommerce.inventory.dto.InventoryResponse inventory = inventoryService.reserveStock(
+                UUID.fromString(
+                        request.getProductId()),
+                request.getQuantity());
+
+        InventoryResponse response = InventoryResponse.newBuilder()
+                .setSuccess(true)
+                .setMessage(
+                        "Stock reserved successfully")
+                .build();
+
+        responseObserver.onNext(response);
+
+        responseObserver.onCompleted();
+    }
+    
+    @Override
+    public void releaseStock(
+            ReleaseStockRequest request,
+            StreamObserver<InventoryResponse> responseObserver
+    ) {
+
         com.ecommerce.inventory.dto.InventoryResponse inventory =
-                inventoryService.reserveStock(
+                inventoryService.releaseStock(
                         UUID.fromString(
                                 request.getProductId()
                         ),
@@ -63,7 +85,7 @@ public class InventoryGrpcService
                 InventoryResponse.newBuilder()
                         .setSuccess(true)
                         .setMessage(
-                                "Stock reserved successfully"
+                                "Stock released successfully"
                         )
                         .build();
 
