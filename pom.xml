@@ -41,6 +41,8 @@
 
         <module>product-service</module>
 
+        <module>inventory-service</module>
+
         <module>common/common-exception</module>
 
         <module>common/common-security</module>
