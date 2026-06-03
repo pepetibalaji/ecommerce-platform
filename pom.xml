@@ -47,6 +47,8 @@
 
         <module>common/common-proto</module>
 
+        <module>common/common-grpc</module>
+
     </modules>
 
     <!-- ===================================================== -->
