@@ -104,6 +104,36 @@ public class InventoryService {
             Integer quantity
     ) {
 
+        Inventory inventory = inventoryRepository
+                .findByProductId(productId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Inventory not found"));
+
+        if (inventory.getReservedStock() < quantity) {
+
+            throw new IllegalArgumentException(
+                    "Reserved stock is insufficient");
+        }
+
+        inventory.setReservedStock(
+                inventory.getReservedStock()
+                        - quantity);
+
+        inventory.setUpdatedAt(
+                LocalDateTime.now());
+
+        Inventory savedInventory = inventoryRepository.save(
+                inventory);
+
+        return inventoryMapper.toResponse(
+                savedInventory);
+    }
+    
+    @Transactional(readOnly = true)
+    public InventoryResponse getInventory(
+            UUID productId
+    ) {
+
         Inventory inventory =
                 inventoryRepository
                         .findByProductId(productId)
@@ -113,29 +143,8 @@ public class InventoryService {
                                 )
                         );
 
-        if (inventory.getReservedStock() < quantity) {
-
-            throw new IllegalArgumentException(
-                    "Reserved stock is insufficient"
-            );
-        }
-
-        inventory.setReservedStock(
-                inventory.getReservedStock()
-                        - quantity
-        );
-
-        inventory.setUpdatedAt(
-                LocalDateTime.now()
-        );
-
-        Inventory savedInventory =
-                inventoryRepository.save(
-                        inventory
-                );
-
         return inventoryMapper.toResponse(
-                savedInventory
+                inventory
         );
     }
 }
