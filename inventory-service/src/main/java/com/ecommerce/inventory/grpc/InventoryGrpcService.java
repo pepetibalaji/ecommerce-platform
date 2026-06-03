@@ -27,23 +27,43 @@ public class InventoryGrpcService
             StreamObserver<InventoryDetails> responseObserver
     ) {
 
-        InventoryResponse inventory =
-                inventoryService.getInventory(
+        InventoryResponse inventory = inventoryService.getInventory(
+                UUID.fromString(
+                        request.getProductId()));
+
+        InventoryDetails response = InventoryDetails.newBuilder()
+                .setProductId(
+                        inventory.getProductId().toString())
+                .setAvailableStock(
+                        inventory.getAvailableStock())
+                .setReservedStock(
+                        inventory.getReservedStock())
+                .build();
+
+        responseObserver.onNext(response);
+
+        responseObserver.onCompleted();
+    }
+    
+    @Override
+    public void reserveStock(
+            ReserveStockRequest request,
+            StreamObserver<InventoryResponse> responseObserver
+    ) {
+
+        com.ecommerce.inventory.dto.InventoryResponse inventory =
+                inventoryService.reserveStock(
                         UUID.fromString(
                                 request.getProductId()
-                        )
+                        ),
+                        request.getQuantity()
                 );
 
-        InventoryDetails response =
-                InventoryDetails.newBuilder()
-                        .setProductId(
-                                inventory.getProductId().toString()
-                        )
-                        .setAvailableStock(
-                                inventory.getAvailableStock()
-                        )
-                        .setReservedStock(
-                                inventory.getReservedStock()
+        InventoryResponse response =
+                InventoryResponse.newBuilder()
+                        .setSuccess(true)
+                        .setMessage(
+                                "Stock reserved successfully"
                         )
                         .build();
 
