@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.ecommerce.proto.payment";
+
+service PaymentService {
+
+  rpc ProcessPayment(
+      PaymentRequest
+  ) returns (
+      PaymentResponse
+  );
+
+  rpc RefundPayment(
+      RefundRequest
+  ) returns (
+      PaymentResponse
+  );
+
+  rpc GetPaymentStatus(
+      PaymentStatusRequest
+  ) returns (
+      PaymentStatusResponse
+  );
+}
+
+message PaymentRequest {
+
+  string orderId = 1;
+
+  double amount = 2;
+}
+
+message RefundRequest {
+
+  string orderId = 1;
+}
+
+message PaymentStatusRequest {
+
+  string orderId = 1;
+}
+
+message PaymentResponse {
+
+  bool success = 1;
+
+  string transactionId = 2;
+
+  string message = 3;
+}
+
+message PaymentStatusResponse {
+
+  string orderId = 1;
+
+  string status = 2;
+}

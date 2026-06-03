@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.ecommerce.proto.inventory";
+
+service InventoryService {
+
+  rpc ReserveStock(
+      ReserveStockRequest
+  ) returns (
+      InventoryResponse
+  );
+
+  rpc ReleaseStock(
+      ReleaseStockRequest
+  ) returns (
+      InventoryResponse
+  );
+
+  rpc DeductStock(
+      DeductStockRequest
+  ) returns (
+      InventoryResponse
+  );
+
+  rpc GetInventory(
+      GetInventoryRequest
+  ) returns (
+      InventoryDetails
+  );
+}
+
+message ReserveStockRequest {
+
+  string productId = 1;
+
+  int32 quantity = 2;
+}
+
+message ReleaseStockRequest {
+
+  string productId = 1;
+
+  int32 quantity = 2;
+}
+
+message DeductStockRequest {
+
+  string productId = 1;
+
+  int32 quantity = 2;
+}
+
+message GetInventoryRequest {
+
+  string productId = 1;
+}
+
+message InventoryResponse {
+
+  bool success = 1;
+
+  string message = 2;
+}
+
+message InventoryDetails {
+
+  string productId = 1;
+
+  int32 availableStock = 2;
+
+  int32 reservedStock = 3;
+}
