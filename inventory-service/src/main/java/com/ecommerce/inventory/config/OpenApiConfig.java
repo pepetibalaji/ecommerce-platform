@@ -36,7 +36,6 @@ public class OpenApiConfig {
                                         securitySchemeName
                                 )
                 )
-
                 .components(
                         new Components()
                                 .addSecuritySchemes(
