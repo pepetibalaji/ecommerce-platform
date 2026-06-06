@@ -1,5 +1,7 @@
 package com.ecommerce.inventory.controller;
 
+import com.ecommerce.common.security.filter.JwtAuthenticationFilter;
+import com.ecommerce.common.security.jwt.JwtService;
 import com.ecommerce.inventory.dto.CreateInventoryRequest;
 import com.ecommerce.inventory.dto.InventoryResponse;
 import com.ecommerce.inventory.dto.UpdateInventoryRequest;
@@ -37,6 +39,12 @@ class InventoryControllerTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @MockBean
+    private JwtService jwtService;
+
+    @MockBean
+    private JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @MockBean
     private InventoryService inventoryService;
