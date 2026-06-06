@@ -1,6 +1,7 @@
 package com.ecommerce.product.controller;
 
-import com.ecommerce.common.security.filter.JwtAuthenticationFilterextends;
+
+import com.ecommerce.common.security.filter.JwtAuthenticationFilter;
 import com.ecommerce.common.security.jwt.JwtService;
 
 import com.ecommerce.product.dto.CreateProductRequest;
@@ -52,7 +53,7 @@ class ProductControllerTest {
     private ProductService productService;
 
     @MockBean
-    private JwtAuthenticationFilterextends jwtAuthenticationFilterextends;
+    private JwtAuthenticationFilter jwtAuthenticationFilterextends;
 
     @MockBean
     private JwtService jwtService;

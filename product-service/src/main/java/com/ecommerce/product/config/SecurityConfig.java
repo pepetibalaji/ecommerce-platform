@@ -1,6 +1,6 @@
 package com.ecommerce.product.config;
 
-import com.ecommerce.common.security.filter.JwtAuthenticationFilterextends;
+import com.ecommerce.common.security.filter.JwtAuthenticationFilter;
 
 import lombok.RequiredArgsConstructor;
 
@@ -22,7 +22,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 public class SecurityConfig {
 
-    private final JwtAuthenticationFilterextends jwtAuthenticationFilter;
+    private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @Bean
     public SecurityFilterChain securityFilterChain(
