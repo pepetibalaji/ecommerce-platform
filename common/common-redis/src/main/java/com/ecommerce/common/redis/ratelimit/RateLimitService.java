@@ -8,17 +8,28 @@ import org.springframework.stereotype.Service;
 @Service
 public class RateLimitService {
 
-    private final StringRedisTemplate stringRedisTemplate;
+    private final StringRedisTemplate redisTemplate;
 
-    public RateLimitService(StringRedisTemplate stringRedisTemplate) {
-        this.stringRedisTemplate = stringRedisTemplate;
+    public RateLimitService(StringRedisTemplate redisTemplate) {
+        this.redisTemplate = redisTemplate;
     }
 
     public boolean allowRequest(String key, int maxRequests, Duration window) {
-        Long current = stringRedisTemplate.opsForValue().increment(key);
-        if (current != null && current == 1L) {
-            stringRedisTemplate.expire(key, window);
+        Long currentCount = redisTemplate.opsForValue().increment(key);
+
+        if (currentCount != null && currentCount == 1L) {
+            redisTemplate.expire(key, window);
         }
-        return current != null && current <= maxRequests;
+
+        return currentCount != null && currentCount <= maxRequests;
+    }
+
+    public Long getCurrentCount(String key) {
+        String value = redisTemplate.opsForValue().get(key);
+        return value == null ? 0L : Long.parseLong(value);
+    }
+
+    public void reset(String key) {
+        redisTemplate.delete(key);
     }
 }
