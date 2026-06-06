@@ -1,4 +1,4 @@
-package com.ecommerce.common.redis.lock;
+package com.ecommerce.common.redis;
 
 import java.time.Duration;
 import java.util.UUID;
@@ -8,6 +8,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
+
+import com.ecommerce.common.redis.lock.DistributedLockService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

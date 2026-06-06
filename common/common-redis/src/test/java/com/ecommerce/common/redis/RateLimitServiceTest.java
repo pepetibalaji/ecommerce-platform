@@ -1,4 +1,4 @@
-package com.ecommerce.common.redis.ratelimit;
+package com.ecommerce.common.redis;
 
 import java.time.Duration;
 
@@ -7,6 +7,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
+
+import com.ecommerce.common.redis.ratelimit.RateLimitService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
