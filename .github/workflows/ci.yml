@@ -11,6 +11,7 @@ on:
             - "auth-service/**"
             - "product-service/**"
             - "inventory-service/**"
+            - "cart-service/**"
             - ".github/workflows/ci.yml"
 
     pull_request:
@@ -23,6 +24,7 @@ on:
             - "auth-service/**"
             - "product-service/**"
             - "inventory-service/**"
+            - "cart-service/**"
             - ".github/workflows/ci.yml"
 
 jobs:
@@ -56,7 +58,7 @@ jobs:
                   cache: maven
 
             - name: Build and Verify
-              run: mvn -pl auth-service,product-service,inventory-service -am clean verify
+              run: mvn -pl auth-service,product-service,inventory-service,cart-service -am clean verify
               env:
                   SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/ecommerce
                   SPRING_DATASOURCE_USERNAME: postgres
@@ -78,7 +80,7 @@ jobs:
                   cache: maven
 
             - name: Package Project
-              run: mvn -pl auth-service,product-service,inventory-service -am clean package -DskipTests
+              run: mvn -pl auth-service,product-service,inventory-service,cart-service -am clean package -DskipTests
 
             - name: Build Auth Image
               run: docker build -t auth-service ./auth-service
@@ -88,3 +90,6 @@ jobs:
 
             - name: Build Inventory Image
               run: docker build -t inventory-service ./inventory-service
+
+            - name: Build Cart Image
+              run: docker build -t cart-service ./cart-service
