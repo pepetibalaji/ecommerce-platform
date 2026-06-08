@@ -11,6 +11,7 @@ on:
             - "auth-service/**"
             - "product-service/**"
             - "inventory-service/**"
+            - "cart-service/**"
             - ".github/workflows/ci.yml"
 
     pull_request:
@@ -23,6 +24,7 @@ on:
             - "auth-service/**"
             - "product-service/**"
             - "inventory-service/**"
+            - "cart-service/**"
             - ".github/workflows/ci.yml"
 
 jobs:
@@ -44,6 +46,16 @@ jobs:
                     --health-timeout=5s
                     --health-retries=5
 
+            redis:
+                image: redis:7
+                ports:
+                    - 6379:6379
+                options: >-
+                    --health-cmd="redis-cli ping"
+                    --health-interval=10s
+                    --health-timeout=5s
+                    --health-retries=5
+
         steps:
             - name: Checkout Repository
               uses: actions/checkout@v4
@@ -56,11 +68,13 @@ jobs:
                   cache: maven
 
             - name: Build and Verify
-              run: mvn -pl auth-service,product-service,inventory-service -am clean verify
+              run: mvn -pl auth-service,product-service,inventory-service,cart-service -am clean verify
               env:
                   SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/ecommerce
                   SPRING_DATASOURCE_USERNAME: postgres
                   SPRING_DATASOURCE_PASSWORD: postgres
+                  SPRING_DATA_REDIS_HOST: localhost
+                  SPRING_DATA_REDIS_PORT: 6379
 
     docker-build:
         runs-on: ubuntu-latest
@@ -78,7 +92,7 @@ jobs:
                   cache: maven
 
             - name: Package Project
-              run: mvn -pl auth-service,product-service,inventory-service -am clean package -DskipTests
+              run: mvn -pl auth-service,product-service,inventory-service,cart-service -am clean package -DskipTests
 
             - name: Build Auth Image
               run: docker build -t auth-service ./auth-service
@@ -88,3 +102,6 @@ jobs:
 
             - name: Build Inventory Image
               run: docker build -t inventory-service ./inventory-service
+
+            - name: Build Cart Image
+              run: docker build -t cart-service ./cart-service

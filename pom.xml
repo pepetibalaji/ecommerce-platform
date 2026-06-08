@@ -21,6 +21,7 @@
         <module>auth-service</module>
         <module>product-service</module>
         <module>inventory-service</module>
+        <module>cart-service</module>
         <module>common/common-exception</module>
         <module>common/common-security</module>
         <module>common/common-proto</module>
