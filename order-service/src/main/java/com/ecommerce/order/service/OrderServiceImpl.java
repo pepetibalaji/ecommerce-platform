@@ -105,6 +105,10 @@ public class OrderServiceImpl implements OrderService {
             throw new ResourceNotFoundException("Order not found: " + orderId);
         }
 
+        validateStatusTransition(order.getStatus(), OrderStatus.CANCELLED);
+
+        releaseReservedStock(order);
+
         order.setStatus(OrderStatus.CANCELLED);
         return toResponse(orderRepository.save(order));
     }
@@ -123,6 +127,8 @@ public class OrderServiceImpl implements OrderService {
     public OrderResponse updateOrderStatus(UUID orderId, UpdateOrderStatusRequest request) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+
+        validateStatusTransition(order.getStatus(), request.getStatus());
 
         order.setStatus(request.getStatus());
         return toResponse(orderRepository.save(order));
@@ -157,6 +163,49 @@ public class OrderServiceImpl implements OrderService {
             } catch (Exception ignored) {
                 // best-effort rollback
             }
+        }
+    }
+
+    private void releaseReservedStock(Order order) {
+        for (OrderItem item : order.getItems()) {
+            try {
+                inventoryGrpcClient.releaseStock(
+                        item.getProductId(),
+                        item.getQuantity()
+                );
+            } catch (Exception ignored) {
+                // best-effort rollback
+            }
+        }
+    }
+
+    private void validateStatusTransition(
+            OrderStatus currentStatus,
+            OrderStatus targetStatus
+    ) {
+        if (currentStatus == targetStatus) {
+            return;
+        }
+
+        switch (currentStatus) {
+            case PENDING -> {
+                if (targetStatus != OrderStatus.CONFIRMED &&
+                        targetStatus != OrderStatus.CANCELLED) {
+                    throw new IllegalStateException(
+                            "Invalid transition from PENDING to " + targetStatus
+                    );
+                }
+            }
+            case CONFIRMED -> {
+                if (targetStatus != OrderStatus.CANCELLED) {
+                    throw new IllegalStateException(
+                            "Invalid transition from CONFIRMED to " + targetStatus
+                    );
+                }
+            }
+            case CANCELLED -> throw new IllegalStateException(
+                    "Cancelled orders cannot change state"
+            );
         }
     }
 
