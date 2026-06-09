@@ -89,6 +89,12 @@
             <version>1.0.0</version>
         </dependency>
 
+        <!-- Kafka -->
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>
+
         <!-- Shared modules -->
         <dependency>
             <groupId>com.ecommerce</groupId>

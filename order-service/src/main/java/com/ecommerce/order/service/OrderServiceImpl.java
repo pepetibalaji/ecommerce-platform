@@ -25,13 +25,16 @@ public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
     private final InventoryGrpcClient inventoryGrpcClient;
+    private final OrderEventPublisher orderEventPublisher;
 
     public OrderServiceImpl(
             OrderRepository orderRepository,
-            InventoryGrpcClient inventoryGrpcClient
+            InventoryGrpcClient inventoryGrpcClient,
+            OrderEventPublisher orderEventPublisher
     ) {
         this.orderRepository = orderRepository;
         this.inventoryGrpcClient = inventoryGrpcClient;
+        this.orderEventPublisher = orderEventPublisher;
     }
 
     @Override
@@ -62,6 +65,15 @@ public class OrderServiceImpl implements OrderService {
             order.setStatus(OrderStatus.PENDING);
 
             Order saved = orderRepository.save(order);
+            orderEventPublisher.publishOrderCreated(
+                    new com.ecommerce.order.event.OrderCreatedEvent(
+                            saved.getId(),
+                            saved.getUserId(),
+                            saved.getTotalAmount(),
+                            saved.getStatus(),
+                            saved.getCreatedAt()
+                    )
+            );
             return toResponse(saved);
         } catch (RuntimeException ex) {
             releaseReservedStock(request);
