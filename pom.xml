@@ -27,6 +27,7 @@
         <module>common/common-proto</module>
         <module>common/common-grpc</module>
         <module>common/common-redis</module>
+        <module>order-service</module>
     </modules>
 
     <properties>
