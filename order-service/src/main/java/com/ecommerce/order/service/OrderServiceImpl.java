@@ -24,42 +24,58 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
+    private final InventoryGrpcClient inventoryGrpcClient;
 
-    public OrderServiceImpl(OrderRepository orderRepository) {
+    public OrderServiceImpl(
+            OrderRepository orderRepository,
+            InventoryGrpcClient inventoryGrpcClient
+    ) {
         this.orderRepository = orderRepository;
+        this.inventoryGrpcClient = inventoryGrpcClient;
     }
 
     @Override
     public OrderResponse createOrder(UUID userId, CreateOrderRequest request) {
-        Order order = new Order();
-        order.setUserId(userId);
+        validateAndReserveStock(request);
 
-        BigDecimal totalAmount = BigDecimal.ZERO;
+        try {
+            Order order = new Order();
+            order.setUserId(userId);
 
-        for (CreateOrderItemRequest itemRequest : request.getItems()) {
-            OrderItem item = new OrderItem();
-            item.setOrder(order);
-            item.setProductId(itemRequest.getProductId());
-            item.setQuantity(itemRequest.getQuantity());
-            item.setPrice(itemRequest.getPrice());
+            BigDecimal totalAmount = BigDecimal.ZERO;
 
-            order.getItems().add(item);
+            for (CreateOrderItemRequest itemRequest : request.getItems()) {
+                OrderItem item = new OrderItem();
+                item.setOrder(order);
+                item.setProductId(itemRequest.getProductId());
+                item.setQuantity(itemRequest.getQuantity());
+                item.setPrice(itemRequest.getPrice());
 
-            totalAmount = totalAmount.add(
-                    itemRequest.getPrice().multiply(BigDecimal.valueOf(itemRequest.getQuantity()))
-            );
+                order.getItems().add(item);
+
+                totalAmount = totalAmount.add(
+                        itemRequest.getPrice().multiply(BigDecimal.valueOf(itemRequest.getQuantity()))
+                );
+            }
+
+            order.setTotalAmount(totalAmount);
+            order.setStatus(OrderStatus.PENDING);
+
+            Order saved = orderRepository.save(order);
+            return toResponse(saved);
+        } catch (RuntimeException ex) {
+            releaseReservedStock(request);
+            throw ex;
         }
-
-        order.setTotalAmount(totalAmount);
-        order.setStatus(OrderStatus.PENDING);
-
-        Order saved = orderRepository.save(order);
-        return toResponse(saved);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Page<OrderResponse> getMyOrders(UUID userId, Pageable pageable, OrderStatus status) {
+    public Page<OrderResponse> getMyOrders(
+            UUID userId,
+            Pageable pageable,
+            OrderStatus status
+    ) {
         Page<Order> page = (status == null)
                 ? orderRepository.findByUserId(userId, pageable)
                 : orderRepository.findByUserIdAndStatus(userId, status, pageable);
@@ -110,6 +126,38 @@ public class OrderServiceImpl implements OrderService {
 
         order.setStatus(request.getStatus());
         return toResponse(orderRepository.save(order));
+    }
+
+    private void validateAndReserveStock(CreateOrderRequest request) {
+        for (CreateOrderItemRequest itemRequest : request.getItems()) {
+            var inventory = inventoryGrpcClient.getInventory(itemRequest.getProductId());
+
+            if (inventory.getAvailableStock() < itemRequest.getQuantity()) {
+                throw new IllegalStateException(
+                        "Insufficient stock for product: " + itemRequest.getProductId()
+                );
+            }
+        }
+
+        for (CreateOrderItemRequest itemRequest : request.getItems()) {
+            inventoryGrpcClient.reserveStock(
+                    itemRequest.getProductId(),
+                    itemRequest.getQuantity()
+            );
+        }
+    }
+
+    private void releaseReservedStock(CreateOrderRequest request) {
+        for (CreateOrderItemRequest itemRequest : request.getItems()) {
+            try {
+                inventoryGrpcClient.releaseStock(
+                        itemRequest.getProductId(),
+                        itemRequest.getQuantity()
+                );
+            } catch (Exception ignored) {
+                // best-effort rollback
+            }
+        }
     }
 
     private OrderResponse toResponse(Order order) {
