@@ -1,11 +1,9 @@
 package com.ecommerce.order.config;
 
-import java.util.HashMap;
-import java.util.Map;
-
-package com.ecommerce.order.config;
-
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.ProducerFactory;
 
 @Configuration
 public class KafkaConfig {

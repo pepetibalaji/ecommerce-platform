@@ -13,6 +13,8 @@ import com.ecommerce.order.dto.UpdateOrderStatusRequest;
 import com.ecommerce.order.entity.Order;
 import com.ecommerce.order.entity.OrderItem;
 import com.ecommerce.order.entity.OrderStatus;
+import com.ecommerce.order.grpc.InventoryGrpcClient;
+import com.ecommerce.order.kafka.OrderEventPublisher;
 import com.ecommerce.order.repository.OrderRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
