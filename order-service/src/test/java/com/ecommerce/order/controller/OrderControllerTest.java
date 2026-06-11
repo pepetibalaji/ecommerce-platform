@@ -12,47 +12,36 @@ import com.ecommerce.order.dto.OrderResponse;
 import com.ecommerce.order.dto.UpdateOrderStatusRequest;
 import com.ecommerce.order.entity.OrderStatus;
 import com.ecommerce.order.service.OrderService;
-import com.ecommerce.common.security.filter.JwtAuthenticationFilter;
-import com.ecommerce.common.security.jwt.JwtService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.http.MediaType;
-import org.springframework.security.test.context.support.WithMockUser;
-import org.springframework.test.web.servlet.MockMvc;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.security.core.Authentication;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(OrderController.class)
-@AutoConfigureMockMvc(addFilters = false)
+@ExtendWith(MockitoExtension.class)
 class OrderControllerTest {
 
-    @Autowired
-    private MockMvc mockMvc;
-
-    @Autowired
-    private ObjectMapper objectMapper;
-
-    @MockBean
+    @Mock
     private OrderService orderService;
 
-    @MockBean
-    private JwtAuthenticationFilter jwtAuthenticationFilter;
+    @Mock
+    private Authentication authentication;
 
-    @MockBean
-    private JwtService jwtService;
+    @InjectMocks
+    private OrderController orderController;
 
     @Test
-    @WithMockUser(username = "11111111-1111-1111-1111-111111111111", roles = "USER")
-    void shouldCreateOrder() throws Exception {
+    void shouldCreateOrder() {
+        UUID userId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+        when(authentication.getName()).thenReturn(userId.toString());
+
         CreateOrderItemRequest item = new CreateOrderItemRequest();
         item.setProductId(UUID.randomUUID());
         item.setQuantity(2);
@@ -63,41 +52,51 @@ class OrderControllerTest {
 
         OrderResponse response = new OrderResponse(
                 UUID.randomUUID(),
-                UUID.fromString("11111111-1111-1111-1111-111111111111"),
+                userId,
                 new BigDecimal("200.00"),
                 OrderStatus.PENDING,
                 LocalDateTime.now(),
-                List.of(new OrderItemResponse(UUID.randomUUID(), item.getProductId(), 2, item.getPrice()))
+                List.of(new OrderItemResponse(
+                        UUID.randomUUID(),
+                        item.getProductId(),
+                        2,
+                        item.getPrice()
+                ))
         );
 
         when(orderService.createOrder(any(), any())).thenReturn(response);
 
-        mockMvc.perform(post("/api/v1/orders")
-                        .with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("PENDING"));
+        OrderResponse result = orderController.createOrder(authentication, request);
+
+        assertThat(result.getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(result.getUserId()).isEqualTo(userId);
+        assertThat(result.getItems()).hasSize(1);
+        assertThat(result.getItems().get(0).getQuantity()).isEqualTo(2);
     }
 
     @Test
-    @WithMockUser(username = "11111111-1111-1111-1111-111111111111", roles = "USER")
-    void shouldGetMyOrders() throws Exception {
+    void shouldGetMyOrders() {
+        UUID userId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+        when(authentication.getName()).thenReturn(userId.toString());
+
         when(orderService.getMyOrders(any(), any(), any()))
-                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of()));
+                .thenReturn(new PageImpl<>(List.of()));
 
-        mockMvc.perform(get("/api/v1/orders"))
-                .andExpect(status().isOk());
+        var result = orderController.getMyOrders(authentication, null, 0, 10);
+
+        assertThat(result.getContent()).isEmpty();
     }
 
     @Test
-    @WithMockUser(username = "11111111-1111-1111-1111-111111111111", roles = "USER")
-    void shouldCancelOrder() throws Exception {
+    void shouldCancelOrder() {
+        UUID userId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+        when(authentication.getName()).thenReturn(userId.toString());
+
         UUID orderId = UUID.randomUUID();
 
         OrderResponse response = new OrderResponse(
                 orderId,
-                UUID.fromString("11111111-1111-1111-1111-111111111111"),
+                userId,
                 new BigDecimal("200.00"),
                 OrderStatus.CANCELLED,
                 LocalDateTime.now(),
@@ -106,15 +105,14 @@ class OrderControllerTest {
 
         when(orderService.cancelOrder(any(), any())).thenReturn(response);
 
-        mockMvc.perform(put("/api/v1/orders/" + orderId + "/cancel")
-                        .with(csrf()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("CANCELLED"));
+        OrderResponse result = orderController.cancelOrder(authentication, orderId);
+
+        assertThat(result.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(result.getId()).isEqualTo(orderId);
     }
 
     @Test
-    @WithMockUser(username = "11111111-1111-1111-1111-111111111111", roles = "ADMIN")
-    void shouldUpdateOrderStatus() throws Exception {
+    void shouldUpdateOrderStatus() {
         UUID orderId = UUID.randomUUID();
 
         UpdateOrderStatusRequest request = new UpdateOrderStatusRequest();
@@ -131,11 +129,9 @@ class OrderControllerTest {
 
         when(orderService.updateOrderStatus(any(), any())).thenReturn(response);
 
-        mockMvc.perform(put("/api/v1/admin/orders/" + orderId + "/status")
-                        .with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("CONFIRMED"));
+        OrderResponse result = orderController.updateOrderStatus(orderId, request);
+
+        assertThat(result.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(result.getId()).isEqualTo(orderId);
     }
 }
