@@ -65,11 +65,6 @@ jobs:
                     ZOOKEEPER_TICK_TIME: 2000
                 ports:
                     - 2181:2181
-                options: >-
-                    --health-cmd="bash -c 'echo ruok | nc localhost 2181 | grep imok'"
-                    --health-interval=10s
-                    --health-timeout=5s
-                    --health-retries=10
 
             kafka:
                 image: confluentinc/cp-kafka:7.6.1
@@ -84,11 +79,6 @@ jobs:
                     KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
                 ports:
                     - 9092:9092
-                options: >-
-                    --health-cmd="bash -c 'cub kafka-ready -b localhost:9092 1 30'"
-                    --health-interval=10s
-                    --health-timeout=5s
-                    --health-retries=15
 
         steps:
             - name: Checkout Repository
