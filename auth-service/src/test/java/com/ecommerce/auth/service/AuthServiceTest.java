@@ -1,6 +1,6 @@
 package com.ecommerce.auth.service;
 
-import com.ecommerce.auth.dto.RefreshTokenRequest;
+import com.ecommerce.auth.dto.RefreshRequest;
 import com.ecommerce.auth.dto.RegisterRequest;
 import com.ecommerce.auth.entity.RefreshToken;
 import com.ecommerce.auth.entity.User;
@@ -121,8 +121,8 @@ class AuthServiceTest {
         when(jwtService.generateAccessToken(user))
                 .thenReturn("new-access-token");
 
-        RefreshTokenRequest request =
-                new RefreshTokenRequest("refresh-token");
+        RefreshRequest request =
+                new RefreshRequest("refresh-token");
 
         var response =
                 authService.refreshToken(request);

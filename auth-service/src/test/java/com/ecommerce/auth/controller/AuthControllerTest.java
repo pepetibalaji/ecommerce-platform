@@ -2,7 +2,7 @@ package com.ecommerce.auth.controller;
 
 import com.ecommerce.auth.dto.AuthResponse;
 import com.ecommerce.auth.dto.LoginRequest;
-import com.ecommerce.auth.dto.RefreshTokenRequest;
+import com.ecommerce.auth.dto.RefreshRequest;
 import com.ecommerce.auth.dto.RegisterRequest;
 import com.ecommerce.auth.security.JwtAuthenticationFilter;
 import com.ecommerce.auth.security.JwtService;
@@ -104,8 +104,8 @@ class AuthControllerTest {
     @Test
     void shouldRefreshToken() throws Exception {
 
-        RefreshTokenRequest request =
-                new RefreshTokenRequest("refresh-token");
+        RefreshRequest request =
+                new RefreshRequest("refresh-token");
 
         AuthResponse response =
                 AuthResponse.builder()
@@ -114,7 +114,7 @@ class AuthControllerTest {
                         .tokenType("Bearer")
                         .build();
 
-        when(authService.refreshToken(any(RefreshTokenRequest.class)))
+        when(authService.refreshToken(any(RefreshRequest.class)))
                 .thenReturn(response);
 
         mockMvc.perform(

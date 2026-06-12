@@ -1,16 +1,17 @@
 package com.ecommerce.auth.dto;
 
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
-@Getter
-@Setter
+@Data
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-
 public class AuthResponse {
 
     private String accessToken;
     private String refreshToken;
     private String tokenType;
+    private Long expiresInSeconds;
+    private UserResponse user;
 }
