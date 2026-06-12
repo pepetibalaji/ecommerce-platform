@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +29,7 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtTokenService jwtTokenService;
     private final RefreshTokenService refreshTokenService;
+    private final TokenBlacklistService tokenBlacklistService;
 
     public AuthResponse register(RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
@@ -40,6 +42,7 @@ public class AuthService {
                 .password(passwordEncoder.encode(request.getPassword()))
                 .role(Role.CUSTOMER)
                 .status(UserStatus.ACTIVE)
+                .tokenVersion(0L)
                 .build();
 
         user = userRepository.save(user);
@@ -80,6 +83,31 @@ public class AuthService {
 
         refreshTokenService.revoke(request.getRefreshToken());
         return issueTokens(user);
+    }
+
+    public void logout(Jwt jwt, String refreshTokenValue) {
+        if (jwt == null) {
+            throw new IllegalArgumentException("Missing access token");
+        }
+
+        tokenBlacklistService.blacklistToken(jwt);
+
+        String userIdValue = jwt.getClaimAsString("userId");
+        UUID userId = UUID.fromString(userIdValue);
+
+        if (refreshTokenValue != null && !refreshTokenValue.isBlank()) {
+            refreshTokenService.findByToken(refreshTokenValue).ifPresentOrElse(
+                    token -> {
+                        if (!token.getUser().getId().equals(userId)) {
+                            throw new IllegalArgumentException("Refresh token does not belong to current user");
+                        }
+                        refreshTokenService.revoke(refreshTokenValue);
+                    },
+                    () -> refreshTokenService.revokeAllForUser(userId)
+            );
+        } else {
+            refreshTokenService.revokeAllForUser(userId);
+        }
     }
 
     private AuthResponse issueTokens(User user) {

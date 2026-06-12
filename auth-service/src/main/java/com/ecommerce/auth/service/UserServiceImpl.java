@@ -42,8 +42,7 @@ public class UserServiceImpl implements UserService {
     public void deleteMe(UUID userId) {
         User user = getActiveUserOrThrow(userId);
         user.setStatus(UserStatus.DELETED);
-        userRepository.save(user);
-        refreshTokenService.revokeAllForUser(userId);
+        invalidateSessions(user);
     }
 
     @Override
@@ -63,19 +62,32 @@ public class UserServiceImpl implements UserService {
     public void deleteUser(UUID userId) {
         User user = getUserOrThrow(userId);
         user.setStatus(UserStatus.DELETED);
-        userRepository.save(user);
-        refreshTokenService.revokeAllForUser(userId);
+        invalidateSessions(user);
     }
 
     @Override
     public AdminUserResponse changeRole(UUID userId, ChangeRoleRequest request) {
         User user = getUserOrThrow(userId);
         user.setRole(request.getRole());
-        User saved = userRepository.save(user);
-
-        refreshTokenService.revokeAllForUser(userId);
-
+        User saved = invalidateSessions(user);
         return toAdminResponse(saved);
+    }
+
+    @Override
+    public void forceLogout(UUID userId) {
+        User user = getUserOrThrow(userId);
+        invalidateSessions(user);
+    }
+
+    private User invalidateSessions(User user) {
+        user.setTokenVersion(nextTokenVersion(user));
+        User saved = userRepository.save(user);
+        refreshTokenService.revokeAllForUser(saved.getId());
+        return saved;
+    }
+
+    private long nextTokenVersion(User user) {
+        return user.getTokenVersion() == null ? 1L : user.getTokenVersion() + 1L;
     }
 
     private User getUserOrThrow(UUID userId) {

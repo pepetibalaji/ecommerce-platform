@@ -6,6 +6,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -32,5 +34,15 @@ public class AuthController {
     @Operation(summary = "Refresh access token")
     public AuthResponse refresh(@Valid @RequestBody RefreshRequest request) {
         return authService.refresh(request);
+    }
+
+    @PostMapping("/logout")
+    @Operation(summary = "Logout current session")
+    public void logout(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody(required = false) LogoutRequest request
+    ) {
+        String refreshToken = request != null ? request.getRefreshToken() : null;
+        authService.logout(jwt, refreshToken);
     }
 }

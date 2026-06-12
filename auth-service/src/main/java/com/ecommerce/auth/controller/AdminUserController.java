@@ -54,4 +54,10 @@ public class AdminUserController {
     ) {
         return userService.changeRole(id, request);
     }
+
+    @PostMapping("/{id}/logout")
+    @Operation(summary = "Force logout user")
+    public void forceLogout(@PathVariable UUID id) {
+        userService.forceLogout(id);
+    }
 }

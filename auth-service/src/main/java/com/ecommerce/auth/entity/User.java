@@ -45,6 +45,9 @@ public class User {
     @Column(nullable = false)
     private UserStatus status;
 
+    @Column(name = "token_version", nullable = false)
+    private Long tokenVersion;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -67,6 +70,9 @@ public class User {
         }
         if (status == null) {
             status = UserStatus.ACTIVE;
+        }
+        if (tokenVersion == null) {
+            tokenVersion = 0L;
         }
     }
 

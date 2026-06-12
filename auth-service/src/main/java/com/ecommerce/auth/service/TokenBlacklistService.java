@@ -1,11 +1,12 @@
 package com.ecommerce.auth.service;
 
-import java.time.Duration;
-import java.time.Instant;
-
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
+
+import java.time.Duration;
+import java.time.Instant;
 
 @Service
 @RequiredArgsConstructor
@@ -14,6 +15,13 @@ public class TokenBlacklistService {
     private static final String KEY_PREFIX = "auth:blacklist:jti:";
 
     private final RedisTemplate<String, String> redisTemplate;
+
+    public void blacklistToken(Jwt jwt) {
+        if (jwt == null) {
+            return;
+        }
+        blacklist(jwt.getId(), jwt.getExpiresAt());
+    }
 
     public void blacklist(String jti, Instant expiresAt) {
         if (jti == null || jti.isBlank() || expiresAt == null) {

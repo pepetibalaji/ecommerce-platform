@@ -24,4 +24,6 @@ public interface UserService {
     void deleteUser(UUID userId);
 
     AdminUserResponse changeRole(UUID userId, ChangeRoleRequest request);
+
+    void forceLogout(UUID userId);
 }
