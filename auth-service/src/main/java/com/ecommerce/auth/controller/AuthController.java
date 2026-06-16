@@ -1,51 +1,48 @@
 package com.ecommerce.auth.controller;
 
-import com.ecommerce.auth.dto.AuthResponse;
-import com.ecommerce.auth.dto.LoginRequest;
-import com.ecommerce.auth.dto.RefreshTokenRequest;
-import com.ecommerce.auth.dto.RegisterRequest;
-
+import com.ecommerce.auth.dto.*;
 import com.ecommerce.auth.service.AuthService;
-
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-
-import org.springframework.http.ResponseEntity;
-
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/auth")
-
 @RequiredArgsConstructor
-
+@Tag(name = "Auth", description = "Authentication APIs")
 public class AuthController {
 
     private final AuthService authService;
 
     @PostMapping("/register")
-    public ResponseEntity<String> register(
-           @Valid @RequestBody RegisterRequest request
-    ) {
-
-        return ResponseEntity.ok(
-                authService.register(request)
-        );
+    @Operation(summary = "Register a new user")
+    public AuthResponse register(@Valid @RequestBody RegisterRequest request) {
+        return authService.register(request);
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(
-           @Valid @RequestBody LoginRequest request
-    ) {
-
-            return ResponseEntity.ok(
-                            authService.login(request));
+    @Operation(summary = "Login and issue tokens")
+    public AuthResponse login(@Valid @RequestBody LoginRequest request) {
+        return authService.login(request);
     }
+
     @PostMapping("/refresh")
-     public ResponseEntity<AuthResponse> refreshToken(
-        @Valid @RequestBody RefreshTokenRequest request) {
-     return ResponseEntity.ok(
-            authService.refreshToken(request)
-     );
-}
+    @Operation(summary = "Refresh access token")
+    public AuthResponse refresh(@Valid @RequestBody RefreshRequest request) {
+        return authService.refresh(request);
+    }
+
+    @PostMapping("/logout")
+    @Operation(summary = "Logout current session")
+    public void logout(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody(required = false) LogoutRequest request
+    ) {
+        String refreshToken = request != null ? request.getRefreshToken() : null;
+        authService.logout(jwt, refreshToken);
+    }
 }

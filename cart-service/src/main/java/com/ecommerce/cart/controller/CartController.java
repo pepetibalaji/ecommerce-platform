@@ -9,7 +9,8 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -17,6 +18,8 @@ import org.springframework.web.bind.annotation.*;
 @SecurityRequirement(name = "bearerAuth")
 @Tag(name = "Cart", description = "Redis-backed shopping cart APIs")
 public class CartController {
+
+    private static final String USER_ID_CLAIM = "userId";
 
     private final CartService cartService;
 
@@ -27,40 +30,71 @@ public class CartController {
     @PostMapping
     @Operation(summary = "Add item to cart")
     public CartResponse addItem(
-            Authentication authentication,
-            @Valid @RequestBody AddCartItemRequest request
+            @Parameter(hidden = true)
+            @AuthenticationPrincipal Jwt jwt,
+
+            @Valid
+            @RequestBody AddCartItemRequest request
     ) {
-        return cartService.addItem(authentication.getName(), request);
+        String userId = getUserId(jwt);
+
+        return cartService.addItem(userId, request);
     }
 
     @PutMapping("/{itemId}")
     @Operation(summary = "Update cart item quantity")
     public CartResponse updateItem(
-            Authentication authentication,
-            @Parameter(description = "Cart item ID") @PathVariable String itemId,
-            @Valid @RequestBody UpdateCartItemRequest request
+            @Parameter(hidden = true)
+            @AuthenticationPrincipal Jwt jwt,
+
+            @Parameter(description = "Cart item ID")
+            @PathVariable String itemId,
+
+            @Valid
+            @RequestBody UpdateCartItemRequest request
     ) {
-        return cartService.updateItem(authentication.getName(), itemId, request);
+        String userId = getUserId(jwt);
+
+        return cartService.updateItem(userId, itemId, request);
     }
 
     @GetMapping
     @Operation(summary = "Get current user's cart")
-    public CartResponse getCart(Authentication authentication) {
-        return cartService.getCart(authentication.getName());
+    public CartResponse getCart(
+            @Parameter(hidden = true)
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        String userId = getUserId(jwt);
+
+        return cartService.getCart(userId);
     }
 
     @DeleteMapping("/{itemId}")
     @Operation(summary = "Remove item from cart")
     public CartResponse removeItem(
-            Authentication authentication,
-            @Parameter(description = "Cart item ID") @PathVariable String itemId
+            @Parameter(hidden = true)
+            @AuthenticationPrincipal Jwt jwt,
+
+            @Parameter(description = "Cart item ID")
+            @PathVariable String itemId
     ) {
-        return cartService.removeItem(authentication.getName(), itemId);
+        String userId = getUserId(jwt);
+
+        return cartService.removeItem(userId, itemId);
     }
 
     @DeleteMapping
     @Operation(summary = "Clear current user's cart")
-    public void clearCart(Authentication authentication) {
-        cartService.clearCart(authentication.getName());
+    public void clearCart(
+            @Parameter(hidden = true)
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        String userId = getUserId(jwt);
+
+        cartService.clearCart(userId);
+    }
+
+    private String getUserId(Jwt jwt) {
+        return jwt.getClaimAsString(USER_ID_CLAIM);
     }
 }
