@@ -1,58 +1,70 @@
 package com.ecommerce.product.config;
 
-import com.ecommerce.common.security.filter.JwtAuthenticationFilter;
-
 import lombok.RequiredArgsConstructor;
-
 import org.springframework.context.annotation.Bean;
-
 import org.springframework.context.annotation.Configuration;
-
+import org.springframework.http.HttpMethod;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
 
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-
-
 @Configuration
+@EnableMethodSecurity
 @RequiredArgsConstructor
-
 public class SecurityConfig {
 
-    private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private static final String[] SWAGGER_WHITELIST = {
+            "/swagger-ui.html",
+            "/swagger-ui/**",
+            "/v3/api-docs",
+            "/v3/api-docs/**",
+            "/v3/api-docs.yaml",
+            "/swagger-resources/**",
+            "/webjars/**"
+    };
+
+    private static final String[] ACTUATOR_WHITELIST = {
+            "/actuator/health",
+            "/actuator/info",
+            "/actuator/prometheus"
+    };
+
+    private final JwtAuthenticationConverter jwtAuthenticationConverter;
 
     @Bean
-    public SecurityFilterChain securityFilterChain(
-            HttpSecurity http
-    ) throws Exception {
+    public SecurityFilterChain productSecurityFilterChain(HttpSecurity http)
+            throws Exception {
 
-        http
+        return http
+                .csrf(AbstractHttpConfigurer::disable)
 
-                .csrf(csrf -> csrf.disable())
                 .sessionManagement(session ->
-                        session.sessionCreationPolicy(
-                                SessionCreationPolicy.STATELESS
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                )
+
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(SWAGGER_WHITELIST).permitAll()
+                        .requestMatchers(ACTUATOR_WHITELIST).permitAll()
+
+                        .requestMatchers(HttpMethod.GET, "/api/v1/products/**")
+                        .permitAll()
+
+                        .requestMatchers("/api/v1/admin/**")
+                        .hasRole("ADMIN")
+
+                        .anyRequest()
+                        .authenticated()
+                )
+
+                .oauth2ResourceServer(oauth2 ->
+                        oauth2.jwt(jwt ->
+                                jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)
                         )
                 )
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(
-                                "/api/v1/products/**",
-                                "/swagger-ui/**",
-                                "/v3/api-docs/**",
-                                "/actuator/**"
-                        ).permitAll()
-                        .requestMatchers(
-                                "/api/v1/admin/**"
-                        ).hasRole("ADMIN")
-                        .anyRequest().authenticated()
-                )
-                .addFilterBefore(
-                        jwtAuthenticationFilter,
-                        UsernamePasswordAuthenticationFilter.class
-                );
-        return http.build();
+
+                .build();
     }
 }

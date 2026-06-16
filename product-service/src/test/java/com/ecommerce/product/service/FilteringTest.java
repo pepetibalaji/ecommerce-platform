@@ -4,14 +4,12 @@ import com.ecommerce.product.dto.ProductResponse;
 import com.ecommerce.product.entity.Product;
 import com.ecommerce.product.mapper.ProductMapper;
 import com.ecommerce.product.repository.ProductRepository;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -22,8 +20,11 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 class FilteringTest {
 
     @Mock
@@ -36,14 +37,10 @@ class FilteringTest {
     private ProductService productService;
 
     private Product product;
-
     private ProductResponse response;
 
     @BeforeEach
     void setUp() {
-
-        MockitoAnnotations.openMocks(this);
-
         product = Product.builder()
                 .id(UUID.randomUUID())
                 .name("iPhone 15")
@@ -67,47 +64,27 @@ class FilteringTest {
 
     @Test
     void shouldFilterByCategory() {
+        Page<Product> page = new PageImpl<>(List.of(product));
 
-        Page<Product> page =
-                new PageImpl<>(List.of(product));
+        when(productRepository.findByCategory(eq("Mobile"), any(Pageable.class)))
+                .thenReturn(page);
+        when(productMapper.toResponse(product)).thenReturn(response);
 
-        when(productRepository.findByCategory(
-                eq("Mobile"),
-                any(Pageable.class)
-        )).thenReturn(page);
+        productService.getAllProducts(0, 10, "Mobile", null, null);
 
-        when(productMapper.toResponse(product))
-                .thenReturn(response);
-
-        productService.getAllProducts(
-                0,
-                10,
-                "Mobile",
-                null,
-                null
-        );
-
-        verify(productRepository)
-                .findByCategory(
-                        eq("Mobile"),
-                        any(Pageable.class)
-                );
+        verify(productRepository).findByCategory(eq("Mobile"), any(Pageable.class));
     }
 
     @Test
     void shouldFilterByPriceRange() {
-
-        Page<Product> page =
-                new PageImpl<>(List.of(product));
+        Page<Product> page = new PageImpl<>(List.of(product));
 
         when(productRepository.findByPriceBetween(
                 eq(BigDecimal.valueOf(500)),
                 eq(BigDecimal.valueOf(1000)),
                 any(Pageable.class)
         )).thenReturn(page);
-
-        when(productMapper.toResponse(product))
-                .thenReturn(response);
+        when(productMapper.toResponse(product)).thenReturn(response);
 
         productService.getAllProducts(
                 0,
@@ -117,19 +94,16 @@ class FilteringTest {
                 BigDecimal.valueOf(1000)
         );
 
-        verify(productRepository)
-                .findByPriceBetween(
-                        eq(BigDecimal.valueOf(500)),
-                        eq(BigDecimal.valueOf(1000)),
-                        any(Pageable.class)
-                );
+        verify(productRepository).findByPriceBetween(
+                eq(BigDecimal.valueOf(500)),
+                eq(BigDecimal.valueOf(1000)),
+                any(Pageable.class)
+        );
     }
 
     @Test
     void shouldFilterByCategoryAndPriceRange() {
-
-        Page<Product> page =
-                new PageImpl<>(List.of(product));
+        Page<Product> page = new PageImpl<>(List.of(product));
 
         when(productRepository.findByCategoryAndPriceBetween(
                 eq("Mobile"),
@@ -137,9 +111,7 @@ class FilteringTest {
                 eq(BigDecimal.valueOf(1000)),
                 any(Pageable.class)
         )).thenReturn(page);
-
-        when(productMapper.toResponse(product))
-                .thenReturn(response);
+        when(productMapper.toResponse(product)).thenReturn(response);
 
         productService.getAllProducts(
                 0,
@@ -149,37 +121,23 @@ class FilteringTest {
                 BigDecimal.valueOf(1000)
         );
 
-        verify(productRepository)
-                .findByCategoryAndPriceBetween(
-                        eq("Mobile"),
-                        eq(BigDecimal.valueOf(500)),
-                        eq(BigDecimal.valueOf(1000)),
-                        any(Pageable.class)
-                );
+        verify(productRepository).findByCategoryAndPriceBetween(
+                eq("Mobile"),
+                eq(BigDecimal.valueOf(500)),
+                eq(BigDecimal.valueOf(1000)),
+                any(Pageable.class)
+        );
     }
 
     @Test
     void shouldReturnAllProductsWhenNoFiltersProvided() {
+        Page<Product> page = new PageImpl<>(List.of(product));
 
-        Page<Product> page =
-                new PageImpl<>(List.of(product));
+        when(productRepository.findAll(any(Pageable.class))).thenReturn(page);
+        when(productMapper.toResponse(product)).thenReturn(response);
 
-        when(productRepository.findAll(
-                any(Pageable.class)
-        )).thenReturn(page);
+        productService.getAllProducts(0, 10, null, null, null);
 
-        when(productMapper.toResponse(product))
-                .thenReturn(response);
-
-        productService.getAllProducts(
-                0,
-                10,
-                null,
-                null,
-                null
-        );
-
-        verify(productRepository)
-                .findAll(any(Pageable.class));
+        verify(productRepository).findAll(any(Pageable.class));
     }
 }

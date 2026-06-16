@@ -4,6 +4,7 @@ import com.ecommerce.auth.dto.UpdateMeRequest;
 import com.ecommerce.auth.dto.UserProfileResponse;
 import com.ecommerce.auth.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -15,6 +16,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/users")
 @Tag(name = "Users", description = "User profile APIs")
+@SecurityRequirement(name = "bearerAuth")
 public class UserController {
 
     private final UserService userService;

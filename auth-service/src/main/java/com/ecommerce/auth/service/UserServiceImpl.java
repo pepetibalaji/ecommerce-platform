@@ -97,7 +97,7 @@ public class UserServiceImpl implements UserService {
 
     private User getActiveUserOrThrow(UUID userId) {
         User user = getUserOrThrow(userId);
-        if (user.getStatus() == UserStatus.DELETED) {
+        if (user.getStatus() != UserStatus.ACTIVE) {
             throw new ResourceNotFoundException("User not found: " + userId);
         }
         return user;

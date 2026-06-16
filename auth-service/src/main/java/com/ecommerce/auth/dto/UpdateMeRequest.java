@@ -7,7 +7,7 @@ import lombok.Data;
 @Data
 public class UpdateMeRequest {
 
-    @NotBlank
-    @Size(max = 150)
+    @Size(min = 2, max = 150, message = "Name must be between 2 and 150 characters")
+    @NotBlank(message = "Name is required")
     private String name;
 }

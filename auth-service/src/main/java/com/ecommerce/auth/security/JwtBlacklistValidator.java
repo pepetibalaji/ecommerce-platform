@@ -61,7 +61,7 @@ public class JwtBlacklistValidator implements OAuth2TokenValidator<Jwt> {
         } else if (tokenVersionValue instanceof String value && !value.isBlank()) {
             try {
                 tokenVersion = Long.parseLong(value);
-            } catch (NumberFormatException ignored) {
+            } catch (NumberFormatException ex) {
                 return failure("Invalid tokenVersion claim");
             }
         }

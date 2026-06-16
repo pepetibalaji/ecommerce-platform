@@ -4,14 +4,12 @@ import com.ecommerce.product.dto.ProductResponse;
 import com.ecommerce.product.entity.Product;
 import com.ecommerce.product.mapper.ProductMapper;
 import com.ecommerce.product.repository.ProductRepository;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -22,10 +20,13 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 class PaginationTest {
 
     @Mock
@@ -38,14 +39,10 @@ class PaginationTest {
     private ProductService productService;
 
     private Product product;
-
     private ProductResponse response;
 
     @BeforeEach
     void setUp() {
-
-        MockitoAnnotations.openMocks(this);
-
         product = Product.builder()
                 .id(UUID.randomUUID())
                 .name("iPhone 15")
@@ -69,72 +66,35 @@ class PaginationTest {
 
     @Test
     void shouldReturnPaginatedProducts() {
+        Page<Product> page = new PageImpl<>(List.of(product));
 
-        Page<Product> page =
-                new PageImpl<>(List.of(product));
+        when(productRepository.findAll(any(Pageable.class))).thenReturn(page);
+        when(productMapper.toResponse(product)).thenReturn(response);
 
-        when(productRepository.findAll(any(Pageable.class)))
-                .thenReturn(page);
+        Page<ProductResponse> result = productService.getAllProducts(0, 10, null, null, null);
 
-        when(productMapper.toResponse(product))
-                .thenReturn(response);
-
-        Page<ProductResponse> result =
-                productService.getAllProducts(
-                        0,
-                        10,
-                        null,
-                        null,
-                        null
-                );
-
-        assertEquals(
-                1,
-                result.getTotalElements()
-        );
+        assertEquals(1, result.getTotalElements());
+        assertEquals(product.getId(), result.getContent().get(0).getId());
     }
 
     @Test
     void shouldReturnEmptyPage() {
+        when(productRepository.findAll(any(Pageable.class))).thenReturn(Page.empty());
 
-        when(productRepository.findAll(any(Pageable.class)))
-                .thenReturn(Page.empty());
-
-        Page<ProductResponse> result =
-                productService.getAllProducts(
-                        0,
-                        10,
-                        null,
-                        null,
-                        null
-                );
+        Page<ProductResponse> result = productService.getAllProducts(0, 10, null, null, null);
 
         assertTrue(result.isEmpty());
     }
 
     @Test
     void shouldUseCorrectPaginationParameters() {
+        Page<Product> page = new PageImpl<>(List.of(product));
 
-        Page<Product> page =
-                new PageImpl<>(List.of(product));
+        when(productRepository.findAll(any(Pageable.class))).thenReturn(page);
+        when(productMapper.toResponse(product)).thenReturn(response);
 
-        when(productRepository.findAll(any(Pageable.class)))
-                .thenReturn(page);
+        productService.getAllProducts(2, 5, null, null, null);
 
-        when(productMapper.toResponse(product))
-                .thenReturn(response);
-
-        productService.getAllProducts(
-                2,
-                5,
-                null,
-                null,
-                null
-        );
-
-        verify(productRepository)
-                .findAll(
-                        PageRequest.of(2, 5)
-                );
+        verify(productRepository).findAll(PageRequest.of(2, 5));
     }
 }

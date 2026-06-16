@@ -5,7 +5,6 @@ import java.util.UUID;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
@@ -19,11 +18,18 @@ import org.springframework.security.oauth2.server.authorization.settings.TokenSe
 @Configuration
 public class RegisteredClientConfig {
 
+    private final PasswordEncoder passwordEncoder;
+
+    // Spring automatically injects the single PasswordEncoder bean defined in SecurityConfig
+    public RegisteredClientConfig(PasswordEncoder passwordEncoder) {
+        this.passwordEncoder = passwordEncoder;
+    }
+
     @Bean
-    public RegisteredClientRepository registeredClientRepository(PasswordEncoder passwordEncoder) {
+    public RegisteredClientRepository registeredClientRepository() {
         RegisteredClient client = RegisteredClient.withId(UUID.randomUUID().toString())
                 .clientId("ecommerce-web")
-                .clientSecret(passwordEncoder.encode("ecommerce-secret"))
+                .clientSecret(this.passwordEncoder.encode("ecommerce-secret"))
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
@@ -44,10 +50,5 @@ public class RegisteredClientConfig {
                 .build();
 
         return new InMemoryRegisteredClientRepository(client);
-    }
-
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
     }
 }

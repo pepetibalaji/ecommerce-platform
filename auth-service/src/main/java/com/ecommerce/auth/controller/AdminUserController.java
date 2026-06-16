@@ -4,6 +4,7 @@ import com.ecommerce.auth.dto.AdminUserResponse;
 import com.ecommerce.auth.dto.ChangeRoleRequest;
 import com.ecommerce.auth.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
@@ -16,6 +17,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/admin/users")
 @Tag(name = "Admin Users", description = "Admin user management APIs")
+@SecurityRequirement(name = "bearerAuth")
 @PreAuthorize("hasRole('ADMIN')")
 public class AdminUserController {
 

@@ -1,16 +1,23 @@
 package com.ecommerce.auth.service;
 
-import com.ecommerce.auth.dto.*;
+import com.ecommerce.auth.dto.AuthResponse;
+import com.ecommerce.auth.dto.LoginRequest;
+import com.ecommerce.auth.dto.RefreshRequest;
+import com.ecommerce.auth.dto.RegisterRequest;
+import com.ecommerce.auth.dto.UserResponse;
 import com.ecommerce.auth.entity.RefreshToken;
-import com.ecommerce.auth.entity.enums.Role;
 import com.ecommerce.auth.entity.User;
+import com.ecommerce.auth.entity.enums.Role;
 import com.ecommerce.auth.entity.enums.UserStatus;
 import com.ecommerce.auth.repository.UserRepository;
+import com.ecommerce.common.exception.ResourceAlreadyExistsException;
+import com.ecommerce.common.exception.UnauthorizedException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,13 +39,17 @@ public class AuthService {
     private final TokenBlacklistService tokenBlacklistService;
 
     public AuthResponse register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.getEmail())) {
-            throw new IllegalArgumentException("Email already registered");
+        String email = normalizeEmail(request.getEmail());
+
+        if (userRepository.existsByEmail(email)) {
+            throw new ResourceAlreadyExistsException(
+                    "User already exists with email: " + email
+            );
         }
 
         User user = User.builder()
-                .name(request.getName())
-                .email(request.getEmail().toLowerCase().trim())
+                .name(request.getName().trim())
+                .email(email)
                 .password(passwordEncoder.encode(request.getPassword()))
                 .role(Role.CUSTOMER)
                 .status(UserStatus.ACTIVE)
@@ -50,18 +61,24 @@ public class AuthService {
     }
 
     public AuthResponse login(LoginRequest request) {
-        authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(
-                        request.getEmail(),
-                        request.getPassword()
-                )
-        );
+        String email = normalizeEmail(request.getEmail());
 
-        User user = userRepository.findByEmail(request.getEmail().toLowerCase().trim())
-                .orElseThrow(() -> new IllegalArgumentException("Invalid credentials"));
+        try {
+            authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(
+                            email,
+                            request.getPassword()
+                    )
+            );
+        } catch (AuthenticationException ex) {
+            throw new UnauthorizedException("Invalid credentials");
+        }
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
 
         if (user.getStatus() != UserStatus.ACTIVE) {
-            throw new IllegalStateException("User account is not active");
+            throw new UnauthorizedException("User account is not active");
         }
 
         return issueTokens(user);
@@ -69,16 +86,16 @@ public class AuthService {
 
     public AuthResponse refresh(RefreshRequest request) {
         RefreshToken refreshToken = refreshTokenService.findByToken(request.getRefreshToken())
-                .orElseThrow(() -> new IllegalArgumentException("Invalid refresh token"));
+                .orElseThrow(() -> new UnauthorizedException("Invalid refresh token"));
 
         if (refreshToken.getExpiry().isBefore(LocalDateTime.now())) {
             refreshTokenService.revoke(request.getRefreshToken());
-            throw new IllegalArgumentException("Refresh token expired");
+            throw new UnauthorizedException("Refresh token expired");
         }
 
         User user = refreshToken.getUser();
         if (user.getStatus() != UserStatus.ACTIVE) {
-            throw new IllegalStateException("User account is not active");
+            throw new UnauthorizedException("User account is not active");
         }
 
         refreshTokenService.revoke(request.getRefreshToken());
@@ -87,19 +104,28 @@ public class AuthService {
 
     public void logout(Jwt jwt, String refreshTokenValue) {
         if (jwt == null) {
-            throw new IllegalArgumentException("Missing access token");
+            throw new UnauthorizedException("Missing access token");
         }
 
         tokenBlacklistService.blacklistToken(jwt);
 
         String userIdValue = jwt.getClaimAsString("userId");
-        UUID userId = UUID.fromString(userIdValue);
+        if (userIdValue == null || userIdValue.isBlank()) {
+            throw new UnauthorizedException("Missing userId claim");
+        }
+
+        UUID userId;
+        try {
+            userId = UUID.fromString(userIdValue);
+        } catch (Exception ex) {
+            throw new UnauthorizedException("Invalid userId claim");
+        }
 
         if (refreshTokenValue != null && !refreshTokenValue.isBlank()) {
             refreshTokenService.findByToken(refreshTokenValue).ifPresentOrElse(
                     token -> {
                         if (!token.getUser().getId().equals(userId)) {
-                            throw new IllegalArgumentException("Refresh token does not belong to current user");
+                            throw new UnauthorizedException("Refresh token does not belong to current user");
                         }
                         refreshTokenService.revoke(refreshTokenValue);
                     },
@@ -136,5 +162,9 @@ public class AuthService {
                 user.getCreatedAt(),
                 user.getUpdatedAt()
         );
+    }
+
+    private String normalizeEmail(String email) {
+        return email == null ? null : email.toLowerCase().trim();
     }
 }

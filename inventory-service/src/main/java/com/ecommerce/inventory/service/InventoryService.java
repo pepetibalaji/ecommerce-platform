@@ -10,12 +10,6 @@ import com.ecommerce.inventory.dto.CreateInventoryRequest;
 
 import com.ecommerce.inventory.dto.UpdateInventoryRequest;
 
-import com.ecommerce.inventory.dto.CreateInventoryRequest;
-
-import com.ecommerce.inventory.dto.UpdateInventoryRequest;
-
-import com.ecommerce.inventory.dto.InventoryResponse;
-
 import com.ecommerce.inventory.mapper.InventoryMapper;
 
 import com.ecommerce.inventory.repository.InventoryRepository;
