@@ -1,28 +1,31 @@
 package com.ecommerce.auth.entity;
 
-import com.ecommerce.auth.entity.enums.Role;
-import com.ecommerce.auth.entity.enums.UserStatus;
-
 import jakarta.persistence.*;
-
 import lombok.*;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-@Entity
-@Table(name = "users")
+import com.ecommerce.auth.entity.enums.Role;
+import com.ecommerce.auth.entity.enums.UserStatus;
 
+@Entity
+@Table(
+        name = "users",
+        indexes = {
+                @Index(name = "idx_users_email", columnList = "email", unique = true),
+                @Index(name = "idx_users_role", columnList = "role"),
+                @Index(name = "idx_users_status", columnList = "status")
+        }
+)
 @Getter
 @Setter
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-
 public class User {
 
     @Id
-    @GeneratedValue
     private UUID id;
 
     @Column(nullable = false)
@@ -42,20 +45,39 @@ public class User {
     @Column(nullable = false)
     private UserStatus status;
 
-    @Column(name = "created_at")
+    @Column(name = "token_version", nullable = false)
+    private Long tokenVersion;
+
+    @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at")
+    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
     @PrePersist
-    public void prePersist() {
-        createdAt = LocalDateTime.now();
-        updatedAt = LocalDateTime.now();
+    void prePersist() {
+        if (id == null) {
+            id = UUID.randomUUID();
+        }
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
+        if (updatedAt == null) {
+            updatedAt = LocalDateTime.now();
+        }
+        if (role == null) {
+            role = Role.CUSTOMER;
+        }
+        if (status == null) {
+            status = UserStatus.ACTIVE;
+        }
+        if (tokenVersion == null) {
+            tokenVersion = 0L;
+        }
     }
 
     @PreUpdate
-    public void preUpdate() {
+    void preUpdate() {
         updatedAt = LocalDateTime.now();
     }
 }
