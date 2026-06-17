@@ -98,22 +98,39 @@ public class GlobalExceptionHandler {
                             .body(response);
     }
     @ExceptionHandler(MethodArgumentNotValidException.class)
-public ResponseEntity<?> handleValidation(
-        MethodArgumentNotValidException exception
-) {
+        public ResponseEntity<?> handleValidation(
+                MethodArgumentNotValidException exception
+        ) {
 
-    Map<String, String> errors = new HashMap<>();
+                Map<String, String> errors = new HashMap<>();
 
-    exception.getBindingResult()
-            .getFieldErrors()
-            .forEach(error ->
-                    errors.put(
-                            error.getField(),
-                            error.getDefaultMessage()
-                    )
-            );
+                exception.getBindingResult()
+                                .getFieldErrors()
+                                .forEach(error -> errors.put(
+                                                error.getField(),
+                                                error.getDefaultMessage()));
 
-    return ResponseEntity.badRequest()
-            .body(errors);
-}
+                return ResponseEntity.badRequest()
+                                .body(errors);
+        }
+        
+        @ExceptionHandler(BadRequestException.class)
+        public ResponseEntity<ApiErrorResponse> handleBadRequest(
+                BadRequestException exception,
+                HttpServletRequest request
+        ) {
+
+        ApiErrorResponse response =
+                ApiErrorResponse.builder()
+                        .timestamp(LocalDateTime.now())
+                        .status(HttpStatus.BAD_REQUEST.value())
+                        .error("Bad Request")
+                        .message(exception.getMessage())
+                        .path(request.getRequestURI())
+                        .build();
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(response);
+        }
 }

@@ -1,9 +1,6 @@
 package com.ecommerce.order.service;
 
-import java.math.BigDecimal;
-import java.util.List;
-import java.util.UUID;
-
+import com.ecommerce.common.exception.BadRequestException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.order.dto.CreateOrderItemRequest;
 import com.ecommerce.order.dto.CreateOrderRequest;
@@ -12,24 +9,39 @@ import com.ecommerce.order.dto.UpdateOrderStatusRequest;
 import com.ecommerce.order.entity.Order;
 import com.ecommerce.order.entity.OrderItem;
 import com.ecommerce.order.entity.OrderStatus;
-import com.ecommerce.order.event.OrderCreatedEvent;
+import com.ecommerce.order.grpc.InventoryGrpcClient;
 import com.ecommerce.order.kafka.OrderEventPublisher;
 import com.ecommerce.order.repository.OrderRepository;
-import com.ecommerce.order.grpc.InventoryGrpcClient;
 import com.ecommerce.proto.inventory.InventoryDetails;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
+
 import static org.junit.jupiter.api.Assertions.assertThrows;
+
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
+
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest {
@@ -71,21 +83,39 @@ class OrderServiceTest {
                 .setReservedStock(0)
                 .build();
 
-        when(inventoryGrpcClient.getInventory(productId)).thenReturn(inventoryDetails);
-        doNothing().when(inventoryGrpcClient).reserveStock(productId, 2);
+        when(inventoryGrpcClient.getInventory(productId))
+                .thenReturn(inventoryDetails);
 
-        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        doNothing()
+                .when(inventoryGrpcClient)
+                .reserveStock(productId, 2);
 
-        OrderResponse response = orderService.createOrder(userId, request);
+        when(orderRepository.save(any(Order.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
-        assertThat(response.getUserId()).isEqualTo(userId);
-        assertThat(response.getStatus()).isEqualTo(OrderStatus.PENDING);
-        assertThat(response.getItems()).hasSize(1);
-        assertThat(response.getTotalAmount()).isEqualByComparingTo("200.00");
+        OrderResponse response =
+                orderService.createOrder(userId, request);
 
-        verify(inventoryGrpcClient).getInventory(productId);
-        verify(inventoryGrpcClient).reserveStock(productId, 2);
-        verify(orderRepository).save(any(Order.class));
+        assertThat(response.getUserId())
+                .isEqualTo(userId);
+
+        assertThat(response.getStatus())
+                .isEqualTo(OrderStatus.PENDING);
+
+        assertThat(response.getItems())
+                .hasSize(1);
+
+        assertThat(response.getTotalAmount())
+                .isEqualByComparingTo("200.00");
+
+        verify(inventoryGrpcClient)
+                .getInventory(productId);
+
+        verify(inventoryGrpcClient)
+                .reserveStock(productId, 2);
+
+        verify(orderRepository)
+                .save(any(Order.class));
     }
 
     @Test
@@ -104,19 +134,27 @@ class OrderServiceTest {
                 .setReservedStock(0)
                 .build();
 
-        when(inventoryGrpcClient.getInventory(productId)).thenReturn(inventoryDetails);
+        when(inventoryGrpcClient.getInventory(productId))
+                .thenReturn(inventoryDetails);
 
-        assertThrows(IllegalStateException.class,
-                () -> orderService.createOrder(userId, request));
+        assertThrows(
+                BadRequestException.class,
+                () -> orderService.createOrder(userId, request)
+        );
 
-        verify(inventoryGrpcClient, never()).reserveStock(any(), anyInt());
-        verify(orderRepository, never()).save(any());
+        verify(inventoryGrpcClient, never())
+                .reserveStock(any(), anyInt());
+
+        verify(orderRepository, never())
+                .save(any(Order.class));
     }
 
     @Test
     void cancelOrder_shouldReleaseStockAndCancel() {
+        UUID orderId = UUID.randomUUID();
+
         Order order = new Order();
-        order.setId(UUID.randomUUID());
+        order.setId(orderId);
         order.setUserId(userId);
         order.setStatus(OrderStatus.CONFIRMED);
 
@@ -129,26 +167,41 @@ class OrderServiceTest {
 
         order.getItems().add(item);
 
-        when(orderRepository.findById(order.getId())).thenReturn(java.util.Optional.of(order));
-        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(orderRepository.findById(orderId))
+                .thenReturn(Optional.of(order));
 
-        OrderResponse response = orderService.cancelOrder(userId, order.getId());
+        when(orderRepository.save(any(Order.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
-        assertThat(response.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        verify(inventoryGrpcClient).releaseStock(productId, 2);
+        OrderResponse response =
+                orderService.cancelOrder(userId, orderId);
+
+        assertThat(response.getStatus())
+                .isEqualTo(OrderStatus.CANCELLED);
+
+        verify(inventoryGrpcClient)
+                .releaseStock(productId, 2);
+
+        verify(orderRepository)
+                .save(order);
     }
 
     @Test
     void getOrderById_shouldThrowForDifferentUser() {
+        UUID orderId = UUID.randomUUID();
+
         Order order = new Order();
-        order.setId(UUID.randomUUID());
+        order.setId(orderId);
         order.setUserId(UUID.randomUUID());
         order.setStatus(OrderStatus.PENDING);
 
-        when(orderRepository.findById(order.getId())).thenReturn(java.util.Optional.of(order));
+        when(orderRepository.findById(orderId))
+                .thenReturn(Optional.of(order));
 
-        assertThrows(ResourceNotFoundException.class,
-                () -> orderService.getOrderById(userId, order.getId()));
+        assertThrows(
+                ResourceNotFoundException.class,
+                () -> orderService.getOrderById(userId, orderId)
+        );
     }
 
     @Test
@@ -161,9 +214,18 @@ class OrderServiceTest {
         when(orderRepository.findByUserId(eq(userId), any()))
                 .thenReturn(new PageImpl<>(List.of(order)));
 
-        var page = orderService.getMyOrders(userId, PageRequest.of(0, 10), null);
+        var page =
+                orderService.getMyOrders(
+                        userId,
+                        PageRequest.of(0, 10),
+                        null
+                );
 
-        assertThat(page.getContent()).hasSize(1);
+        assertThat(page.getContent())
+                .hasSize(1);
+
+        assertThat(page.getContent().get(0).getUserId())
+                .isEqualTo(userId);
     }
 
     @Test
@@ -175,14 +237,24 @@ class OrderServiceTest {
         order.setUserId(userId);
         order.setStatus(OrderStatus.PENDING);
 
-        when(orderRepository.findById(orderId)).thenReturn(java.util.Optional.of(order));
-        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(orderRepository.findById(orderId))
+                .thenReturn(Optional.of(order));
 
-        UpdateOrderStatusRequest request = new UpdateOrderStatusRequest();
+        when(orderRepository.save(any(Order.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        UpdateOrderStatusRequest request =
+                new UpdateOrderStatusRequest();
+
         request.setStatus(OrderStatus.CONFIRMED);
 
-        OrderResponse response = orderService.updateOrderStatus(orderId, request);
+        OrderResponse response =
+                orderService.updateOrderStatus(orderId, request);
 
-        assertThat(response.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(response.getStatus())
+                .isEqualTo(OrderStatus.CONFIRMED);
+
+        verify(orderRepository)
+                .save(order);
     }
 }

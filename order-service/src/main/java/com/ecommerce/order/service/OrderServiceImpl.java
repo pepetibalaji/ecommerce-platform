@@ -20,6 +20,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.ecommerce.common.exception.BadRequestException;
 
 @Service
 @Transactional
@@ -153,9 +154,7 @@ public class OrderServiceImpl implements OrderService {
             var inventory = inventoryGrpcClient.getInventory(itemRequest.getProductId());
 
             if (inventory.getAvailableStock() < itemRequest.getQuantity()) {
-                throw new IllegalStateException(
-                        "Insufficient stock for product: " + itemRequest.getProductId()
-                );
+                throw new BadRequestException("Insufficient stock for product: " + itemRequest.getProductId());
             }
         }
 
