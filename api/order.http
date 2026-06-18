@@ -1,0 +1,199 @@
+# =========================================================
+# ORDER SERVICE API TESTS
+# =========================================================
+# Service: order-service
+# Base URL: http://localhost:8086
+#
+# Flow:
+# 1. Login using api/auth.http
+# 2. Copy accessToken into @accessToken
+# 3. Make sure Inventory Service has stock for @productId
+# 4. Create order
+# 5. Verify order-created event in Kafka
+#
+# Order Service responsibilities:
+# - Create order
+# - Get current user's orders
+# - Get order by ID
+# - Cancel order
+# - Admin order listing
+# - Admin status update
+# - Reserve/release stock through Inventory gRPC
+# - Publish order-created event to Kafka
+# =========================================================
+
+@orderBaseUrl = http://localhost:8086
+
+# Replace after Auth login
+@accessToken = paste_customer_access_token_here
+@adminAccessToken = paste_admin_access_token_here
+
+# Replace after creating an order
+@orderId = paste_order_id_here
+
+# Use an existing productId that has inventory stock
+@productId = paste_product_id_here
+
+# =========================================================
+# CUSTOMER ORDER APIs
+# Requires CUSTOMER or ADMIN token
+# =========================================================
+
+### Create order
+POST {{orderBaseUrl}}/api/v1/orders
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "productId": "{{productId}}",
+      "quantity": 2,
+      "price": 100.00
+    }
+  ]
+}
+
+### Create order with multiple items
+POST {{orderBaseUrl}}/api/v1/orders
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "productId": "{{productId}}",
+      "quantity": 1,
+      "price": 100.00
+    },
+    {
+      "productId": "{{productId}}",
+      "quantity": 2,
+      "price": 150.00
+    }
+  ]
+}
+
+### Get my orders
+GET {{orderBaseUrl}}/api/v1/orders?page=0&size=10
+Authorization: Bearer {{accessToken}}
+
+### Get my orders by PENDING status
+GET {{orderBaseUrl}}/api/v1/orders?status=PENDING&page=0&size=10
+Authorization: Bearer {{accessToken}}
+
+### Get my orders by CONFIRMED status
+GET {{orderBaseUrl}}/api/v1/orders?status=CONFIRMED&page=0&size=10
+Authorization: Bearer {{accessToken}}
+
+### Get my orders by CANCELLED status
+GET {{orderBaseUrl}}/api/v1/orders?status=CANCELLED&page=0&size=10
+Authorization: Bearer {{accessToken}}
+
+### Get order by id
+GET {{orderBaseUrl}}/api/v1/orders/{{orderId}}
+Authorization: Bearer {{accessToken}}
+
+### Cancel my order
+PUT {{orderBaseUrl}}/api/v1/orders/{{orderId}}/cancel
+Authorization: Bearer {{accessToken}}
+
+# =========================================================
+# ADMIN ORDER APIs
+# Requires ADMIN token
+# =========================================================
+
+### Admin get all orders
+GET {{orderBaseUrl}}/api/v1/admin/orders?page=0&size=10
+Authorization: Bearer {{adminAccessToken}}
+
+### Admin get all PENDING orders
+GET {{orderBaseUrl}}/api/v1/admin/orders?status=PENDING&page=0&size=10
+Authorization: Bearer {{adminAccessToken}}
+
+### Admin get all CONFIRMED orders
+GET {{orderBaseUrl}}/api/v1/admin/orders?status=CONFIRMED&page=0&size=10
+Authorization: Bearer {{adminAccessToken}}
+
+### Admin get all CANCELLED orders
+GET {{orderBaseUrl}}/api/v1/admin/orders?status=CANCELLED&page=0&size=10
+Authorization: Bearer {{adminAccessToken}}
+
+### Admin update order status to CONFIRMED
+PUT {{orderBaseUrl}}/api/v1/admin/orders/{{orderId}}/status
+Authorization: Bearer {{adminAccessToken}}
+Content-Type: application/json
+
+{
+  "status": "CONFIRMED"
+}
+
+### Admin update order status to COMPLETED
+PUT {{orderBaseUrl}}/api/v1/admin/orders/{{orderId}}/status
+Authorization: Bearer {{adminAccessToken}}
+Content-Type: application/json
+
+{
+  "status": "COMPLETED"
+}
+
+### Admin update order status to FAILED
+PUT {{orderBaseUrl}}/api/v1/admin/orders/{{orderId}}/status
+Authorization: Bearer {{adminAccessToken}}
+Content-Type: application/json
+
+{
+  "status": "FAILED"
+}
+
+# =========================================================
+# SECURITY CHECKS
+# =========================================================
+
+### Create order without token - expected 401
+POST {{orderBaseUrl}}/api/v1/orders
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "productId": "{{productId}}",
+      "quantity": 1,
+      "price": 100.00
+    }
+  ]
+}
+
+### Admin get orders with customer token - expected 403
+GET {{orderBaseUrl}}/api/v1/admin/orders?page=0&size=10
+Authorization: Bearer {{accessToken}}
+
+# =========================================================
+# SWAGGER / ACTUATOR
+# =========================================================
+
+### Swagger UI
+GET {{orderBaseUrl}}/swagger-ui.html
+
+### OpenAPI JSON
+GET {{orderBaseUrl}}/v3/api-docs
+
+### Health
+GET {{orderBaseUrl}}/actuator/health
+
+### Prometheus metrics
+GET {{orderBaseUrl}}/actuator/prometheus
+
+# =========================================================
+# KAFKA VERIFICATION
+# =========================================================
+# After successful order creation, verify order-created event:
+#
+# docker exec -it ecommerce-kafka kafka-console-consumer \
+#   --bootstrap-server kafka:9092 \
+#   --topic order-created \
+#   --from-beginning
+#
+# Expected:
+# OrderCreatedEvent JSON should appear in the topic.
+# =========================================================
