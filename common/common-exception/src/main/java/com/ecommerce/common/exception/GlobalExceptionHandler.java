@@ -3,23 +3,18 @@ package com.ecommerce.common.exception;
 import jakarta.servlet.http.HttpServletRequest;
 
 import org.springframework.http.HttpStatus;
-
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
-
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.time.LocalDateTime;
-
-import org.springframework.web.bind.MethodArgumentNotValidException;
-
 import java.util.HashMap;
-
 import java.util.Map;
 
-@RestControllerAdvice
-
+@RestControllerAdvice(basePackages = "com.ecommerce")
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(ResourceAlreadyExistsException.class)
@@ -37,7 +32,9 @@ public class GlobalExceptionHandler {
                         .path(request.getRequestURI())
                         .build();
 
-        return ResponseEntity.status(HttpStatus.CONFLICT)
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(response);
     }
 
@@ -56,7 +53,9 @@ public class GlobalExceptionHandler {
                         .path(request.getRequestURI())
                         .build();
 
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(response);
     }
 
@@ -75,8 +74,53 @@ public class GlobalExceptionHandler {
                         .path(request.getRequestURI())
                         .build();
 
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+        return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(response);
+    }
+
+    @ExceptionHandler(BadRequestException.class)
+    public ResponseEntity<ApiErrorResponse> handleBadRequest(
+            BadRequestException exception,
+            HttpServletRequest request
+    ) {
+
+        ApiErrorResponse response =
+                ApiErrorResponse.builder()
+                        .timestamp(LocalDateTime.now())
+                        .status(HttpStatus.BAD_REQUEST.value())
+                        .error("Bad Request")
+                        .message(exception.getMessage())
+                        .path(request.getRequestURI())
+                        .build();
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(response);
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, String>> handleValidation(
+            MethodArgumentNotValidException exception
+    ) {
+
+        Map<String, String> errors = new HashMap<>();
+
+        exception.getBindingResult()
+                .getFieldErrors()
+                .forEach(error ->
+                        errors.put(
+                                error.getField(),
+                                error.getDefaultMessage()
+                        )
+                );
+
+        return ResponseEntity
+                .badRequest()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(errors);
     }
 
     @ExceptionHandler(Exception.class)
@@ -85,35 +129,18 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
 
-            ApiErrorResponse response = ApiErrorResponse.builder()
-                            .timestamp(LocalDateTime.now())
-                            .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
-                            .error("Internal Server Error")
-                            .message(exception.getMessage())
-                            .path(request.getRequestURI())
-                            .build();
+        ApiErrorResponse response =
+                ApiErrorResponse.builder()
+                        .timestamp(LocalDateTime.now())
+                        .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                        .error("Internal Server Error")
+                        .message(exception.getMessage())
+                        .path(request.getRequestURI())
+                        .build();
 
-            return ResponseEntity.status(
-                            HttpStatus.INTERNAL_SERVER_ERROR)
-                            .body(response);
+        return ResponseEntity
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(response);
     }
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-public ResponseEntity<?> handleValidation(
-        MethodArgumentNotValidException exception
-) {
-
-    Map<String, String> errors = new HashMap<>();
-
-    exception.getBindingResult()
-            .getFieldErrors()
-            .forEach(error ->
-                    errors.put(
-                            error.getField(),
-                            error.getDefaultMessage()
-                    )
-            );
-
-    return ResponseEntity.badRequest()
-            .body(errors);
-}
 }

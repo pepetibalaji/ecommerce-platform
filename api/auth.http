@@ -1,0 +1,155 @@
+# =========================================================
+# AUTH SERVICE API TESTS
+# =========================================================
+# Service: auth-service
+# Base URL: http://localhost:8081
+#
+# Flow:
+# 1. Register or login
+# 2. Copy accessToken and refreshToken from response
+# 3. Paste them into the variables below
+# 4. Test user/admin protected APIs
+#
+# Auth Service APIs are part of the platform auth module:
+# register, login, refresh, logout, user profile, and admin user management.
+# =========================================================
+
+@authBaseUrl = http://localhost:8081
+
+# Replace after login/register
+@accessToken = paste_access_token_here
+@refreshToken = paste_refresh_token_here
+
+# Replace with actual user id from register/login response
+@userId = paste_user_id_here
+
+# =========================================================
+# PUBLIC AUTH APIs
+# =========================================================
+
+### Register customer
+POST {{authBaseUrl}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "name": "Test Customer",
+  "email": "customer@example.com",
+  "password": "Password@123"
+}
+
+### Login customer
+POST {{authBaseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "customer@example.com",
+  "password": "Password@123"
+}
+
+### Refresh access token
+POST {{authBaseUrl}}/api/v1/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+# =========================================================
+# AUTHENTICATED AUTH API
+# =========================================================
+
+### Logout current session
+POST {{authBaseUrl}}/api/v1/auth/logout
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+### Logout without refresh token body
+POST {{authBaseUrl}}/api/v1/auth/logout
+Authorization: Bearer {{accessToken}}
+
+# =========================================================
+# CURRENT USER APIs
+# =========================================================
+
+### Get my profile
+GET {{authBaseUrl}}/api/v1/users/me
+Authorization: Bearer {{accessToken}}
+
+### Update my profile
+PUT {{authBaseUrl}}/api/v1/users/me
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Updated Customer"
+}
+
+### Delete my profile
+DELETE {{authBaseUrl}}/api/v1/users/me
+Authorization: Bearer {{accessToken}}
+
+# =========================================================
+# ADMIN USER APIs
+# Requires ADMIN access token
+# =========================================================
+
+### Get all users
+GET {{authBaseUrl}}/api/v1/admin/users?page=0&size=20
+Authorization: Bearer {{accessToken}}
+
+### Get user by id
+GET {{authBaseUrl}}/api/v1/admin/users/{{userId}}
+Authorization: Bearer {{accessToken}}
+
+### Change user role to ADMIN
+PUT {{authBaseUrl}}/api/v1/admin/users/{{userId}}/role
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "role": "ADMIN"
+}
+
+### Change user role to CUSTOMER
+PUT {{authBaseUrl}}/api/v1/admin/users/{{userId}}/role
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER"
+}
+
+### Force logout user
+POST {{authBaseUrl}}/api/v1/admin/users/{{userId}}/logout
+Authorization: Bearer {{accessToken}}
+
+### Delete user by id
+DELETE {{authBaseUrl}}/api/v1/admin/users/{{userId}}
+Authorization: Bearer {{accessToken}}
+
+# =========================================================
+# OAUTH2 / RESOURCE SERVER SUPPORT
+# =========================================================
+
+### Get JWK Set
+GET {{authBaseUrl}}/oauth2/jwks
+
+### OpenID Connect discovery
+GET {{authBaseUrl}}/.well-known/openid-configuration
+
+# =========================================================
+# SWAGGER / ACTUATOR
+# =========================================================
+
+### Swagger UI
+GET {{authBaseUrl}}/swagger-ui.html
+
+### OpenAPI JSON
+GET {{authBaseUrl}}/v3/api-docs
+
+### Health
+GET {{authBaseUrl}}/actuator/health

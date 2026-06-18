@@ -12,6 +12,7 @@ on:
             - "product-service/**"
             - "inventory-service/**"
             - "cart-service/**"
+            - "order-service/**"
             - ".github/workflows/ci.yml"
 
     pull_request:
@@ -25,6 +26,7 @@ on:
             - "product-service/**"
             - "inventory-service/**"
             - "cart-service/**"
+            - "order-service/**"
             - ".github/workflows/ci.yml"
 
 jobs:
@@ -56,6 +58,28 @@ jobs:
                     --health-timeout=5s
                     --health-retries=5
 
+            zookeeper:
+                image: confluentinc/cp-zookeeper:7.6.1
+                env:
+                    ZOOKEEPER_CLIENT_PORT: 2181
+                    ZOOKEEPER_TICK_TIME: 2000
+                ports:
+                    - 2181:2181
+
+            kafka:
+                image: confluentinc/cp-kafka:7.6.1
+                env:
+                    KAFKA_BROKER_ID: 1
+                    KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+                    KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+                    KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+                    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+                    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+                    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+                    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+                ports:
+                    - 9092:9092
+
         steps:
             - name: Checkout Repository
               uses: actions/checkout@v4
@@ -68,13 +92,15 @@ jobs:
                   cache: maven
 
             - name: Build and Verify
-              run: mvn -pl auth-service,product-service,inventory-service,cart-service -am clean verify
+              run: mvn -pl auth-service,product-service,inventory-service,cart-service,order-service -am clean verify
               env:
                   SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/ecommerce
                   SPRING_DATASOURCE_USERNAME: postgres
                   SPRING_DATASOURCE_PASSWORD: postgres
                   SPRING_DATA_REDIS_HOST: localhost
                   SPRING_DATA_REDIS_PORT: 6379
+                  SPRING_KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+                  CONFIG_SERVER_URL: http://localhost:8888
 
     docker-build:
         runs-on: ubuntu-latest
@@ -92,7 +118,7 @@ jobs:
                   cache: maven
 
             - name: Package Project
-              run: mvn -pl auth-service,product-service,inventory-service,cart-service -am clean package -DskipTests
+              run: mvn -pl auth-service,product-service,inventory-service,cart-service,order-service -am clean package -DskipTests
 
             - name: Build Auth Image
               run: docker build -t auth-service ./auth-service
@@ -105,3 +131,6 @@ jobs:
 
             - name: Build Cart Image
               run: docker build -t cart-service ./cart-service
+
+            - name: Build Order Image
+              run: docker build -t order-service ./order-service

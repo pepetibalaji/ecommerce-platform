@@ -1,0 +1,133 @@
+# =========================================================
+# PRODUCT SERVICE API TESTS
+# =========================================================
+# Service: product-service
+# Base URL: http://localhost:8082
+#
+# Product public APIs:
+# - Get all products
+# - Get product by ID
+# - Filter by category and price
+#
+# Admin APIs:
+# - Create product
+# - Create products in bulk
+# - Update product
+# - Delete product
+# =========================================================
+
+@productBaseUrl = http://localhost:8082
+
+# Replace after Auth login with ADMIN token
+@adminAccessToken = paste_admin_access_token_here
+
+# Replace after creating/fetching product
+@productId = paste_product_id_here
+
+# =========================================================
+# PUBLIC PRODUCT APIs
+# =========================================================
+
+### Get all products
+GET {{productBaseUrl}}/api/v1/products?page=0&size=10
+
+### Get product by ID
+GET {{productBaseUrl}}/api/v1/products/{{productId}}
+
+### Filter products by category
+GET {{productBaseUrl}}/api/v1/products?category=Mobile&page=0&size=10
+
+### Filter products by price range
+GET {{productBaseUrl}}/api/v1/products?minPrice=100&maxPrice=1000&page=0&size=10
+
+### Filter products by category and price range
+GET {{productBaseUrl}}/api/v1/products?category=Mobile&minPrice=100&maxPrice=1000&page=0&size=10
+
+# =========================================================
+# ADMIN PRODUCT APIs
+# Requires ADMIN token
+# =========================================================
+
+### Create product
+POST {{productBaseUrl}}/api/v1/admin/products
+Authorization: Bearer {{adminAccessToken}}
+Content-Type: application/json
+
+{
+  "name": "iPhone 15",
+  "description": "Apple smartphone",
+  "price": 999.00,
+  "category": "Mobile",
+  "brand": "Apple"
+}
+
+### Create products in bulk
+POST {{productBaseUrl}}/api/v1/admin/products/bulk
+Authorization: Bearer {{adminAccessToken}}
+Content-Type: application/json
+
+[
+  {
+    "name": "iPhone 15",
+    "description": "Apple smartphone",
+    "price": 999.00,
+    "category": "Mobile",
+    "brand": "Apple"
+  },
+  {
+    "name": "Samsung Galaxy S24",
+    "description": "Samsung flagship smartphone",
+    "price": 899.00,
+    "category": "Mobile",
+    "brand": "Samsung"
+  }
+]
+
+### Update product
+PUT {{productBaseUrl}}/api/v1/admin/products/{{productId}}
+Authorization: Bearer {{adminAccessToken}}
+Content-Type: application/json
+
+{
+  "name": "iPhone 15 Pro",
+  "description": "Updated Apple smartphone",
+  "price": 1199.00,
+  "category": "Mobile",
+  "brand": "Apple"
+}
+
+### Delete product
+DELETE {{productBaseUrl}}/api/v1/admin/products/{{productId}}
+Authorization: Bearer {{adminAccessToken}}
+
+# =========================================================
+# SECURITY CHECKS
+# =========================================================
+
+### Create product without token - expected 401
+POST {{productBaseUrl}}/api/v1/admin/products
+Content-Type: application/json
+
+{
+  "name": "Unauthorized Product",
+  "description": "Should fail",
+  "price": 100.00,
+  "category": "Test",
+  "brand": "Test"
+}
+
+# =========================================================
+# SWAGGER / ACTUATOR
+# =========================================================
+
+### Swagger UI
+GET {{productBaseUrl}}/swagger-ui.html
+
+### OpenAPI JSON
+GET {{productBaseUrl}}/v3/api-docs
+
+### Health
+GET {{productBaseUrl}}/actuator/health
+
+### Prometheus metrics
+GET {{productBaseUrl}}/actuator/prometheus

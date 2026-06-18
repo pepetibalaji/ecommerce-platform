@@ -1,0 +1,99 @@
+# =========================================================
+# INVENTORY SERVICE API TESTS
+# =========================================================
+# Service: inventory-service
+# Base URL: http://localhost:8084
+#
+# Inventory Service has:
+# - Admin REST APIs
+# - gRPC APIs used internally by Order Service
+#
+# gRPC methods:
+# - ReserveStock()
+# - ReleaseStock()
+# - DeductStock()
+# - GetInventory()
+# =========================================================
+
+@inventoryBaseUrl = http://localhost:8084
+
+# Replace after Auth login with ADMIN token
+@adminAccessToken = paste_admin_access_token_here
+
+# Use an existing product ID from Product Service
+@productId = paste_product_id_here
+
+# =========================================================
+# ADMIN INVENTORY REST APIs
+# Requires ADMIN token
+# =========================================================
+
+### Create inventory
+POST {{inventoryBaseUrl}}/api/v1/admin/inventory
+Authorization: Bearer {{adminAccessToken}}
+Content-Type: application/json
+
+{
+  "productId": "{{productId}}",
+  "availableStock": 100
+}
+
+### Get inventory by product ID
+GET {{inventoryBaseUrl}}/api/v1/admin/inventory/{{productId}}
+Authorization: Bearer {{adminAccessToken}}
+
+### Update inventory stock
+PUT {{inventoryBaseUrl}}/api/v1/admin/inventory/{{productId}}
+Authorization: Bearer {{adminAccessToken}}
+Content-Type: application/json
+
+{
+  "availableStock": 200
+}
+
+# =========================================================
+# SECURITY CHECKS
+# =========================================================
+
+### Get inventory without token - expected 401
+GET {{inventoryBaseUrl}}/api/v1/admin/inventory/{{productId}}
+
+### Create inventory without token - expected 401
+POST {{inventoryBaseUrl}}/api/v1/admin/inventory
+Content-Type: application/json
+
+{
+  "productId": "{{productId}}",
+  "availableStock": 100
+}
+
+# =========================================================
+# SWAGGER / ACTUATOR
+# =========================================================
+
+### Swagger UI
+GET {{inventoryBaseUrl}}/swagger-ui.html
+
+### OpenAPI JSON
+GET {{inventoryBaseUrl}}/v3/api-docs
+
+### Health
+GET {{inventoryBaseUrl}}/actuator/health
+
+### Prometheus metrics
+GET {{inventoryBaseUrl}}/actuator/prometheus
+
+# =========================================================
+# GRPC NOTE
+# =========================================================
+# Inventory gRPC server runs on port 9091.
+#
+# Order Service calls Inventory Service through gRPC for:
+# - GetInventory
+# - ReserveStock
+# - ReleaseStock
+# - DeductStock
+#
+# Current REST APIs are admin-oriented.
+# Runtime order creation validates stock through gRPC.
+# =========================================================

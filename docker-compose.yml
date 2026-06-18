@@ -8,6 +8,8 @@ volumes:
     postgres-data:
     redis-data:
     kafka-data:
+    zookeeper-data:
+    zookeeper-log:
     grafana-data:
 
 services:
@@ -56,6 +58,9 @@ services:
             ZOOKEEPER_TICK_TIME: 2000
         ports:
             - "2181:2181"
+        volumes:
+            - zookeeper-data:/var/lib/zookeeper/data
+            - zookeeper-log:/var/lib/zookeeper/log
         networks:
             - ecommerce-network
 
