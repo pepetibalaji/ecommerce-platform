@@ -40,6 +40,7 @@ public class Order {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    @Builder.Default
     @OneToMany(
             mappedBy = "order",
             cascade = CascadeType.ALL,

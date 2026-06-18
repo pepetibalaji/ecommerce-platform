@@ -40,9 +40,7 @@ public class JwtTokenService {
             .claim("tokenVersion", user.getTokenVersion())
             .build();
 
-    return jwtEncoder.encode(
-            JwtEncoderParameters.from(claims)
-    ).getTokenValue();
+    return jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
     }
 
     public long getAccessTokenTtlSeconds() {

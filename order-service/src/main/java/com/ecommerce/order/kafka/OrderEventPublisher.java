@@ -1,19 +1,23 @@
 package com.ecommerce.order.kafka;
 
 import com.ecommerce.order.event.OrderCreatedEvent;
+import lombok.RequiredArgsConstructor;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 
-@Service
+@Component
+@RequiredArgsConstructor
 public class OrderEventPublisher {
 
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private static final String ORDER_CREATED_TOPIC = "order-created";
 
-    public OrderEventPublisher(KafkaTemplate<String, Object> kafkaTemplate) {
-        this.kafkaTemplate = kafkaTemplate;
-    }
+    private final KafkaTemplate<String, OrderCreatedEvent> kafkaTemplate;
 
     public void publishOrderCreated(OrderCreatedEvent event) {
-        kafkaTemplate.send(KafkaTopics.ORDER_CREATED, event.getOrderId().toString(), event);
+        kafkaTemplate.send(
+                ORDER_CREATED_TOPIC,
+                event.getOrderId().toString(),
+                event
+        );
     }
 }
