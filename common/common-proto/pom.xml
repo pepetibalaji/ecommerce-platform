@@ -57,6 +57,7 @@
 
                 <configuration>
                     <checkStaleness>true</checkStaleness>
+                    
                     <protocArtifact>
                         com.google.protobuf:protoc:4.31.1:exe:${os.detected.classifier}
                     </protocArtifact>

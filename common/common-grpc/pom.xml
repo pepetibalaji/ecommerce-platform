@@ -12,51 +12,48 @@
         <groupId>com.ecommerce</groupId>
         <artifactId>ecommerce-platform</artifactId>
         <version>1.0.0</version>
-
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
     <artifactId>common-grpc</artifactId>
-
     <packaging>jar</packaging>
+
+    <name>common-grpc</name>
+    <description>Shared gRPC client infrastructure for ecommerce platform services</description>
 
     <dependencies>
 
-        <!-- gRPC Spring Boot Server -->
+        <!-- Spring Boot auto-configuration support -->
         <dependency>
-            <groupId>net.devh</groupId>
-            <artifactId>grpc-server-spring-boot-starter</artifactId>
-            <version>3.1.0.RELEASE</version>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
         </dependency>
 
-        <!-- gRPC Services -->
+        <!-- Metadata generation for grpc.clients.* properties -->
         <dependency>
-            <groupId>io.grpc</groupId>
-            <artifactId>grpc-services</artifactId>
-            <version>1.73.0</version>
-        </dependency>
-
-        <!-- Shared Proto Contracts -->
-        <dependency>
-            <groupId>com.ecommerce</groupId>
-            <artifactId>common-proto</artifactId>
-            <version>1.0.0</version>
-        </dependency>
-
-        <!-- Lombok -->
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
             <optional>true</optional>
         </dependency>
 
+        <!-- gRPC channel implementation -->
         <dependency>
-            <groupId>net.devh</groupId>
-            <artifactId>grpc-client-spring-boot-starter</artifactId>
-            <version>3.1.0.RELEASE</version>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-netty-shaded</artifactId>
+        </dependency>
+
+        <!-- gRPC stub base classes -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-stub</artifactId>
+        </dependency>
+
+        <!-- For jakarta.annotation.PreDestroy -->
+        <dependency>
+            <groupId>jakarta.annotation</groupId>
+            <artifactId>jakarta.annotation-api</artifactId>
         </dependency>
 
     </dependencies>
 
 </project>
-
