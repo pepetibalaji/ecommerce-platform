@@ -28,6 +28,7 @@
         <module>common/common-proto</module>
         <module>common/common-grpc</module>
         <module>common/common-redis</module>
+        <module>common/common-events</module>
     </modules>
 
     <properties>
