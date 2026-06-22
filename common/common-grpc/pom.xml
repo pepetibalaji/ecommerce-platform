@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="
          http://maven.apache.org/POM/4.0.0
-         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         http://apache.org">
 
     <modelVersion>4.0.0</modelVersion>
 
@@ -36,19 +35,19 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- gRPC channel implementation -->
+        <!-- gRPC channel implementation (Versions managed via root parent BOM) -->
         <dependency>
             <groupId>io.grpc</groupId>
             <artifactId>grpc-netty-shaded</artifactId>
         </dependency>
 
-        <!-- gRPC stub base classes -->
+        <!-- gRPC stub base classes (Versions managed via root parent BOM) -->
         <dependency>
             <groupId>io.grpc</groupId>
             <artifactId>grpc-stub</artifactId>
         </dependency>
 
-        <!-- For jakarta.annotation.PreDestroy -->
+        <!-- For jakarta.annotation.PreDestroy (Aligned cleanly with Spring Boot 3 namespace) -->
         <dependency>
             <groupId>jakarta.annotation</groupId>
             <artifactId>jakarta.annotation-api</artifactId>
