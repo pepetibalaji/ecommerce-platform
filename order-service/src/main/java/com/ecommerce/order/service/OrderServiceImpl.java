@@ -1,9 +1,14 @@
 package com.ecommerce.order.service;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
+import com.ecommerce.common.events.order.OrderCreatedEvent;
+import com.ecommerce.common.exception.BadRequestException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.order.dto.CreateOrderItemRequest;
 import com.ecommerce.order.dto.CreateOrderRequest;
@@ -20,7 +25,9 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.ecommerce.common.exception.BadRequestException;
+
+import com.ecommerce.common.events.order.OrderCreatedEvent;
+import com.ecommerce.common.events.order.OrderItemEvent;
 
 @Service
 @Transactional
@@ -60,7 +67,8 @@ public class OrderServiceImpl implements OrderService {
                 order.getItems().add(item);
 
                 totalAmount = totalAmount.add(
-                        itemRequest.getPrice().multiply(BigDecimal.valueOf(itemRequest.getQuantity()))
+                        itemRequest.getPrice()
+                                .multiply(BigDecimal.valueOf(itemRequest.getQuantity()))
                 );
             }
 
@@ -68,15 +76,9 @@ public class OrderServiceImpl implements OrderService {
             order.setStatus(OrderStatus.PENDING);
 
             Order saved = orderRepository.save(order);
-            orderEventPublisher.publishOrderCreated(
-                    new com.ecommerce.order.event.OrderCreatedEvent(
-                            saved.getId(),
-                            saved.getUserId(),
-                            saved.getTotalAmount(),
-                            saved.getStatus(),
-                            saved.getCreatedAt()
-                    )
-            );
+
+            publishOrderCreatedEvent(saved);
+
             return toResponse(saved);
         } catch (RuntimeException ex) {
             releaseReservedStock(request);
@@ -125,6 +127,7 @@ public class OrderServiceImpl implements OrderService {
         releaseReservedStock(order);
 
         order.setStatus(OrderStatus.CANCELLED);
+
         return toResponse(orderRepository.save(order));
     }
 
@@ -146,15 +149,40 @@ public class OrderServiceImpl implements OrderService {
         validateStatusTransition(order.getStatus(), request.getStatus());
 
         order.setStatus(request.getStatus());
+
         return toResponse(orderRepository.save(order));
     }
+
+    private void publishOrderCreatedEvent(Order saved) {
+    List<OrderItemEvent> eventItems = saved.getItems().stream()
+            .map(item -> new OrderItemEvent(
+                    item.getProductId(),
+                    item.getQuantity(),
+                    item.getPrice(),
+                    item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity()))
+            ))
+            .toList();
+
+    OrderCreatedEvent event = new OrderCreatedEvent(
+            saved.getId(),
+            saved.getUserId(),
+            saved.getTotalAmount(),
+            eventItems,
+            saved.getId().toString(),
+            null
+    );
+
+    orderEventPublisher.publishOrderCreated(event);
+}
 
     private void validateAndReserveStock(CreateOrderRequest request) {
         for (CreateOrderItemRequest itemRequest : request.getItems()) {
             var inventory = inventoryGrpcClient.getInventory(itemRequest.getProductId());
 
             if (inventory.getAvailableStock() < itemRequest.getQuantity()) {
-                throw new BadRequestException("Insufficient stock for product: " + itemRequest.getProductId());
+                throw new BadRequestException(
+                        "Insufficient stock for product: " + itemRequest.getProductId()
+                );
             }
         }
 
@@ -202,24 +230,32 @@ public class OrderServiceImpl implements OrderService {
 
         switch (currentStatus) {
             case PENDING -> {
-                if (targetStatus != OrderStatus.CONFIRMED &&
-                        targetStatus != OrderStatus.CANCELLED) {
-                    throw new IllegalStateException(
+                if (targetStatus != OrderStatus.CONFIRMED
+                        && targetStatus != OrderStatus.CANCELLED) {
+                    throw new BadRequestException(
                             "Invalid transition from PENDING to " + targetStatus
                     );
                 }
             }
             case CONFIRMED -> {
                 if (targetStatus != OrderStatus.CANCELLED) {
-                    throw new IllegalStateException(
+                    throw new BadRequestException(
                             "Invalid transition from CONFIRMED to " + targetStatus
                     );
                 }
             }
-            case CANCELLED -> throw new IllegalStateException(
+            case CANCELLED -> throw new BadRequestException(
                     "Cancelled orders cannot change state"
             );
         }
+    }
+
+    private Instant toInstant(LocalDateTime dateTime) {
+        if (dateTime == null) {
+            return Instant.now();
+        }
+
+        return dateTime.toInstant(ZoneOffset.UTC);
     }
 
     private OrderResponse toResponse(Order order) {

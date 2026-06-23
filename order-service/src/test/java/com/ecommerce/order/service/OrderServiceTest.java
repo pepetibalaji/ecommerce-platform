@@ -90,8 +90,14 @@ class OrderServiceTest {
                 .when(inventoryGrpcClient)
                 .reserveStock(productId, 2);
 
+        UUID orderId = UUID.randomUUID();
+
         when(orderRepository.save(any(Order.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                .thenAnswer(invocation -> {
+                Order order = invocation.getArgument(0);
+                order.setId(orderId);
+                return order;
+                });
 
         OrderResponse response =
                 orderService.createOrder(userId, request);

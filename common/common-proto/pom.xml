@@ -17,7 +17,11 @@
     <artifactId>common-proto</artifactId>
     <packaging>jar</packaging>
 
+    <name>common-proto</name>
+    <description>Shared schema contract compilation module using protocol buffers</description>
+
     <dependencies>
+        <!-- Core generated contract extensions (Versions managed via root parent BOM) -->
         <dependency>
             <groupId>io.grpc</groupId>
             <artifactId>grpc-stub</artifactId>
@@ -33,41 +37,43 @@
             <artifactId>protobuf-java</artifactId>
         </dependency>
 
+        <!-- Upgraded to Jakarta namespace to align cleanly with Spring Boot 3.x requirements -->
+        <dependency>
+            <groupId>jakarta.annotation</groupId>
+            <artifactId>jakarta.annotation-api</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>javax.annotation</groupId>
             <artifactId>javax.annotation-api</artifactId>
             <version>1.3.2</version>
+            <scope>provided</scope> <!-- Provided ensures it is only used during compilation -->
         </dependency>
     </dependencies>
 
     <build>
         <extensions>
+            <!-- Platform environment resolution detection tool -->
             <extension>
                 <groupId>kr.motd.maven</groupId>
                 <artifactId>os-maven-plugin</artifactId>
-                <version>1.7.1</version>
             </extension>
         </extensions>
 
         <plugins>
+            <!-- Standard multi-module protobuf compiler engine -->
             <plugin>
                 <groupId>org.xolstice.maven.plugins</groupId>
                 <artifactId>protobuf-maven-plugin</artifactId>
-                <version>0.6.1</version>
-
+                <version>${protobuf.maven.plugin.version}</version>
                 <configuration>
-                    <checkStaleness>true</checkStaleness>
-                    <protocArtifact>
-                        com.google.protobuf:protoc:4.31.1:exe:${os.detected.classifier}
-                    </protocArtifact>
-
+                    <protocArtifact>com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}</protocArtifact>
                     <pluginId>grpc-java</pluginId>
-
-                    <pluginArtifact>
-                        io.grpc:protoc-gen-grpc-java:1.73.0:exe:${os.detected.classifier}
-                    </pluginArtifact>
+                    <pluginArtifact>io.grpc:protoc-gen-grpc-java:${grpc.version}:exe:${os.detected.classifier}</pluginArtifact>
+                    <!-- Aligns generated outputs directly to project source classpaths -->
+                    <outputDirectory>${project.build.directory}/generated-sources/protobuf/java</outputDirectory>
+                    <clearOutputDirectory>false</clearOutputDirectory>
                 </configuration>
-
                 <executions>
                     <execution>
                         <goals>

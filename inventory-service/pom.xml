@@ -114,6 +114,12 @@
             <version>1.0.0</version>
         </dependency>
 
+        <!-- Shared gRPC Server Ecosystem Starter (Inherits version 3.1.1.RELEASE from Parent BOM) -->
+        <dependency>
+            <groupId>net.devh</groupId>
+            <artifactId>grpc-server-spring-boot-starter</artifactId>
+        </dependency>
+
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
@@ -170,12 +176,10 @@
 
     <build>
         <plugins>
-
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
-
         </plugins>
     </build>
 
