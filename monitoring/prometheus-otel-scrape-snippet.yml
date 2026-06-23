@@ -1,0 +1,4 @@
+  - job_name: otel-collector-exported-metrics
+    static_configs:
+      - targets:
+          - otel-collector:8889
