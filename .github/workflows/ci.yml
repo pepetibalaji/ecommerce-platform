@@ -8,11 +8,14 @@ on:
         paths:
             - "pom.xml"
             - "common/**"
+            - "gateway-service/**"
             - "auth-service/**"
             - "product-service/**"
             - "inventory-service/**"
             - "cart-service/**"
             - "order-service/**"
+            - "docker-compose.yml"
+            - "monitoring/**"
             - ".github/workflows/ci.yml"
 
     pull_request:
@@ -22,20 +25,35 @@ on:
         paths:
             - "pom.xml"
             - "common/**"
+            - "gateway-service/**"
             - "auth-service/**"
             - "product-service/**"
             - "inventory-service/**"
             - "cart-service/**"
             - "order-service/**"
+            - "docker-compose.yml"
+            - "monitoring/**"
             - ".github/workflows/ci.yml"
+
+permissions:
+    contents: read
+
+concurrency:
+    group: ci-${{ github.ref }}
+    cancel-in-progress: true
 
 jobs:
     build:
+        name: Build and Verify
         runs-on: ubuntu-latest
+
+        env:
+            MAVEN_MODULES: gateway-service,auth-service,product-service,inventory-service,cart-service,order-service
+            KAFKA_IMAGE: apache/kafka:4.3.0
 
         services:
             postgres:
-                image: postgres:16
+                image: postgres:16.14-alpine
                 env:
                     POSTGRES_DB: ecommerce
                     POSTGRES_USER: postgres
@@ -49,7 +67,7 @@ jobs:
                     --health-retries=5
 
             redis:
-                image: redis:7
+                image: redis:8.8-alpine
                 ports:
                     - 6379:6379
                 options: >-
@@ -58,28 +76,6 @@ jobs:
                     --health-timeout=5s
                     --health-retries=5
 
-            zookeeper:
-                image: confluentinc/cp-zookeeper:7.6.1
-                env:
-                    ZOOKEEPER_CLIENT_PORT: 2181
-                    ZOOKEEPER_TICK_TIME: 2000
-                ports:
-                    - 2181:2181
-
-            kafka:
-                image: confluentinc/cp-kafka:7.6.1
-                env:
-                    KAFKA_BROKER_ID: 1
-                    KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-                    KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-                    KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-                    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
-                    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-                    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-                    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-                ports:
-                    - 9092:9092
-
         steps:
             - name: Checkout Repository
               uses: actions/checkout@v4
@@ -88,23 +84,95 @@ jobs:
               uses: actions/setup-java@v4
               with:
                   java-version: "21"
-                  distribution: "temurin"
+                  distribution: temurin
                   cache: maven
 
+            - name: Validate Docker Compose
+              run: docker compose config
+
+            - name: Start Kafka KRaft
+              run: |
+                  docker run -d \
+                    --name ecommerce-ci-kafka \
+                    -p 9092:9092 \
+                    -e CLUSTER_ID=4L6g3nShT-eMCtK--X86sw \
+                    -e KAFKA_NODE_ID=1 \
+                    -e KAFKA_PROCESS_ROLES=broker,controller \
+                    -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT \
+                    -e KAFKA_LISTENERS=CONTROLLER://:9093,PLAINTEXT_HOST://:9092 \
+                    -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT_HOST://localhost:9092 \
+                    -e KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+                    -e KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093 \
+                    -e KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT_HOST \
+                    -e KAFKA_AUTO_CREATE_TOPICS_ENABLE=false \
+                    -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+                    -e KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 \
+                    -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 \
+                    -e KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0 \
+                    -e KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR=1 \
+                    -e KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR=1 \
+                    "$KAFKA_IMAGE"
+
+            - name: Wait for Kafka
+              run: |
+                  for i in {1..40}; do
+                    if docker exec ecommerce-ci-kafka /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1; then
+                      echo "Kafka is ready"
+                      exit 0
+                    fi
+
+                    echo "Waiting for Kafka... attempt $i"
+                    sleep 5
+                  done
+
+                  echo "Kafka failed to become ready"
+                  docker logs ecommerce-ci-kafka
+                  exit 1
+
+            - name: Create Kafka Topics
+              run: |
+                  docker exec ecommerce-ci-kafka /bin/bash -lc "
+                    set -e
+
+                    /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic order-created --partitions 3 --replication-factor 1
+                    /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic inventory-reserved --partitions 3 --replication-factor 1
+                    /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic payment-success --partitions 3 --replication-factor 1
+                    /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic payment-failed --partitions 3 --replication-factor 1
+
+                    /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic order-dlq --partitions 1 --replication-factor 1
+                    /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic payment-dlq --partitions 1 --replication-factor 1
+
+                    /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
+                  "
+
             - name: Build and Verify
-              run: mvn -pl auth-service,product-service,inventory-service,cart-service,order-service -am clean verify
+              run: mvn -pl "$MAVEN_MODULES" -am clean verify
               env:
+                  SPRING_PROFILES_ACTIVE: ci
+
                   SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/ecommerce
                   SPRING_DATASOURCE_USERNAME: postgres
                   SPRING_DATASOURCE_PASSWORD: postgres
+
                   SPRING_DATA_REDIS_HOST: localhost
                   SPRING_DATA_REDIS_PORT: 6379
+
                   SPRING_KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+                  KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+
                   CONFIG_SERVER_URL: http://localhost:8888
+                  SPRING_CONFIG_IMPORT: optional:configserver:http://localhost:8888
+
+                  MANAGEMENT_TRACING_ENABLED: "false"
+                  OTEL_TRACES_ENDPOINT: http://localhost:4318/v1/traces
 
     docker-build:
+        name: Docker Build
         runs-on: ubuntu-latest
         needs: build
+
+        env:
+            MAVEN_MODULES: gateway-service,auth-service,product-service,inventory-service,cart-service,order-service
 
         steps:
             - name: Checkout Repository
@@ -114,11 +182,14 @@ jobs:
               uses: actions/setup-java@v4
               with:
                   java-version: "21"
-                  distribution: "temurin"
+                  distribution: temurin
                   cache: maven
 
             - name: Package Project
-              run: mvn -pl auth-service,product-service,inventory-service,cart-service,order-service -am clean package -DskipTests
+              run: mvn -pl "$MAVEN_MODULES" -am clean package -DskipTests
+
+            - name: Build Gateway Image
+              run: docker build -t gateway-service ./gateway-service
 
             - name: Build Auth Image
               run: docker build -t auth-service ./auth-service
