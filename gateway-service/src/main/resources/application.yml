@@ -1,7 +1,3 @@
-server:
-    port: ${GATEWAY_PORT:8080}
-    shutdown: graceful
-
 spring:
     application:
         name: gateway-service
@@ -11,38 +7,3 @@ spring:
 
     config:
         import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
-
-    cloud:
-        config:
-            fail-fast: false
-            retry:
-                max-attempts: 3
-                initial-interval: 1000
-                multiplier: 1.5
-                max-interval: 5000
-
-management:
-    endpoints:
-        web:
-            exposure:
-                include: health,info,metrics,prometheus,gateway
-    endpoint:
-        health:
-            show-details: always
-            probes:
-                enabled: true
-        gateway:
-            enabled: true
-    tracing:
-        sampling:
-            probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
-    otlp:
-        tracing:
-            endpoint: ${OTEL_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
-    metrics:
-        tags:
-            application: ${spring.application.name}
-
-logging:
-    pattern:
-        console: "%d{yyyy-MM-dd HH:mm:ss} %-5level [${spring.application.name}] [traceId=%X{traceId}] [spanId=%X{spanId}] - %msg%n"

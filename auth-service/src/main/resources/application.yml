@@ -2,8 +2,8 @@ spring:
     application:
         name: auth-service
 
+    profiles:
+        active: ${SPRING_PROFILES_ACTIVE:dev}
+
     config:
         import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
-
-    profiles:
-        active: dev

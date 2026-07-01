@@ -16,13 +16,17 @@ import org.springframework.security.oauth2.server.authorization.settings.Authori
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 
 @Configuration
 public class AuthorizationServerConfig {
 
     @Bean
     @Order(1)
-    public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain authorizationServerSecurityFilterChain(
+            HttpSecurity http,
+            ResponseTraceFilter responseTraceFilter) throws Exception { // Injected here
+        
         OAuth2AuthorizationServerConfigurer authorizationServerConfigurer =
                 OAuth2AuthorizationServerConfigurer.authorizationServer();
 
@@ -30,6 +34,8 @@ public class AuthorizationServerConfig {
                 .securityMatcher(authorizationServerConfigurer.getEndpointsMatcher())
                 .with(authorizationServerConfigurer, configurer ->
                         configurer.oidc(Customizer.withDefaults()))
+                // Binds trace header injection to incoming protocol parsing
+                .addFilterBefore(responseTraceFilter, SecurityContextHolderFilter.class) 
                 .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
                 .csrf(csrf -> csrf.ignoringRequestMatchers(
                         authorizationServerConfigurer.getEndpointsMatcher()

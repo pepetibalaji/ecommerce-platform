@@ -7,6 +7,7 @@ import java.util.Optional;
 import org.springframework.cloud.gateway.filter.ratelimit.KeyResolver;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -19,6 +20,7 @@ import reactor.core.publisher.Mono;
 public class GatewayRateLimitConfig {
 
     @Bean
+    @Primary
     public KeyResolver userOrIpKeyResolver() {
         return exchange -> exchange.getPrincipal()
                 .cast(Principal.class)

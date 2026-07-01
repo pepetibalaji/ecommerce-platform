@@ -10,6 +10,7 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 
 @Configuration
 @EnableMethodSecurity
@@ -33,6 +34,9 @@ public class SecurityConfig {
     };
 
     private final JwtAuthenticationConverter jwtAuthenticationConverter;
+    
+    // Lombok will automatically inject this filter into the constructor
+    private final ResponseTraceFilter responseTraceFilter; 
 
     @Bean
     public SecurityFilterChain productSecurityFilterChain(HttpSecurity http)
@@ -44,6 +48,9 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
+                
+                // Mounts the tracing logic securely right at the entrance of the chain
+                .addFilterBefore(responseTraceFilter, SecurityContextHolderFilter.class)
 
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(SWAGGER_WHITELIST).permitAll()
