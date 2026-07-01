@@ -9,7 +9,6 @@ import io.swagger.v3.oas.annotations.info.License;
 import io.swagger.v3.oas.annotations.servers.Server;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.security.SecurityScheme;
-import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springdoc.core.models.GroupedOpenApi;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,7 +29,7 @@ import org.springframework.context.annotation.Configuration;
                 )
         ),
         servers = {
-                @Server(url = "http://localhost:8081", description = "Local development server")
+                @Server(url = "/", description = "Relative server for Gateway Swagger aggregation")
         },
         security = {
                 @SecurityRequirement(name = "bearerAuth")
@@ -53,12 +52,4 @@ public class SwaggerConfig {
                 .pathsToMatch("/api/v1/**")
                 .build();
     }
-
-    @Bean
-    public OpenApiCustomizer openApiCustomizer() {
-        return openApi -> {
-                openApi.getInfo().setTitle("Ecommerce Auth Service API");
-                openApi.getInfo().setVersion("v1");
-        };
-        }
 }

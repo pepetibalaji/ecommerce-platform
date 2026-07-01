@@ -10,21 +10,15 @@ import com.ecommerce.auth.entity.enums.Role;
 import com.ecommerce.auth.entity.enums.UserStatus;
 import com.ecommerce.auth.service.AuthService;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
+import io.micrometer.tracing.Tracer; // CRITICAL: Import the micrometer Tracer
 import org.junit.jupiter.api.Test;
-
 import org.springframework.beans.factory.annotation.Autowired;
-
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-
 import org.springframework.boot.test.mock.mockito.MockBean;
-
 import org.springframework.http.MediaType;
-
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
@@ -34,9 +28,7 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -61,6 +53,10 @@ class AuthControllerTest {
 
     @MockBean
     private JwtDecoder jwtDecoder;
+
+    // CRITICAL FIX: Mocks the telemetry tracer infrastructure for clean slice-testing execution
+    @MockBean
+    private Tracer tracer;
 
     @Test
     void shouldRegisterUser() throws Exception {

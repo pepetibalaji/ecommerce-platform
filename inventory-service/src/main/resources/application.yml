@@ -1,7 +1,9 @@
 spring:
     application:
         name: inventory-service
+
     profiles:
-        active: dev
+        active: ${SPRING_PROFILES_ACTIVE:dev}
+
     config:
-        import: "optional:configserver:http://localhost:8888"
+        import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}

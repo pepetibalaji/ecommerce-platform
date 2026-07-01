@@ -11,10 +11,12 @@ public abstract class AbstractDomainEvent {
     private Instant occurredAt;
     private String correlationId;
     private String traceId;
+    private String schemaVersion;
 
     protected AbstractDomainEvent() {
         this.eventId = UUID.randomUUID();
         this.occurredAt = Instant.now();
+        this.schemaVersion = "1.0";
     }
 
     protected AbstractDomainEvent(
@@ -29,6 +31,7 @@ public abstract class AbstractDomainEvent {
         this.occurredAt = Instant.now();
         this.correlationId = correlationId;
         this.traceId = traceId;
+        this.schemaVersion = "1.0";
     }
 
     public UUID getEventId() {
@@ -77,5 +80,13 @@ public abstract class AbstractDomainEvent {
 
     public void setTraceId(String traceId) {
         this.traceId = traceId;
+    }
+
+    public String getSchemaVersion() {
+        return schemaVersion;
+    }
+
+    public void setSchemaVersion(String schemaVersion) {
+        this.schemaVersion = schemaVersion;
     }
 }

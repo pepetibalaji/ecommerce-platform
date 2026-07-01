@@ -3,6 +3,7 @@ package com.ecommerce.common.events.notification;
 import com.ecommerce.common.events.core.AbstractDomainEvent;
 import com.ecommerce.common.events.core.EventSources;
 import com.ecommerce.common.events.core.EventTypes;
+
 import java.util.UUID;
 
 public class NotificationRequestedEvent extends AbstractDomainEvent {
@@ -17,7 +18,7 @@ public class NotificationRequestedEvent extends AbstractDomainEvent {
     public NotificationRequestedEvent() {
         super(
                 EventTypes.NOTIFICATION_REQUESTED,
-                EventSources.NOTIFICATION_SERVICE,
+                EventSources.SYSTEM,
                 null,
                 null
         );
@@ -33,9 +34,33 @@ public class NotificationRequestedEvent extends AbstractDomainEvent {
             String correlationId,
             String traceId
     ) {
+        this(
+                notificationId,
+                userId,
+                orderId,
+                channel,
+                subject,
+                message,
+                EventSources.ORDER_SERVICE,
+                correlationId,
+                traceId
+        );
+    }
+
+    public NotificationRequestedEvent(
+            UUID notificationId,
+            UUID userId,
+            UUID orderId,
+            String channel,
+            String subject,
+            String message,
+            String source,
+            String correlationId,
+            String traceId
+    ) {
         super(
                 EventTypes.NOTIFICATION_REQUESTED,
-                EventSources.NOTIFICATION_SERVICE,
+                source,
                 correlationId,
                 traceId
         );

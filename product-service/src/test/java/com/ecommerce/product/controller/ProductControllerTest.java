@@ -13,6 +13,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import io.micrometer.tracing.Tracer; 
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -39,6 +40,9 @@ class ProductControllerTest {
 
     @MockBean
     private ProductService productService;
+
+    @MockBean
+    private Tracer tracer;
 
     @Test
     void shouldCreateProduct() throws Exception {

@@ -8,7 +8,10 @@ import io.swagger.v3.oas.annotations.info.Info;
 import io.swagger.v3.oas.annotations.info.License;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.security.SecurityScheme;
+import io.swagger.v3.oas.annotations.servers.Server;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.List;
 
 @Configuration
 @OpenAPIDefinition(
@@ -24,6 +27,9 @@ import org.springframework.context.annotation.Configuration;
                         name = "Proprietary"
                 )
         ),
+        servers = {
+                @Server(url = "/", description = "Relative server for Gateway Swagger aggregation")
+        },
         security = {
                 @SecurityRequirement(name = "bearerAuth")
         }
