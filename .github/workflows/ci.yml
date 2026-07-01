@@ -44,7 +44,7 @@ concurrency:
 
 jobs:
     build:
-        name: Build and Verify
+        name: build
         runs-on: ubuntu-latest
 
         env:
@@ -167,7 +167,7 @@ jobs:
                   OTEL_TRACES_ENDPOINT: http://localhost:4318/v1/traces
 
     docker-build:
-        name: Docker Build
+        name: docker-build
         runs-on: ubuntu-latest
         needs: build
 
