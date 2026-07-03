@@ -15,44 +15,63 @@
     <description>Production-grade event-driven ecommerce microservices platform</description>
 
     <modules>
-        <module>config-server</module>
-        <module>gateway-service</module>
-        <module>auth-service</module>
-        <module>product-service</module>
-        <module>inventory-service</module>
-        <module>cart-service</module>
-        <module>order-service</module>
+        <!-- Shared modules -->
         <module>common/common-exception</module>
         <module>common/common-security</module>
         <module>common/common-proto</module>
         <module>common/common-grpc</module>
         <module>common/common-redis</module>
         <module>common/common-events</module>
+
+        <!-- Platform services -->
+        <module>config-server</module>
+        <module>gateway-service</module>
+
+        <!-- Business services -->
+        <module>auth-service</module>
+        <module>product-service</module>
+        <module>inventory-service</module>
+        <module>cart-service</module>
+        <module>order-service</module>
+        <module>payment-service</module>
     </modules>
 
     <properties>
+        <!-- Java -->
         <java.version>21</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <maven.compiler.release>${java.version}</maven.compiler.release>
 
+        <!-- Spring -->
         <spring.boot.version>3.5.14</spring.boot.version>
         <spring.cloud.version>2025.0.2</spring.cloud.version>
         <springdoc.version>2.8.17</springdoc.version>
 
-        <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
-        <jacoco.plugin.version>0.8.12</jacoco.plugin.version>
+        <!-- Mapping / Codegen -->
+        <mapstruct.version>1.6.3</mapstruct.version>
+        <lombok.version>1.18.38</lombok.version>
+        <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
 
+        <!-- gRPC / Protobuf -->
         <grpc.version>1.68.0</grpc.version>
         <net.devh.grpc.version>3.1.0.RELEASE</net.devh.grpc.version>
         <protobuf.version>3.25.5</protobuf.version>
         <protobuf.maven.plugin.version>0.6.1</protobuf.maven.plugin.version>
         <os.maven.plugin.version>1.7.1</os.maven.plugin.version>
+
+        <!-- Maven plugins -->
+        <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
+        <maven.surefire.plugin.version>3.5.2</maven.surefire.plugin.version>
+        <maven.failsafe.plugin.version>3.5.2</maven.failsafe.plugin.version>
+        <jacoco.plugin.version>0.8.12</jacoco.plugin.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <!-- Spring Boot BOM -->
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
@@ -61,6 +80,7 @@
                 <scope>import</scope>
             </dependency>
 
+            <!-- Spring Cloud BOM -->
             <dependency>
                 <groupId>org.springframework.cloud</groupId>
                 <artifactId>spring-cloud-dependencies</artifactId>
@@ -69,6 +89,7 @@
                 <scope>import</scope>
             </dependency>
 
+            <!-- gRPC BOM -->
             <dependency>
                 <groupId>io.grpc</groupId>
                 <artifactId>grpc-bom</artifactId>
@@ -77,6 +98,7 @@
                 <scope>import</scope>
             </dependency>
 
+            <!-- Springdoc -->
             <dependency>
                 <groupId>org.springdoc</groupId>
                 <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
@@ -89,6 +111,7 @@
                 <version>${springdoc.version}</version>
             </dependency>
 
+            <!-- gRPC Spring Boot starters -->
             <dependency>
                 <groupId>net.devh</groupId>
                 <artifactId>grpc-server-spring-boot-starter</artifactId>
@@ -101,12 +124,75 @@
                 <version>${net.devh.grpc.version}</version>
             </dependency>
 
+            <!-- Protobuf -->
             <dependency>
                 <groupId>com.google.protobuf</groupId>
                 <artifactId>protobuf-java</artifactId>
                 <version>${protobuf.version}</version>
             </dependency>
-            
+
+            <!-- MapStruct -->
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct</artifactId>
+                <version>${mapstruct.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct-processor</artifactId>
+                <version>${mapstruct.version}</version>
+            </dependency>
+
+            <!-- Lombok -->
+            <dependency>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <version>${lombok.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok-mapstruct-binding</artifactId>
+                <version>${lombok-mapstruct-binding.version}</version>
+            </dependency>
+
+            <!-- Internal common modules -->
+            <dependency>
+                <groupId>com.ecommerce</groupId>
+                <artifactId>common-exception</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.ecommerce</groupId>
+                <artifactId>common-security</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.ecommerce</groupId>
+                <artifactId>common-proto</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.ecommerce</groupId>
+                <artifactId>common-grpc</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.ecommerce</groupId>
+                <artifactId>common-redis</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.ecommerce</groupId>
+                <artifactId>common-events</artifactId>
+                <version>${project.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -121,6 +207,7 @@
 
         <pluginManagement>
             <plugins>
+                <!-- Java compiler + Lombok + MapStruct support -->
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
@@ -128,25 +215,68 @@
                     <configuration>
                         <release>${maven.compiler.release}</release>
                         <parameters>true</parameters>
+
+                        <compilerArgs>
+                            <arg>-Amapstruct.defaultComponentModel=spring</arg>
+                        </compilerArgs>
+
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                                <version>${lombok.version}</version>
+                            </path>
+
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok-mapstruct-binding</artifactId>
+                                <version>${lombok-mapstruct-binding.version}</version>
+                            </path>
+
+                            <path>
+                                <groupId>org.mapstruct</groupId>
+                                <artifactId>mapstruct-processor</artifactId>
+                                <version>${mapstruct.version}</version>
+                            </path>
+                        </annotationProcessorPaths>
                     </configuration>
                 </plugin>
 
+                <!-- Spring Boot executable JAR plugin.
+                     Service modules should declare this plugin and enable repackage. -->
                 <plugin>
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
                     <version>${spring.boot.version}</version>
                 </plugin>
 
+                <!-- Unit tests -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven.surefire.plugin.version}</version>
+                </plugin>
+
+                <!-- Integration tests -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <version>${maven.failsafe.plugin.version}</version>
+                </plugin>
+
+                <!-- Test coverage -->
                 <plugin>
                     <groupId>org.jacoco</groupId>
                     <artifactId>jacoco-maven-plugin</artifactId>
                     <version>${jacoco.plugin.version}</version>
                     <executions>
                         <execution>
+                            <id>prepare-agent</id>
                             <goals>
                                 <goal>prepare-agent</goal>
                             </goals>
                         </execution>
+
                         <execution>
                             <id>report</id>
                             <phase>test</phase>
@@ -157,6 +287,8 @@
                     </executions>
                 </plugin>
 
+                <!-- Protobuf/gRPC generation.
+                     common-proto should declare and configure this plugin. -->
                 <plugin>
                     <groupId>org.xolstice.maven.plugins</groupId>
                     <artifactId>protobuf-maven-plugin</artifactId>
