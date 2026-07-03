@@ -1,106 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         xsi:schemaLocation="
+         http://maven.apache.org/POM/4.0.0
          https://maven.apache.org/xsd/maven-4.0.0.xsd">
 
     <modelVersion>4.0.0</modelVersion>
-
-    <!-- ===================================================== -->
-    <!-- Parent -->
-    <!-- ===================================================== -->
 
     <parent>
         <groupId>com.ecommerce</groupId>
         <artifactId>ecommerce-platform</artifactId>
         <version>1.0.0</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <!-- ===================================================== -->
-    <!-- Project -->
-    <!-- ===================================================== -->
-
     <artifactId>gateway-service</artifactId>
+    <packaging>jar</packaging>
 
     <name>gateway-service</name>
-
-    <description>
-        API Gateway for ecommerce platform
-    </description>
-
-    <!-- ===================================================== -->
-    <!-- Dependencies -->
-    <!-- ===================================================== -->
+    <description>API Gateway for Ecommerce Platform</description>
 
     <dependencies>
-
-        <!-- ===================================================== -->
-        <!-- Spring Cloud Gateway - WebFlux Runtime -->
-        <!-- ===================================================== -->
-
+        <!-- Spring Cloud Gateway WebFlux Runtime -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-gateway-server-webflux</artifactId>
         </dependency>
 
-        <!-- ===================================================== -->
         <!-- Config Server Client -->
-        <!-- ===================================================== -->
-
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-config</artifactId>
         </dependency>
 
-        <!-- ===================================================== -->
-        <!-- OAuth2 Resource Server / JWT Validation -->
-        <!-- ===================================================== -->
+        <!-- Security / OAuth2 Resource Server -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
 
-        <!-- ===================================================== -->
-        <!-- Redis Reactive - Gateway Rate Limiting -->
-        <!-- Required for RedisRateLimiter in Spring Cloud Gateway -->
-        <!-- ===================================================== -->
-
+        <!-- Redis Reactive for Gateway Rate Limiting -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
         </dependency>
 
-        <!-- ===================================================== -->
         <!-- Actuator -->
-        <!-- Health, readiness, liveness, metrics, prometheus -->
-        <!-- ===================================================== -->
-
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- Swagger / OpenAPI for WebFlux -->
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webflux-ui</artifactId>
-            <version>2.8.17</version>
         </dependency>
 
-        <!-- ===================================================== -->
-        <!-- Prometheus Metrics -->
-        <!-- Exposes /actuator/prometheus -->
-        <!-- ===================================================== -->
-
+        <!-- Observability: Prometheus + OpenTelemetry -->
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
-
-        <!-- ===================================================== -->
-        <!-- OpenTelemetry Tracing -->
-        <!-- Replaces Brave + Zipkin reporter -->
-        <!-- Sends traces to OpenTelemetry Collector over OTLP -->
-        <!-- ===================================================== -->
 
         <dependency>
             <groupId>io.micrometer</groupId>
@@ -112,10 +78,14 @@
             <artifactId>opentelemetry-exporter-otlp</artifactId>
         </dependency>
 
-        <!-- ===================================================== -->
-        <!-- Tests -->
-        <!-- ===================================================== -->
+        <!-- Shared Security Module -->
+        <dependency>
+            <groupId>com.ecommerce</groupId>
+            <artifactId>common-security</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
+        <!-- Tests -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
@@ -133,30 +103,23 @@
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
-
-        <dependency>
-            <groupId>com.ecommerce</groupId>
-            <artifactId>common-security</artifactId>
-            <version>1.0.0</version>
-        </dependency>
-
     </dependencies>
 
-    <!-- ===================================================== -->
-    <!-- Build -->
-    <!-- ===================================================== -->
-
     <build>
-
         <plugins>
-
+            <!-- Required because root pom imports Spring Boot BOM but does not inherit spring-boot-starter-parent -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
-
         </plugins>
-
     </build>
 
 </project>

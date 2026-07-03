@@ -1,9 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-
          xsi:schemaLocation="
          http://maven.apache.org/POM/4.0.0
-         http://www.mave n.apache.org/xsd/maven-4.0.0.xsd">
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
 
     <modelVersion>4.0.0</modelVersion>
 
@@ -11,35 +11,45 @@
         <groupId>com.ecommerce</groupId>
         <artifactId>ecommerce-platform</artifactId>
         <version>1.0.0</version>
-
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
     <artifactId>common-exception</artifactId>
-
-    <name>common-exception</name>
-
     <packaging>jar</packaging>
 
-    <dependencies>
+    <name>common-exception</name>
+    <description>Shared exception model and global API error handling support</description>
 
-        <!-- Spring Web -->
+    <dependencies>
+        <!-- Spring Web error response support -->
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-web</artifactId>
         </dependency>
 
-        <!-- Spring Web MVC -->
+        <!-- Controller advice / MVC exception support -->
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-webmvc</artifactId>
         </dependency>
 
-        <!-- Jakarta Servlet -->
+        <!-- Bean validation exception support -->
+        <dependency>
+            <groupId>jakarta.validation</groupId>
+            <artifactId>jakarta.validation-api</artifactId>
+        </dependency>
+
+        <!-- Servlet API for request context in handlers -->
         <dependency>
             <groupId>jakarta.servlet</groupId>
             <artifactId>jakarta.servlet-api</artifactId>
             <scope>provided</scope>
+        </dependency>
+
+        <!-- Jackson annotations for error response serialization if needed -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
         </dependency>
 
         <!-- Lombok -->
@@ -49,6 +59,12 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- Tests -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
 </project>

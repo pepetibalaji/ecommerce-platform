@@ -3,7 +3,7 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="
          http://maven.apache.org/POM/4.0.0
-         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
 
     <modelVersion>4.0.0</modelVersion>
 
@@ -17,27 +17,34 @@
     <artifactId>inventory-service</artifactId>
     <packaging>jar</packaging>
 
-    <dependencies>
+    <name>inventory-service</name>
+    <description>Inventory Service for Ecommerce Platform</description>
 
-        <!-- Spring Web -->
+    <dependencies>
+        <!-- Spring Cloud Config Client -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-config</artifactId>
+        </dependency>
+
+        <!-- Spring Web / REST -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
-        <!-- Spring Security -->
+        <!-- Spring Security / OAuth2 Resource Server -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
-        <!-- OAuth2 Resource Server -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
 
-        <!-- Spring Data JPA -->
+        <!-- Persistence -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
@@ -55,16 +62,11 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
-        <!-- Spring Cloud Config Client -->
-        <dependency>
-            <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-starter-config</artifactId>
-        </dependency>
-
         <!-- PostgreSQL -->
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- Flyway -->
@@ -73,7 +75,6 @@
             <artifactId>flyway-core</artifactId>
         </dependency>
 
-        <!-- Flyway PostgreSQL Support -->
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-database-postgresql</artifactId>
@@ -83,41 +84,53 @@
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-            <version>2.8.9</version>
         </dependency>
 
-        <!-- Shared Exception Module -->
-        <dependency>
-            <groupId>com.ecommerce</groupId>
-            <artifactId>common-exception</artifactId>
-            <version>1.0.0</version>
-        </dependency>
-
-        <!-- Shared Security Module -->
-        <dependency>
-            <groupId>com.ecommerce</groupId>
-            <artifactId>common-security</artifactId>
-            <version>1.0.0</version>
-        </dependency>
-
-        <!-- Shared Proto Module -->
-        <dependency>
-            <groupId>com.ecommerce</groupId>
-            <artifactId>common-proto</artifactId>
-            <version>1.0.0</version>
-        </dependency>
-
-        <!-- Shared gRPC Module -->
-        <dependency>
-            <groupId>com.ecommerce</groupId>
-            <artifactId>common-grpc</artifactId>
-            <version>1.0.0</version>
-        </dependency>
-
-        <!-- Shared gRPC Server Ecosystem Starter (Inherits version 3.1.1.RELEASE from Parent BOM) -->
+        <!-- gRPC Server for Inventory Service -->
         <dependency>
             <groupId>net.devh</groupId>
             <artifactId>grpc-server-spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- Shared Modules -->
+        <dependency>
+            <groupId>com.ecommerce</groupId>
+            <artifactId>common-exception</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.ecommerce</groupId>
+            <artifactId>common-security</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.ecommerce</groupId>
+            <artifactId>common-proto</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.ecommerce</groupId>
+            <artifactId>common-grpc</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Observability: Prometheus + OpenTelemetry -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
         </dependency>
 
         <!-- Lombok -->
@@ -127,20 +140,6 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- Observability: Prometheus -->
-        <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-registry-prometheus</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-tracing-bridge-otel</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.opentelemetry</groupId>
-            <artifactId>opentelemetry-exporter-otlp</artifactId>
-        </dependency>
-
         <!-- Testing -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -148,14 +147,12 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Spring Security Test -->
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
 
-        <!-- Testcontainers -->
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -167,14 +164,27 @@
             <artifactId>postgresql</artifactId>
             <scope>test</scope>
         </dependency>
-
     </dependencies>
 
     <build>
         <plugins>
+            <!-- Uses compiler config from root pom.xml -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+
+            <!-- Required because root pom imports Spring Boot BOM but does not inherit spring-boot-starter-parent -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
