@@ -77,6 +77,12 @@
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
+        
+        <!--Stripe Payment-->
+        <dependency>
+            <groupId>com.stripe</groupId>
+            <artifactId>stripe-java</artifactId>
+        </dependency>
 
         <!-- Swagger / OpenAPI -->
         <dependency>

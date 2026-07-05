@@ -8,6 +8,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
 
@@ -20,13 +21,20 @@ public class SecurityConfig {
 
     @Bean
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
-        return new JwtAuthenticationConverter();
+        JwtGrantedAuthoritiesConverter authoritiesConverter = new JwtGrantedAuthoritiesConverter();
+        authoritiesConverter.setAuthoritiesClaimName("roles");
+        authoritiesConverter.setAuthorityPrefix("ROLE_");
+
+        JwtAuthenticationConverter jwtAuthenticationConverter = new JwtAuthenticationConverter();
+        jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(authoritiesConverter);
+        return jwtAuthenticationConverter;
     }
 
     @Bean
-    public SecurityFilterChain paymentSecurityFilterChain(HttpSecurity http,
-                                                         JwtAuthenticationConverter jwtAuthenticationConverter)
-            throws Exception {
+    public SecurityFilterChain paymentSecurityFilterChain(
+            HttpSecurity http,
+            JwtAuthenticationConverter jwtAuthenticationConverter
+    ) throws Exception {
 
         return http
                 .csrf(AbstractHttpConfigurer::disable)
@@ -51,6 +59,7 @@ public class SecurityConfig {
                                 "/actuator/prometheus"
                         ).permitAll()
                         .requestMatchers("/api/v1/payments/webhooks/**").permitAll()
+                        .requestMatchers("/public/payments/**").permitAll()
                         .requestMatchers("/api/v1/admin/payments/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/payments/**").authenticated()
                         .anyRequest().authenticated()
