@@ -1,8 +1,11 @@
 package com.ecommerce.payment.repository;
 
 import com.ecommerce.payment.entity.PaymentAttempt;
+import com.ecommerce.payment.enums.PaymentAttemptStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -18,4 +21,10 @@ public interface PaymentAttemptRepository extends JpaRepository<PaymentAttempt, 
     Optional<PaymentAttempt> findByProviderPaymentIntentId(String providerPaymentIntentId);
 
     Optional<PaymentAttempt> findByProviderChargeId(String providerChargeId);
+
+    Optional<PaymentAttempt> findTopByPayment_IdAndStatusInAndExpiresAtAfterOrderByCreatedAtDesc(
+            UUID paymentId,
+            Collection<PaymentAttemptStatus> statuses,
+            LocalDateTime now
+    );
 }

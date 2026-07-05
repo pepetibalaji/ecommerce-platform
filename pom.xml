@@ -67,6 +67,9 @@
         <maven.surefire.plugin.version>3.5.2</maven.surefire.plugin.version>
         <maven.failsafe.plugin.version>3.5.2</maven.failsafe.plugin.version>
         <jacoco.plugin.version>0.8.12</jacoco.plugin.version>
+
+        <!-- Stripe -->
+        <stripe-java.version>33.1.0</stripe-java.version>
     </properties>
 
     <dependencyManagement>
@@ -155,6 +158,13 @@
                 <groupId>org.projectlombok</groupId>
                 <artifactId>lombok-mapstruct-binding</artifactId>
                 <version>${lombok-mapstruct-binding.version}</version>
+            </dependency>
+            
+            <!--Payment Stripe-->
+            <dependency>
+                <groupId>com.stripe</groupId>
+                <artifactId>stripe-java</artifactId>
+                <version>${stripe-java.version}</version>
             </dependency>
 
             <!-- Internal common modules -->
