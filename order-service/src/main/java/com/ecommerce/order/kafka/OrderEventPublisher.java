@@ -8,6 +8,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Component;
 
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 @Slf4j
@@ -18,6 +19,9 @@ public class OrderEventPublisher {
     private final KafkaTemplate<String, OrderCreatedEvent> kafkaTemplate;
 
     public void publishOrderCreated(OrderCreatedEvent event) {
+        Objects.requireNonNull(event, "OrderCreatedEvent must not be null");
+        Objects.requireNonNull(event.getOrderId(), "OrderCreatedEvent.orderId must not be null");
+
         String topic = KafkaTopics.ORDER_CREATED;
         String key = event.getOrderId().toString();
 
@@ -27,12 +31,15 @@ public class OrderEventPublisher {
         future.whenComplete((result, exception) -> {
             if (exception != null) {
                 log.error(
-                        "Failed to publish Kafka event. topic={}, key={}, eventId={}, eventType={}, orderId={}, correlationId={}, traceId={}",
+                        "Failed to publish Kafka event. topic={}, key={}, eventId={}, eventType={}, orderId={}, userId={}, totalAmount={}, currency={}, correlationId={}, traceId={}",
                         topic,
                         key,
                         event.getEventId(),
                         event.getEventType(),
                         event.getOrderId(),
+                        event.getUserId(),
+                        event.getTotalAmount(),
+                        event.getCurrency(),
                         event.getCorrelationId(),
                         event.getTraceId(),
                         exception
@@ -41,7 +48,7 @@ public class OrderEventPublisher {
             }
 
             log.info(
-                    "Published Kafka event. topic={}, partition={}, offset={}, key={}, eventId={}, eventType={}, orderId={}, correlationId={}, traceId={}",
+                    "Published Kafka event. topic={}, partition={}, offset={}, key={}, eventId={}, eventType={}, orderId={}, userId={}, totalAmount={}, currency={}, correlationId={}, traceId={}",
                     result.getRecordMetadata().topic(),
                     result.getRecordMetadata().partition(),
                     result.getRecordMetadata().offset(),
@@ -49,6 +56,9 @@ public class OrderEventPublisher {
                     event.getEventId(),
                     event.getEventType(),
                     event.getOrderId(),
+                    event.getUserId(),
+                    event.getTotalAmount(),
+                    event.getCurrency(),
                     event.getCorrelationId(),
                     event.getTraceId()
             );

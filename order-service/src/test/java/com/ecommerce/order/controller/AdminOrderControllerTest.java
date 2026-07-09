@@ -1,6 +1,7 @@
 package com.ecommerce.order.controller;
 
 import com.ecommerce.order.dto.OrderResponse;
+import com.ecommerce.order.dto.ShippingAddressResponse;
 import com.ecommerce.order.dto.UpdateOrderStatusRequest;
 import com.ecommerce.order.entity.OrderStatus;
 import com.ecommerce.order.service.OrderService;
@@ -43,7 +44,6 @@ class AdminOrderControllerTest {
 
     @Test
     void shouldGetAdminOrders() {
-
         Page<OrderResponse> page =
                 new PageImpl<>(List.of());
 
@@ -71,7 +71,6 @@ class AdminOrderControllerTest {
 
     @Test
     void shouldGetAdminOrdersByStatus() {
-
         Page<OrderResponse> page =
                 new PageImpl<>(List.of());
 
@@ -99,7 +98,6 @@ class AdminOrderControllerTest {
 
     @Test
     void shouldUpdateOrderStatus() {
-
         UUID orderId =
                 UUID.randomUUID();
 
@@ -109,13 +107,9 @@ class AdminOrderControllerTest {
         request.setStatus(OrderStatus.CONFIRMED);
 
         OrderResponse response =
-                new OrderResponse(
+                orderResponse(
                         orderId,
-                        USER_ID,
-                        new BigDecimal("200.00"),
-                        OrderStatus.CONFIRMED,
-                        LocalDateTime.now(),
-                        List.of()
+                        OrderStatus.CONFIRMED
                 );
 
         when(orderService.updateOrderStatus(
@@ -135,10 +129,50 @@ class AdminOrderControllerTest {
         assertThat(result.getStatus())
                 .isEqualTo(OrderStatus.CONFIRMED);
 
+        assertThat(result.getCurrency())
+                .isEqualTo("INR");
+
+        assertThat(result.getShippingAddress())
+                .isNotNull();
+
         verify(orderService)
                 .updateOrderStatus(
                         orderId,
                         request
                 );
+    }
+
+    private OrderResponse orderResponse(
+            UUID orderId,
+            OrderStatus status
+    ) {
+        LocalDateTime now =
+                LocalDateTime.now();
+
+        return new OrderResponse(
+                orderId,
+                USER_ID,
+                new BigDecimal("200.00"),
+                "INR",
+                status,
+                now,
+                now,
+                shippingAddressResponse(),
+                List.of()
+        );
+    }
+
+    private ShippingAddressResponse shippingAddressResponse() {
+        return new ShippingAddressResponse(
+                null,
+                "Amit Kumar",
+                "+919999999999",
+                "Flat 101, Green Residency",
+                "Near Metro Station",
+                "Bengaluru",
+                "Karnataka",
+                "560001",
+                "IN"
+        );
     }
 }
