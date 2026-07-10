@@ -4,6 +4,8 @@ import com.ecommerce.order.dto.CreateOrderItemRequest;
 import com.ecommerce.order.dto.CreateOrderRequest;
 import com.ecommerce.order.dto.OrderItemResponse;
 import com.ecommerce.order.dto.OrderResponse;
+import com.ecommerce.order.dto.ShippingAddressRequest;
+import com.ecommerce.order.dto.ShippingAddressResponse;
 import com.ecommerce.order.entity.OrderStatus;
 import com.ecommerce.order.service.OrderService;
 
@@ -52,29 +54,16 @@ class OrderControllerTest {
 
     @Test
     void shouldCreateOrder() {
-
-        CreateOrderItemRequest item =
-                new CreateOrderItemRequest();
-
-        item.setProductId(PRODUCT_ID);
-        item.setQuantity(2);
-        item.setPrice(new BigDecimal("100.00"));
-
         CreateOrderRequest request =
-                new CreateOrderRequest();
-
-        request.setItems(List.of(item));
+                createOrderRequest();
 
         UUID orderId =
                 UUID.randomUUID();
 
         OrderResponse response =
-                new OrderResponse(
+                orderResponse(
                         orderId,
-                        USER_ID,
-                        new BigDecimal("200.00"),
                         OrderStatus.PENDING,
-                        LocalDateTime.now(),
                         List.of(
                                 new OrderItemResponse(
                                         UUID.randomUUID(),
@@ -102,8 +91,20 @@ class OrderControllerTest {
         assertThat(result.getUserId())
                 .isEqualTo(USER_ID);
 
+        assertThat(result.getTotalAmount())
+                .isEqualByComparingTo(new BigDecimal("200.00"));
+
+        assertThat(result.getCurrency())
+                .isEqualTo("INR");
+
         assertThat(result.getStatus())
                 .isEqualTo(OrderStatus.PENDING);
+
+        assertThat(result.getShippingAddress())
+                .isNotNull();
+
+        assertThat(result.getShippingAddress().country())
+                .isEqualTo("IN");
 
         assertThat(result.getItems())
                 .hasSize(1);
@@ -123,7 +124,6 @@ class OrderControllerTest {
 
     @Test
     void shouldGetMyOrders() {
-
         Page<OrderResponse> page =
                 new PageImpl<>(List.of());
 
@@ -154,7 +154,6 @@ class OrderControllerTest {
 
     @Test
     void shouldGetMyOrdersByStatus() {
-
         Page<OrderResponse> page =
                 new PageImpl<>(List.of());
 
@@ -185,17 +184,13 @@ class OrderControllerTest {
 
     @Test
     void shouldGetOrderById() {
-
         UUID orderId =
                 UUID.randomUUID();
 
         OrderResponse response =
-                new OrderResponse(
+                orderResponse(
                         orderId,
-                        USER_ID,
-                        new BigDecimal("200.00"),
                         OrderStatus.PENDING,
-                        LocalDateTime.now(),
                         List.of()
                 );
 
@@ -216,6 +211,9 @@ class OrderControllerTest {
         assertThat(result.getUserId())
                 .isEqualTo(USER_ID);
 
+        assertThat(result.getCurrency())
+                .isEqualTo("INR");
+
         assertThat(result.getStatus())
                 .isEqualTo(OrderStatus.PENDING);
 
@@ -228,17 +226,13 @@ class OrderControllerTest {
 
     @Test
     void shouldCancelOrder() {
-
         UUID orderId =
                 UUID.randomUUID();
 
         OrderResponse response =
-                new OrderResponse(
+                orderResponse(
                         orderId,
-                        USER_ID,
-                        new BigDecimal("200.00"),
                         OrderStatus.CANCELLED,
-                        LocalDateTime.now(),
                         List.of()
                 );
 
@@ -259,6 +253,9 @@ class OrderControllerTest {
         assertThat(result.getUserId())
                 .isEqualTo(USER_ID);
 
+        assertThat(result.getCurrency())
+                .isEqualTo("INR");
+
         assertThat(result.getStatus())
                 .isEqualTo(OrderStatus.CANCELLED);
 
@@ -269,8 +266,76 @@ class OrderControllerTest {
                 );
     }
 
-    private Jwt jwt() {
+    private CreateOrderRequest createOrderRequest() {
+        CreateOrderItemRequest item =
+                new CreateOrderItemRequest();
 
+        item.setProductId(PRODUCT_ID);
+        item.setQuantity(2);
+        item.setPrice(new BigDecimal("100.00"));
+
+        CreateOrderRequest request =
+                new CreateOrderRequest();
+
+        request.setCurrency("INR");
+        request.setShippingAddress(shippingAddressRequest());
+        request.setItems(List.of(item));
+
+        return request;
+    }
+
+    private ShippingAddressRequest shippingAddressRequest() {
+        ShippingAddressRequest address =
+                new ShippingAddressRequest();
+
+        address.setRecipientName("Amit Kumar");
+        address.setPhone("+919999999999");
+        address.setLine1("Flat 101, Green Residency");
+        address.setLine2("Near Metro Station");
+        address.setCity("Bengaluru");
+        address.setState("Karnataka");
+        address.setPostalCode("560001");
+        address.setCountry("IN");
+
+        return address;
+    }
+
+    private OrderResponse orderResponse(
+            UUID orderId,
+            OrderStatus status,
+            List<OrderItemResponse> items
+    ) {
+        LocalDateTime now =
+                LocalDateTime.now();
+
+        return new OrderResponse(
+                orderId,
+                USER_ID,
+                new BigDecimal("200.00"),
+                "INR",
+                status,
+                now,
+                now,
+                shippingAddressResponse(),
+                items
+        );
+    }
+
+    private ShippingAddressResponse shippingAddressResponse() {
+        return new ShippingAddressResponse(
+                null,
+                "Amit Kumar",
+                "+919999999999",
+                "Flat 101, Green Residency",
+                "Near Metro Station",
+                "Bengaluru",
+                "Karnataka",
+                "560001",
+                "IN"
+        );
+    }
+
+    private Jwt jwt() {
         Instant now =
                 Instant.now();
 

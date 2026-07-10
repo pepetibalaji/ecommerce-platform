@@ -1,10 +1,12 @@
 package com.ecommerce.order.service;
 
+import com.ecommerce.common.events.order.OrderCreatedEvent;
 import com.ecommerce.common.exception.BadRequestException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.order.dto.CreateOrderItemRequest;
 import com.ecommerce.order.dto.CreateOrderRequest;
 import com.ecommerce.order.dto.OrderResponse;
+import com.ecommerce.order.dto.ShippingAddressRequest;
 import com.ecommerce.order.dto.UpdateOrderStatusRequest;
 import com.ecommerce.order.entity.Order;
 import com.ecommerce.order.entity.OrderItem;
@@ -13,31 +15,28 @@ import com.ecommerce.order.grpc.InventoryGrpcClient;
 import com.ecommerce.order.kafka.OrderEventPublisher;
 import com.ecommerce.order.repository.OrderRepository;
 import com.ecommerce.proto.inventory.InventoryDetails;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-
 import static org.junit.jupiter.api.Assertions.assertThrows;
-
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
-
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -65,17 +64,18 @@ class OrderServiceTest {
     void setUp() {
         userId = UUID.randomUUID();
         productId = UUID.randomUUID();
+
+        /*
+         * @Value fields are not injected in pure Mockito tests.
+         * This keeps resolveCurrency(null) working.
+         */
+        ReflectionTestUtils.setField(orderService, "defaultCurrency", "INR");
     }
 
     @Test
-    void createOrder_shouldReserveStockAndSaveOrder() {
-        CreateOrderItemRequest item = new CreateOrderItemRequest();
-        item.setProductId(productId);
-        item.setQuantity(2);
-        item.setPrice(new BigDecimal("100.00"));
-
-        CreateOrderRequest request = new CreateOrderRequest();
-        request.setItems(List.of(item));
+    void createOrder_shouldReserveStockSaveOrderAndPublishCurrencyInEvent() {
+        CreateOrderRequest request =
+                createOrderRequest(2, new BigDecimal("100.00"), "INR");
 
         InventoryDetails inventoryDetails = InventoryDetails.newBuilder()
                 .setProductId(productId.toString())
@@ -90,23 +90,38 @@ class OrderServiceTest {
                 .when(inventoryGrpcClient)
                 .reserveStock(productId, 2);
 
-        UUID orderId = UUID.randomUUID();
+        UUID orderId =
+                UUID.randomUUID();
 
         when(orderRepository.save(any(Order.class)))
                 .thenAnswer(invocation -> {
-                Order order = invocation.getArgument(0);
-                order.setId(orderId);
-                return order;
+                    Order order = invocation.getArgument(0);
+                    order.setId(orderId);
+
+                    LocalDateTime now = LocalDateTime.now();
+                    order.setCreatedAt(now);
+                    order.setUpdatedAt(now);
+
+                    return order;
                 });
 
         OrderResponse response =
                 orderService.createOrder(userId, request);
+
+        assertThat(response.getId())
+                .isEqualTo(orderId);
 
         assertThat(response.getUserId())
                 .isEqualTo(userId);
 
         assertThat(response.getStatus())
                 .isEqualTo(OrderStatus.PENDING);
+
+        assertThat(response.getCurrency())
+                .isEqualTo("INR");
+
+        assertThat(response.getShippingAddress())
+                .isNotNull();
 
         assertThat(response.getItems())
                 .hasSize(1);
@@ -120,19 +135,134 @@ class OrderServiceTest {
         verify(inventoryGrpcClient)
                 .reserveStock(productId, 2);
 
+        ArgumentCaptor<Order> orderCaptor =
+                ArgumentCaptor.forClass(Order.class);
+
         verify(orderRepository)
+                .save(orderCaptor.capture());
+
+        Order savedOrder =
+                orderCaptor.getValue();
+
+        assertThat(savedOrder.getCurrency())
+                .isEqualTo("INR");
+
+        assertThat(savedOrder.getShippingRecipientName())
+                .isEqualTo("Amit Kumar");
+
+        assertThat(savedOrder.getShippingCity())
+                .isEqualTo("Bengaluru");
+
+        assertThat(savedOrder.getShippingCountry())
+                .isEqualTo("IN");
+
+        ArgumentCaptor<OrderCreatedEvent> eventCaptor =
+                ArgumentCaptor.forClass(OrderCreatedEvent.class);
+
+        verify(orderEventPublisher)
+                .publishOrderCreated(eventCaptor.capture());
+
+        OrderCreatedEvent event =
+                eventCaptor.getValue();
+
+        assertThat(event.getOrderId())
+                .isEqualTo(orderId);
+
+        assertThat(event.getUserId())
+                .isEqualTo(userId);
+
+        assertThat(event.getTotalAmount())
+                .isEqualByComparingTo("200.00");
+
+        assertThat(event.getCurrency())
+                .isEqualTo("INR");
+
+        assertThat(event.getItems())
+                .hasSize(1);
+    }
+
+    @Test
+    void createOrder_shouldDefaultCurrencyWhenMissing() {
+        CreateOrderRequest request =
+                createOrderRequest(2, new BigDecimal("100.00"), null);
+
+        InventoryDetails inventoryDetails = InventoryDetails.newBuilder()
+                .setProductId(productId.toString())
+                .setAvailableStock(10)
+                .setReservedStock(0)
+                .build();
+
+        when(inventoryGrpcClient.getInventory(productId))
+                .thenReturn(inventoryDetails);
+
+        doNothing()
+                .when(inventoryGrpcClient)
+                .reserveStock(productId, 2);
+
+        UUID orderId =
+                UUID.randomUUID();
+
+        when(orderRepository.save(any(Order.class)))
+                .thenAnswer(invocation -> {
+                    Order order = invocation.getArgument(0);
+                    order.setId(orderId);
+
+                    LocalDateTime now = LocalDateTime.now();
+                    order.setCreatedAt(now);
+                    order.setUpdatedAt(now);
+
+                    return order;
+                });
+
+        OrderResponse response =
+                orderService.createOrder(userId, request);
+
+        assertThat(response.getCurrency())
+                .isEqualTo("INR");
+
+        ArgumentCaptor<OrderCreatedEvent> eventCaptor =
+                ArgumentCaptor.forClass(OrderCreatedEvent.class);
+
+        verify(orderEventPublisher)
+                .publishOrderCreated(eventCaptor.capture());
+
+        assertThat(eventCaptor.getValue().getCurrency())
+                .isEqualTo("INR");
+    }
+
+    @Test
+    void createOrder_shouldFailWhenShippingAddressMissing() {
+        CreateOrderItemRequest item =
+                createOrderItemRequest(2, new BigDecimal("100.00"));
+
+        CreateOrderRequest request =
+                new CreateOrderRequest();
+
+        request.setCurrency("INR");
+        request.setItems(List.of(item));
+
+        assertThrows(
+                BadRequestException.class,
+                () -> orderService.createOrder(userId, request)
+        );
+
+        verify(inventoryGrpcClient, never())
+                .getInventory(any());
+
+        verify(inventoryGrpcClient, never())
+                .reserveStock(any(), anyInt());
+
+        verify(orderRepository, never())
                 .save(any(Order.class));
+
+        verify(orderEventPublisher, never())
+                .publishOrderCreated(any(OrderCreatedEvent.class));
     }
 
     @Test
     void createOrder_shouldFailWhenStockInsufficient() {
-        CreateOrderItemRequest item = new CreateOrderItemRequest();
-        item.setProductId(productId);
-        item.setQuantity(20);
-        item.setPrice(new BigDecimal("100.00"));
-
-        CreateOrderRequest request = new CreateOrderRequest();
-        request.setItems(List.of(item));
+        CreateOrderRequest request =
+                createOrderRequest(20, new BigDecimal("100.00"), "INR");
 
         InventoryDetails inventoryDetails = InventoryDetails.newBuilder()
                 .setProductId(productId.toString())
@@ -153,23 +283,21 @@ class OrderServiceTest {
 
         verify(orderRepository, never())
                 .save(any(Order.class));
+
+        verify(orderEventPublisher, never())
+                .publishOrderCreated(any(OrderCreatedEvent.class));
     }
 
     @Test
     void cancelOrder_shouldReleaseStockAndCancel() {
-        UUID orderId = UUID.randomUUID();
+        UUID orderId =
+                UUID.randomUUID();
 
-        Order order = new Order();
-        order.setId(orderId);
-        order.setUserId(userId);
-        order.setStatus(OrderStatus.CONFIRMED);
+        Order order =
+                existingOrder(orderId, OrderStatus.CONFIRMED);
 
-        OrderItem item = new OrderItem();
-        item.setId(UUID.randomUUID());
-        item.setOrder(order);
-        item.setProductId(productId);
-        item.setQuantity(2);
-        item.setPrice(new BigDecimal("100.00"));
+        OrderItem item =
+                existingOrderItem(order);
 
         order.getItems().add(item);
 
@@ -185,6 +313,9 @@ class OrderServiceTest {
         assertThat(response.getStatus())
                 .isEqualTo(OrderStatus.CANCELLED);
 
+        assertThat(response.getCurrency())
+                .isEqualTo("INR");
+
         verify(inventoryGrpcClient)
                 .releaseStock(productId, 2);
 
@@ -194,12 +325,13 @@ class OrderServiceTest {
 
     @Test
     void getOrderById_shouldThrowForDifferentUser() {
-        UUID orderId = UUID.randomUUID();
+        UUID orderId =
+                UUID.randomUUID();
 
-        Order order = new Order();
-        order.setId(orderId);
+        Order order =
+                existingOrder(orderId, OrderStatus.PENDING);
+
         order.setUserId(UUID.randomUUID());
-        order.setStatus(OrderStatus.PENDING);
 
         when(orderRepository.findById(orderId))
                 .thenReturn(Optional.of(order));
@@ -212,10 +344,8 @@ class OrderServiceTest {
 
     @Test
     void getMyOrders_shouldReturnPagedOrders() {
-        Order order = new Order();
-        order.setId(UUID.randomUUID());
-        order.setUserId(userId);
-        order.setStatus(OrderStatus.PENDING);
+        Order order =
+                existingOrder(UUID.randomUUID(), OrderStatus.PENDING);
 
         when(orderRepository.findByUserId(eq(userId), any()))
                 .thenReturn(new PageImpl<>(List.of(order)));
@@ -232,16 +362,18 @@ class OrderServiceTest {
 
         assertThat(page.getContent().get(0).getUserId())
                 .isEqualTo(userId);
+
+        assertThat(page.getContent().get(0).getCurrency())
+                .isEqualTo("INR");
     }
 
     @Test
     void updateOrderStatus_shouldUpdateStatus() {
-        UUID orderId = UUID.randomUUID();
+        UUID orderId =
+                UUID.randomUUID();
 
-        Order order = new Order();
-        order.setId(orderId);
-        order.setUserId(userId);
-        order.setStatus(OrderStatus.PENDING);
+        Order order =
+                existingOrder(orderId, OrderStatus.PENDING);
 
         when(orderRepository.findById(orderId))
                 .thenReturn(Optional.of(order));
@@ -260,7 +392,99 @@ class OrderServiceTest {
         assertThat(response.getStatus())
                 .isEqualTo(OrderStatus.CONFIRMED);
 
+        assertThat(response.getCurrency())
+                .isEqualTo("INR");
+
         verify(orderRepository)
                 .save(order);
+    }
+
+    private CreateOrderRequest createOrderRequest(
+            int quantity,
+            BigDecimal price,
+            String currency
+    ) {
+        CreateOrderRequest request =
+                new CreateOrderRequest();
+
+        request.setCurrency(currency);
+        request.setShippingAddress(shippingAddressRequest());
+        request.setItems(List.of(createOrderItemRequest(quantity, price)));
+
+        return request;
+    }
+
+    private CreateOrderItemRequest createOrderItemRequest(
+            int quantity,
+            BigDecimal price
+    ) {
+        CreateOrderItemRequest item =
+                new CreateOrderItemRequest();
+
+        item.setProductId(productId);
+        item.setQuantity(quantity);
+        item.setPrice(price);
+
+        return item;
+    }
+
+    private ShippingAddressRequest shippingAddressRequest() {
+        ShippingAddressRequest address =
+                new ShippingAddressRequest();
+
+        address.setRecipientName("Amit Kumar");
+        address.setPhone("+919999999999");
+        address.setLine1("Flat 101, Green Residency");
+        address.setLine2("Near Metro Station");
+        address.setCity("Bengaluru");
+        address.setState("Karnataka");
+        address.setPostalCode("560001");
+        address.setCountry("IN");
+
+        return address;
+    }
+
+    private Order existingOrder(
+            UUID orderId,
+            OrderStatus status
+    ) {
+        LocalDateTime now =
+                LocalDateTime.now();
+
+        Order order =
+                new Order();
+
+        order.setId(orderId);
+        order.setUserId(userId);
+        order.setTotalAmount(new BigDecimal("200.00"));
+        order.setCurrency("INR");
+        order.setStatus(status);
+        order.setCreatedAt(now);
+        order.setUpdatedAt(now);
+
+        order.setShippingAddressId(null);
+        order.setShippingRecipientName("Amit Kumar");
+        order.setShippingPhone("+919999999999");
+        order.setShippingLine1("Flat 101, Green Residency");
+        order.setShippingLine2("Near Metro Station");
+        order.setShippingCity("Bengaluru");
+        order.setShippingState("Karnataka");
+        order.setShippingPostalCode("560001");
+        order.setShippingCountry("IN");
+
+        return order;
+    }
+
+    private OrderItem existingOrderItem(Order order) {
+        OrderItem item =
+                new OrderItem();
+
+        item.setId(UUID.randomUUID());
+        item.setOrder(order);
+        item.setProductId(productId);
+        item.setQuantity(2);
+        item.setPrice(new BigDecimal("100.00"));
+
+        return item;
     }
 }

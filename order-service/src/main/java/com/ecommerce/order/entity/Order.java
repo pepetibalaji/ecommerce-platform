@@ -1,7 +1,10 @@
 package com.ecommerce.order.entity;
 
 import jakarta.persistence.*;
-
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.NoArgsConstructor;
@@ -48,8 +51,55 @@ public class Order {
     )
     private List<OrderItem> items = new ArrayList<>();
 
+    @NotBlank(message = "Currency is required")
+    @Size(min = 3, max = 3, message = "Currency must be a 3-letter ISO code")
+    @Pattern(regexp = "^[A-Z]{3}$", message = "Currency must be uppercase ISO format, for example USD or INR")
+    @Column(name = "currency", nullable = false, length = 3)
+    private String currency;
+
+    @Column(name = "shipping_address_id")
+    private UUID shippingAddressId;
+
+    @Size(max = 150)
+    @Column(name = "shipping_recipient_name", length = 150)
+    private String shippingRecipientName;
+
+    @Size(max = 30)
+    @Column(name = "shipping_phone", length = 30)
+    private String shippingPhone;
+
+    @Size(max = 255)
+    @Column(name = "shipping_line1", length = 255)
+    private String shippingLine1;
+
+    @Size(max = 255)
+    @Column(name = "shipping_line2", length = 255)
+    private String shippingLine2;
+
+    @Size(max = 100)
+    @Column(name = "shipping_city", length = 100)
+    private String shippingCity;
+
+    @Size(max = 100)
+    @Column(name = "shipping_state", length = 100)
+    private String shippingState;
+
+    @Size(max = 30)
+    @Column(name = "shipping_postal_code", length = 30)
+    private String shippingPostalCode;
+
+    @Size(max = 2)
+    @Column(name = "shipping_country", length = 2)
+    private String shippingCountry;
+
+    @NotNull(message = "Updated timestamp is required")
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
     @PrePersist
     public void prePersist() {
+
+        LocalDateTime now = LocalDateTime.now();
 
         if (id == null) {
             id = UUID.randomUUID();
@@ -59,8 +109,17 @@ public class Order {
             createdAt = LocalDateTime.now();
         }
 
+        if (updatedAt == null) {
+            updatedAt = now;
+        }
+
         if (status == null) {
             status = OrderStatus.PENDING;
         }
+    }
+    
+    @PreUpdate
+    void preUpdate() {
+        updatedAt = LocalDateTime.now();
     }
 }

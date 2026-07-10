@@ -1,19 +1,15 @@
 package com.ecommerce.order.service;
 
-import java.math.BigDecimal;
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.util.List;
-import java.util.UUID;
-
 import com.ecommerce.common.events.order.OrderCreatedEvent;
+import com.ecommerce.common.events.order.OrderItemEvent;
 import com.ecommerce.common.exception.BadRequestException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.order.dto.CreateOrderItemRequest;
 import com.ecommerce.order.dto.CreateOrderRequest;
 import com.ecommerce.order.dto.OrderItemResponse;
 import com.ecommerce.order.dto.OrderResponse;
+import com.ecommerce.order.dto.ShippingAddressRequest;
+import com.ecommerce.order.dto.ShippingAddressResponse;
 import com.ecommerce.order.dto.UpdateOrderStatusRequest;
 import com.ecommerce.order.entity.Order;
 import com.ecommerce.order.entity.OrderItem;
@@ -21,13 +17,16 @@ import com.ecommerce.order.entity.OrderStatus;
 import com.ecommerce.order.grpc.InventoryGrpcClient;
 import com.ecommerce.order.kafka.OrderEventPublisher;
 import com.ecommerce.order.repository.OrderRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.ecommerce.common.events.order.OrderCreatedEvent;
-import com.ecommerce.common.events.order.OrderItemEvent;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 
 @Service
 @Transactional
@@ -36,6 +35,9 @@ public class OrderServiceImpl implements OrderService {
     private final OrderRepository orderRepository;
     private final InventoryGrpcClient inventoryGrpcClient;
     private final OrderEventPublisher orderEventPublisher;
+
+    @Value("${order.default-currency:INR}")
+    private String defaultCurrency;
 
     public OrderServiceImpl(
             OrderRepository orderRepository,
@@ -49,11 +51,24 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public OrderResponse createOrder(UUID userId, CreateOrderRequest request) {
-        validateAndReserveStock(request);
+        validateCreateOrderRequest(request);
+
+        List<CreateOrderItemRequest> reservedItems = new ArrayList<>();
 
         try {
+            validateStockAvailability(request);
+            reserveStock(request, reservedItems);
+
             Order order = new Order();
             order.setUserId(userId);
+            order.setCurrency(resolveCurrency(request.getCurrency()));
+            order.setStatus(OrderStatus.PENDING);
+
+            applyShippingAddress(
+                    order,
+                    request.getShippingAddressId(),
+                    request.getShippingAddress()
+            );
 
             BigDecimal totalAmount = BigDecimal.ZERO;
 
@@ -73,7 +88,6 @@ public class OrderServiceImpl implements OrderService {
             }
 
             order.setTotalAmount(totalAmount);
-            order.setStatus(OrderStatus.PENDING);
 
             Order saved = orderRepository.save(order);
 
@@ -81,7 +95,7 @@ public class OrderServiceImpl implements OrderService {
 
             return toResponse(saved);
         } catch (RuntimeException ex) {
-            releaseReservedStock(request);
+            releaseReservedStock(reservedItems);
             throw ex;
         }
     }
@@ -153,29 +167,88 @@ public class OrderServiceImpl implements OrderService {
         return toResponse(orderRepository.save(order));
     }
 
+    private void validateCreateOrderRequest(CreateOrderRequest request) {
+        if (request == null) {
+            throw new BadRequestException("Order request is required");
+        }
+
+        if (request.getItems() == null || request.getItems().isEmpty()) {
+            throw new BadRequestException("Order must contain at least one item");
+        }
+
+        if (request.getShippingAddress() == null) {
+            throw new BadRequestException("Shipping address is required");
+        }
+
+        for (CreateOrderItemRequest item : request.getItems()) {
+            if (item.getProductId() == null) {
+                throw new BadRequestException("Product id is required");
+            }
+
+            if (item.getQuantity() == null || item.getQuantity() <= 0) {
+                throw new BadRequestException("Quantity must be greater than zero");
+            }
+
+            if (item.getPrice() == null || item.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
+                throw new BadRequestException("Price must be greater than zero");
+            }
+        }
+    }
+
+    private String resolveCurrency(String currency) {
+        String resolved = (currency == null || currency.isBlank())
+                ? defaultCurrency
+                : currency;
+
+        resolved = resolved.trim().toUpperCase();
+
+        if (!resolved.matches("^[A-Z]{3}$")) {
+            throw new BadRequestException("Currency must be a 3-letter uppercase ISO code, for example INR or USD");
+        }
+
+        return resolved;
+    }
+
+    private void applyShippingAddress(
+            Order order,
+            UUID shippingAddressId,
+            ShippingAddressRequest address
+    ) {
+        order.setShippingAddressId(shippingAddressId);
+        order.setShippingRecipientName(address.getRecipientName());
+        order.setShippingPhone(address.getPhone());
+        order.setShippingLine1(address.getLine1());
+        order.setShippingLine2(address.getLine2());
+        order.setShippingCity(address.getCity());
+        order.setShippingState(address.getState());
+        order.setShippingPostalCode(address.getPostalCode());
+        order.setShippingCountry(address.getCountry().trim().toUpperCase());
+    }
+
     private void publishOrderCreatedEvent(Order saved) {
-    List<OrderItemEvent> eventItems = saved.getItems().stream()
-            .map(item -> new OrderItemEvent(
-                    item.getProductId(),
-                    item.getQuantity(),
-                    item.getPrice(),
-                    item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity()))
-            ))
-            .toList();
+        List<OrderItemEvent> eventItems = saved.getItems().stream()
+                .map(item -> new OrderItemEvent(
+                        item.getProductId(),
+                        item.getQuantity(),
+                        item.getPrice(),
+                        item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity()))
+                ))
+                .toList();
 
-    OrderCreatedEvent event = new OrderCreatedEvent(
-            saved.getId(),
-            saved.getUserId(),
-            saved.getTotalAmount(),
-            eventItems,
-            saved.getId().toString(),
-            null
-    );
+        OrderCreatedEvent event = new OrderCreatedEvent(
+                saved.getId(),
+                saved.getUserId(),
+                saved.getTotalAmount(),
+                saved.getCurrency(),
+                eventItems,
+                saved.getId().toString(),
+                null
+        );
 
-    orderEventPublisher.publishOrderCreated(event);
-}
+        orderEventPublisher.publishOrderCreated(event);
+    }
 
-    private void validateAndReserveStock(CreateOrderRequest request) {
+    private void validateStockAvailability(CreateOrderRequest request) {
         for (CreateOrderItemRequest itemRequest : request.getItems()) {
             var inventory = inventoryGrpcClient.getInventory(itemRequest.getProductId());
 
@@ -185,17 +258,24 @@ public class OrderServiceImpl implements OrderService {
                 );
             }
         }
+    }
 
+    private void reserveStock(
+            CreateOrderRequest request,
+            List<CreateOrderItemRequest> reservedItems
+    ) {
         for (CreateOrderItemRequest itemRequest : request.getItems()) {
             inventoryGrpcClient.reserveStock(
                     itemRequest.getProductId(),
                     itemRequest.getQuantity()
             );
+
+            reservedItems.add(itemRequest);
         }
     }
 
-    private void releaseReservedStock(CreateOrderRequest request) {
-        for (CreateOrderItemRequest itemRequest : request.getItems()) {
+    private void releaseReservedStock(List<CreateOrderItemRequest> reservedItems) {
+        for (CreateOrderItemRequest itemRequest : reservedItems) {
             try {
                 inventoryGrpcClient.releaseStock(
                         itemRequest.getProductId(),
@@ -250,14 +330,6 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    private Instant toInstant(LocalDateTime dateTime) {
-        if (dateTime == null) {
-            return Instant.now();
-        }
-
-        return dateTime.toInstant(ZoneOffset.UTC);
-    }
-
     private OrderResponse toResponse(Order order) {
         List<OrderItemResponse> items = order.getItems().stream()
                 .map(item -> new OrderItemResponse(
@@ -272,9 +344,26 @@ public class OrderServiceImpl implements OrderService {
                 order.getId(),
                 order.getUserId(),
                 order.getTotalAmount(),
+                order.getCurrency(),
                 order.getStatus(),
                 order.getCreatedAt(),
+                order.getUpdatedAt(),
+                toShippingAddressResponse(order),
                 items
+        );
+    }
+
+    private ShippingAddressResponse toShippingAddressResponse(Order order) {
+        return new ShippingAddressResponse(
+                order.getShippingAddressId(),
+                order.getShippingRecipientName(),
+                order.getShippingPhone(),
+                order.getShippingLine1(),
+                order.getShippingLine2(),
+                order.getShippingCity(),
+                order.getShippingState(),
+                order.getShippingPostalCode(),
+                order.getShippingCountry()
         );
     }
 }
