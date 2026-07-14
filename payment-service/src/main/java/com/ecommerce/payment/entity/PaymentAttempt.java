@@ -17,6 +17,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
@@ -38,11 +39,27 @@ import java.util.UUID;
 @Entity
 @Table(
         name = "payment_attempts",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_payment_attempts_payment_id_idempotency_key",
+                        columnNames = {"payment_id", "idempotency_key"}
+                ),
+                @UniqueConstraint(
+                        name = "uk_payment_attempts_provider_session",
+                        columnNames = {"provider", "provider_session_id"}
+                ),
+                @UniqueConstraint(
+                        name = "uk_payment_attempts_provider_payment_intent",
+                        columnNames = {"provider", "provider_payment_intent_id"}
+                )
+        },
         indexes = {
                 @Index(name = "idx_payment_attempts_payment_id", columnList = "payment_id"),
                 @Index(name = "idx_payment_attempts_status", columnList = "status"),
                 @Index(name = "idx_payment_attempts_provider", columnList = "provider"),
-                @Index(name = "idx_payment_attempts_created_at", columnList = "created_at")
+                @Index(name = "idx_payment_attempts_created_at", columnList = "created_at"),
+                @Index(name = "idx_payment_attempts_expires_at", columnList = "expires_at"),
+                @Index(name = "idx_payment_attempts_provider_charge", columnList = "provider, provider_charge_id")
         }
 )
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
@@ -69,6 +86,10 @@ public class PaymentAttempt {
     @Enumerated(EnumType.STRING)
     @Column(name = "provider", nullable = false, length = 40)
     private PaymentProvider provider;
+
+    @Size(max = 150, message = "Idempotency key must not exceed 150 characters")
+    @Column(name = "idempotency_key", length = 150)
+    private String idempotencyKey;
 
     @Size(max = 255, message = "Provider session id must not exceed 255 characters")
     @Column(name = "provider_session_id", length = 255)
@@ -123,7 +144,7 @@ public class PaymentAttempt {
         }
 
         if (provider == null) {
-            provider = PaymentProvider.SANDBOX;
+            provider = PaymentProvider.STRIPE;
         }
     }
 

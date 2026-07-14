@@ -1,10 +1,12 @@
 package com.ecommerce.payment.service.impl;
 
+import com.ecommerce.common.exception.BadRequestException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.payment.dto.request.CreatePaymentAttemptRequest;
 import com.ecommerce.payment.dto.response.PaymentAttemptResponse;
 import com.ecommerce.payment.entity.Payment;
 import com.ecommerce.payment.entity.PaymentAttempt;
+import com.ecommerce.payment.enums.PaymentProvider;
 import com.ecommerce.payment.mapper.PaymentAttemptMapper;
 import com.ecommerce.payment.repository.PaymentAttemptRepository;
 import com.ecommerce.payment.repository.PaymentRepository;
@@ -16,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -23,6 +26,12 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Transactional
 public class PaymentAttemptServiceImpl implements PaymentAttemptService {
+
+    private static final List<PaymentProvider> PROVIDER_LOOKUP_ORDER = List.of(
+            PaymentProvider.STRIPE,
+            PaymentProvider.SANDBOX,
+            PaymentProvider.RAZORPAY
+    );
 
     private final PaymentAttemptRepository paymentAttemptRepository;
     private final PaymentRepository paymentRepository;
@@ -39,6 +48,7 @@ public class PaymentAttemptServiceImpl implements PaymentAttemptService {
         paymentAttempt.setPayment(payment);
 
         PaymentAttempt savedAttempt = paymentAttemptRepository.save(paymentAttempt);
+
         return paymentAttemptMapper.toResponse(savedAttempt);
     }
 
@@ -77,7 +87,12 @@ public class PaymentAttemptServiceImpl implements PaymentAttemptService {
     @Override
     @Transactional(readOnly = true)
     public PaymentAttemptResponse getPaymentAttemptByProviderSessionId(String providerSessionId) {
-        PaymentAttempt attempt = paymentAttemptRepository.findByProviderSessionId(providerSessionId)
+        validateProviderLookupValue(
+                providerSessionId,
+                "Provider session id is required"
+        );
+
+        PaymentAttempt attempt = findByProviderSessionId(providerSessionId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Payment attempt not found for provider session id: " + providerSessionId
                 ));
@@ -90,13 +105,60 @@ public class PaymentAttemptServiceImpl implements PaymentAttemptService {
     public PaymentAttemptResponse getPaymentAttemptByProviderPaymentIntentId(
             String providerPaymentIntentId
     ) {
-        PaymentAttempt attempt = paymentAttemptRepository
-                .findByProviderPaymentIntentId(providerPaymentIntentId)
+        validateProviderLookupValue(
+                providerPaymentIntentId,
+                "Provider payment intent id is required"
+        );
+
+        PaymentAttempt attempt = findByProviderPaymentIntentId(providerPaymentIntentId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Payment attempt not found for provider payment intent id: "
                                 + providerPaymentIntentId
                 ));
 
         return paymentAttemptMapper.toResponse(attempt);
+    }
+
+    private Optional<PaymentAttempt> findByProviderSessionId(String providerSessionId) {
+        for (PaymentProvider provider : PROVIDER_LOOKUP_ORDER) {
+            Optional<PaymentAttempt> attempt =
+                    paymentAttemptRepository.findByProviderAndProviderSessionId(
+                            provider,
+                            providerSessionId
+                    );
+
+            if (attempt.isPresent()) {
+                return attempt;
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    private Optional<PaymentAttempt> findByProviderPaymentIntentId(
+            String providerPaymentIntentId
+    ) {
+        for (PaymentProvider provider : PROVIDER_LOOKUP_ORDER) {
+            Optional<PaymentAttempt> attempt =
+                    paymentAttemptRepository.findByProviderAndProviderPaymentIntentId(
+                            provider,
+                            providerPaymentIntentId
+                    );
+
+            if (attempt.isPresent()) {
+                return attempt;
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    private void validateProviderLookupValue(
+            String value,
+            String message
+    ) {
+        if (value == null || value.isBlank()) {
+            throw new BadRequestException(message);
+        }
     }
 }

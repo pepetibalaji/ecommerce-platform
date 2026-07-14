@@ -1,58 +1,79 @@
 syntax = "proto3";
 
+package ecommerce.payment.v1;
+
 option java_multiple_files = true;
 option java_package = "com.ecommerce.proto.payment";
+option java_outer_classname = "PaymentProto";
 
 service PaymentService {
 
   rpc ProcessPayment(
-      PaymentRequest
+      ProcessPaymentRequest
   ) returns (
-      PaymentResponse
+      ProcessPaymentResponse
   );
 
   rpc RefundPayment(
-      RefundRequest
+      RefundPaymentRequest
   ) returns (
-      PaymentResponse
+      RefundPaymentResponse
   );
 
   rpc GetPaymentStatus(
-      PaymentStatusRequest
+      GetPaymentStatusRequest
   ) returns (
-      PaymentStatusResponse
+      GetPaymentStatusResponse
   );
 }
 
-message PaymentRequest {
-
-  string orderId = 1;
-
-  double amount = 2;
+message ProcessPaymentRequest {
+  string order_id = 1;
+  string user_id = 2;
+  string amount = 3;
+  string currency = 4;
+  string idempotency_key = 5;
+  string success_url = 6;
+  string cancel_url = 7;
 }
 
-message RefundRequest {
-
-  string orderId = 1;
+message ProcessPaymentResponse {
+  string payment_id = 1;
+  string order_id = 2;
+  string status = 3;
+  string provider = 4;
+  string checkout_url = 5;
+  string provider_session_id = 6;
+  string expires_at = 7;
+  string failure_reason = 8;
 }
 
-message PaymentStatusRequest {
-
-  string orderId = 1;
+message RefundPaymentRequest {
+  string payment_id = 1;
+  string order_id = 2;
+  string amount = 3;
+  string currency = 4;
+  string reason = 5;
+  string idempotency_key = 6;
 }
 
-message PaymentResponse {
-
-  bool success = 1;
-
-  string transactionId = 2;
-
-  string message = 3;
+message RefundPaymentResponse {
+  string payment_id = 1;
+  string refund_id = 2;
+  string status = 3;
+  string provider_refund_id = 4;
+  string failure_reason = 5;
 }
 
-message PaymentStatusResponse {
+message GetPaymentStatusRequest {
+  string order_id = 1;
+}
 
-  string orderId = 1;
-
-  string status = 2;
+message GetPaymentStatusResponse {
+  string order_id = 1;
+  string payment_id = 2;
+  string status = 3;
+  string provider = 4;
+  string failure_reason = 5;
+  string updated_at = 6;
 }

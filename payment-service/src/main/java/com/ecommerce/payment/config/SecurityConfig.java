@@ -3,14 +3,21 @@ package com.ecommerce.payment.config;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
-import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
+
+import java.util.Collection;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Configuration
 @EnableMethodSecurity
@@ -21,12 +28,8 @@ public class SecurityConfig {
 
     @Bean
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
-        JwtGrantedAuthoritiesConverter authoritiesConverter = new JwtGrantedAuthoritiesConverter();
-        authoritiesConverter.setAuthoritiesClaimName("roles");
-        authoritiesConverter.setAuthorityPrefix("ROLE_");
-
         JwtAuthenticationConverter jwtAuthenticationConverter = new JwtAuthenticationConverter();
-        jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(authoritiesConverter);
+        jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(this::extractAuthorities);
         return jwtAuthenticationConverter;
     }
 
@@ -35,7 +38,6 @@ public class SecurityConfig {
             HttpSecurity http,
             JwtAuthenticationConverter jwtAuthenticationConverter
     ) throws Exception {
-
         return http
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session ->
@@ -43,6 +45,8 @@ public class SecurityConfig {
                 )
                 .addFilterBefore(responseTraceFilter, SecurityContextHolderFilter.class)
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
                         .requestMatchers(
                                 "/swagger-ui.html",
                                 "/swagger-ui/**",
@@ -50,14 +54,26 @@ public class SecurityConfig {
                                 "/v3/api-docs/**",
                                 "/v3/api-docs.yaml",
                                 "/swagger-resources/**",
-                                "/webjars/**"
+                                "/webjars/**",
+
+                                "/payment/v3/api-docs",
+                                "/payment/v3/api-docs/**",
+                                "/payment/v3/api-docs.yaml",
+                                "/payment/swagger-ui.html",
+                                "/payment/swagger-ui/**",
+                                "/payment/swagger-resources/**",
+                                "/payment/webjars/**"
                         ).permitAll()
+
                         .requestMatchers(
                                 "/actuator/health",
                                 "/actuator/health/**",
                                 "/actuator/info",
-                                "/actuator/prometheus"
+                                "/actuator/prometheus",
+                                "/actuator/metrics",
+                                "/actuator/metrics/**"
                         ).permitAll()
+
                         .requestMatchers("/api/v1/payments/webhooks/**").permitAll()
                         .requestMatchers("/public/payments/**").permitAll()
                         .requestMatchers("/api/v1/admin/payments/**").hasRole("ADMIN")
@@ -68,5 +84,57 @@ public class SecurityConfig {
                         oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter))
                 )
                 .build();
+    }
+
+    private Collection<GrantedAuthority> extractAuthorities(Jwt jwt) {
+        Set<GrantedAuthority> authorities = new LinkedHashSet<>();
+
+        addAuthoritiesFromClaim(authorities, jwt.getClaim("roles"));
+        addAuthoritiesFromClaim(authorities, jwt.getClaim("role"));
+        addAuthoritiesFromClaim(authorities, jwt.getClaim("authorities"));
+
+        return authorities;
+    }
+
+    private void addAuthoritiesFromClaim(
+            Set<GrantedAuthority> authorities,
+            Object claimValue
+    ) {
+        if (claimValue == null) {
+            return;
+        }
+
+        if (claimValue instanceof Collection<?> values) {
+            values.forEach(value -> addAuthority(authorities, value));
+            return;
+        }
+
+        if (claimValue instanceof String value) {
+            for (String role : value.split("[,\\s]+")) {
+                addAuthority(authorities, role);
+            }
+        }
+    }
+
+    private void addAuthority(
+            Set<GrantedAuthority> authorities,
+            Object rawValue
+    ) {
+        if (rawValue == null) {
+            return;
+        }
+
+        String value = rawValue.toString().trim();
+
+        if (value.isBlank()) {
+            return;
+        }
+
+        if (value.startsWith("ROLE_")) {
+            authorities.add(new SimpleGrantedAuthority(value));
+            return;
+        }
+
+        authorities.add(new SimpleGrantedAuthority("ROLE_" + value));
     }
 }

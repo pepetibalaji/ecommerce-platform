@@ -14,4 +14,10 @@ public interface PaymentRefundRepository extends JpaRepository<PaymentRefund, UU
     Optional<PaymentRefund> findByIdempotencyKey(String idempotencyKey);
 
     boolean existsByIdempotencyKey(String idempotencyKey);
+
+    Optional<PaymentRefund> findByPayment_IdAndIdempotencyKey(
+            UUID paymentId,
+            String idempotencyKey
+    );
+    Optional<PaymentRefund> findByProviderRefundId(String providerRefundId);
 }

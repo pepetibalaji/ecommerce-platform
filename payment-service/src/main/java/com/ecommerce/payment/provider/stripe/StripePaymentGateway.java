@@ -2,22 +2,28 @@ package com.ecommerce.payment.provider.stripe;
 
 import com.ecommerce.common.exception.BadRequestException;
 import com.ecommerce.payment.config.PaymentProviderProperties;
+import com.ecommerce.payment.dto.response.ProviderRefundStatus;
 import com.ecommerce.payment.enums.PaymentProvider;
 import com.ecommerce.payment.provider.PaymentGateway;
 import com.ecommerce.payment.provider.model.CheckoutSessionResult;
 import com.ecommerce.payment.provider.model.CreateCheckoutSessionCommand;
 import com.ecommerce.payment.provider.model.ProviderPaymentStatus;
+
 import com.ecommerce.payment.provider.model.ProviderWebhookEvent;
+import com.ecommerce.payment.provider.model.RefundGatewayRequest;
+import com.ecommerce.payment.provider.model.RefundGatewayResponse;
 import com.ecommerce.payment.provider.model.RefundPaymentCommand;
 import com.ecommerce.payment.provider.model.RefundPaymentResult;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
+import com.stripe.model.Refund;
 import com.stripe.model.StripeObject;
 import com.stripe.model.checkout.Session;
 import com.stripe.net.RequestOptions;
 import com.stripe.net.Webhook;
+import com.stripe.param.RefundCreateParams;
 import com.stripe.param.checkout.SessionCreateParams;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -52,8 +58,8 @@ public class StripePaymentGateway implements PaymentGateway {
 
         long amountInMinorUnit = toMinorUnit(command.getAmount());
 
-        String successUrl = replaceOrderId(properties.getCheckout().getSuccessUrl(), command);
-        String cancelUrl = replaceOrderId(properties.getCheckout().getCancelUrl(), command);
+        String successUrl = replacePlaceholders(properties.getCheckout().getSuccessUrl(), command);
+        String cancelUrl = replacePlaceholders(properties.getCheckout().getCancelUrl(), command);
 
         SessionCreateParams.LineItem.PriceData.ProductData productData =
                 SessionCreateParams.LineItem.PriceData.ProductData.builder()
@@ -101,7 +107,6 @@ public class StripePaymentGateway implements PaymentGateway {
                     .checkoutUrl(session.getUrl())
                     .expiresAt(toLocalDateTime(session.getExpiresAt()))
                     .build();
-
         } catch (StripeException exception) {
             throw new BadRequestException(
                     "Failed to create Stripe checkout session: " + exception.getMessage()
@@ -194,6 +199,25 @@ public class StripePaymentGateway implements PaymentGateway {
                     .build();
         }
 
+        if (isRefundEvent(eventType) && stripeObject instanceof Refund refund) {
+            ProviderRefundStatus refundStatus = mapRefundStatus(refund.getStatus());
+
+            return ProviderWebhookEvent.builder()
+                    .provider(PaymentProvider.STRIPE)
+                    .providerEventId(event.getId())
+                    .eventType(eventType)
+                    .status(ProviderPaymentStatus.IGNORED)
+                    .refundStatus(refundStatus)
+                    .providerRefundId(refund.getId())
+                    .providerPaymentIntentId(refund.getPaymentIntent())
+                    .providerChargeId(refund.getCharge())
+                    .refundAmount(refund.getAmount() == null
+                            ? null
+                            : BigDecimal.valueOf(refund.getAmount()).movePointLeft(2))
+                    .failureReason(refund.getFailureReason())
+                    .build();
+        }
+
         return ignored(event.getId(), eventType, "Stripe event type ignored by payment-service");
     }
 
@@ -214,6 +238,70 @@ public class StripePaymentGateway implements PaymentGateway {
                 .successful(false)
                 .failureReason("Refund is implemented in PAYMENT-103")
                 .build();
+    }
+
+    @Override
+    public RefundGatewayResponse refund(RefundGatewayRequest request) {
+        validateStripeApiKeyConfig();
+
+        try {
+            long amountInMinorUnit = toMinorUnit(request.amount());
+
+            RefundCreateParams params = RefundCreateParams.builder()
+                    .setPaymentIntent(request.providerPaymentIntentId())
+                    .setAmount(amountInMinorUnit)
+                    .build();
+
+            RequestOptions requestOptions = RequestOptions.builder()
+                    .setApiKey(properties.getProvider().getStripe().getApiKey())
+                    .setIdempotencyKey(request.idempotencyKey())
+                    .build();
+
+            Refund refund = Refund.create(params, requestOptions);
+
+            return new RefundGatewayResponse(
+                    true,
+                    refund.getId(),
+                    refund.getStatus(),
+                    null
+            );
+        } catch (StripeException exception) {
+            return new RefundGatewayResponse(
+                    false,
+                    null,
+                    "FAILED",
+                    exception.getMessage()
+            );
+        } catch (RuntimeException exception) {
+            return new RefundGatewayResponse(
+                    false,
+                    null,
+                    "FAILED",
+                    exception.getMessage()
+            );
+        }
+    }
+
+    private boolean isRefundEvent(String eventType) {
+        return "refund.created".equals(eventType)
+                || "refund.updated".equals(eventType)
+                || "charge.refunded".equals(eventType)
+                || "charge.refund.updated".equals(eventType);
+    }
+
+    private ProviderRefundStatus mapRefundStatus(String stripeStatus) {
+        if (stripeStatus == null || stripeStatus.isBlank()) {
+            return ProviderRefundStatus.PROCESSING;
+        }
+
+        String normalized = stripeStatus.trim().toLowerCase(Locale.ROOT);
+
+        return switch (normalized) {
+            case "pending" -> ProviderRefundStatus.PROCESSING;
+            case "succeeded", "success", "refunded" -> ProviderRefundStatus.SUCCESS;
+            case "failed", "canceled", "cancelled" -> ProviderRefundStatus.FAILED;
+            default -> ProviderRefundStatus.PROCESSING;
+        };
     }
 
     private ProviderWebhookEvent ignored(String eventId, String eventType, String reason) {
@@ -242,6 +330,17 @@ public class StripePaymentGateway implements PaymentGateway {
         }
     }
 
+    private void validateStripeApiKeyConfig() {
+        if (!properties.getProvider().getStripe().isEnabled()) {
+            throw new BadRequestException("Stripe provider is disabled");
+        }
+
+        if (properties.getProvider().getStripe().getApiKey() == null
+                || properties.getProvider().getStripe().getApiKey().isBlank()) {
+            throw new BadRequestException("Stripe API key is not configured");
+        }
+    }
+
     private long toMinorUnit(BigDecimal amount) {
         return amount
                 .movePointRight(2)
@@ -249,7 +348,7 @@ public class StripePaymentGateway implements PaymentGateway {
                 .longValueExact();
     }
 
-    private String replaceOrderId(String url, CreateCheckoutSessionCommand command) {
+    private String replacePlaceholders(String url, CreateCheckoutSessionCommand command) {
         return url
                 .replace("{ORDER_ID}", command.getOrderId().toString())
                 .replace("{PAYMENT_ID}", command.getPaymentId().toString());

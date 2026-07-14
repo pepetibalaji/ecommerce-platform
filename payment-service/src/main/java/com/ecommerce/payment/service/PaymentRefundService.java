@@ -1,12 +1,14 @@
 package com.ecommerce.payment.service;
 
 import com.ecommerce.payment.dto.request.CreatePaymentRefundRequest;
+import com.ecommerce.payment.dto.response.AdminRefundResponse;
 import com.ecommerce.payment.dto.response.PaymentRefundResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.validation.annotation.Validated;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -22,4 +24,12 @@ public interface PaymentRefundService {
     PaymentRefundResponse getPaymentRefundByIdempotencyKey(@NotBlank String idempotencyKey);
 
     boolean existsByIdempotencyKey(@NotBlank String idempotencyKey);
+    AdminRefundResponse refundPayment(
+        UUID paymentId,
+        UUID orderId,
+        BigDecimal amount,
+        String currency,
+        String reason,
+        String idempotencyKey
+    );
 }
