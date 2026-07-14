@@ -122,11 +122,16 @@ services:
         image: apache/kafka:4.3.0
         container_name: ecommerce-kafka-init
         restart: "no"
+        environment:
+            KAFKA_BOOTSTRAP_SERVER: kafka:9092
         volumes:
             - ./monitoring/create-kafka-topics.sh:/create-kafka-topics.sh:ro
-        entrypoint: ["/bin/bash", "/create-kafka-topics.sh"]
+        entrypoint: ["/bin/sh", "/create-kafka-topics.sh"]
         networks:
             - ecommerce-network
+        depends_on:
+            kafka:
+                condition: service_healthy
         logging: *default-logging
 
     tempo:

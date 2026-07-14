@@ -8,6 +8,8 @@ import com.ecommerce.payment.provider.model.CheckoutSessionResult;
 import com.ecommerce.payment.provider.model.CreateCheckoutSessionCommand;
 import com.ecommerce.payment.provider.model.ProviderPaymentStatus;
 import com.ecommerce.payment.provider.model.ProviderWebhookEvent;
+import com.ecommerce.payment.provider.model.RefundGatewayRequest;
+import com.ecommerce.payment.provider.model.RefundGatewayResponse;
 import com.ecommerce.payment.provider.model.RefundPaymentCommand;
 import com.ecommerce.payment.provider.model.RefundPaymentResult;
 import lombok.RequiredArgsConstructor;
@@ -81,7 +83,17 @@ public class SandboxPaymentGateway implements PaymentGateway {
     public RefundPaymentResult refundPayment(RefundPaymentCommand command) {
         return RefundPaymentResult.builder()
                 .successful(false)
-                .failureReason("Refund is implemented in PAYMENT-103")
+                .failureReason("Use refund(RefundGatewayRequest) for PAYMENT-103 refund flow")
                 .build();
+    }
+
+    @Override
+    public RefundGatewayResponse refund(RefundGatewayRequest request) {
+        return new RefundGatewayResponse(
+                true,
+                "sandbox-refund-" + request.paymentId(),
+                "processing",
+                null
+        );
     }
 }

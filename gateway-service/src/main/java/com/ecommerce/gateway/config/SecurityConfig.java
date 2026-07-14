@@ -37,6 +37,8 @@ public class SecurityConfig {
                                 "/auth/v3/api-docs/**",
                                 "/product/v3/api-docs",
                                 "/product/v3/api-docs/**",
+                                "/payment/v3/api-docs",
+                                "/payment/v3/api-docs/**",
                                 "/inventory/v3/api-docs",
                                 "/inventory/v3/api-docs/**",
                                 "/cart/v3/api-docs",

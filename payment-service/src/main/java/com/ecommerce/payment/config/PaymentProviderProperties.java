@@ -29,11 +29,18 @@ public class PaymentProviderProperties {
     @Setter
     public static class Provider {
 
+        /*
+         * Stripe Test Mode is the active implementation provider.
+         * Sandbox remains available as a local fallback through config override.
+         */
         @NotNull(message = "Active payment provider is required")
-        private PaymentProvider active = PaymentProvider.SANDBOX;
+        private PaymentProvider active = PaymentProvider.STRIPE;
 
         @NotBlank(message = "Payment provider mode is required")
-        private String mode = "sandbox";
+        private String mode = "test";
+
+        @Positive(message = "Provider refund timeout must be greater than zero")
+        private long refundTimeoutMs = 5000;
 
         @Valid
         @NotNull(message = "Sandbox payment provider configuration is required")
@@ -47,13 +54,31 @@ public class PaymentProviderProperties {
         @NotNull(message = "Razorpay payment provider configuration is required")
         private Razorpay razorpay = new Razorpay();
 
+        @AssertTrue(message = "Active payment provider must be enabled")
+        public boolean isActiveProviderEnabled() {
+            if (active == PaymentProvider.STRIPE) {
+                return stripe.enabled;
+            }
+
+            if (active == PaymentProvider.SANDBOX) {
+                return sandbox.enabled;
+            }
+
+            if (active == PaymentProvider.RAZORPAY) {
+                return razorpay.enabled;
+            }
+
+            return false;
+        }
+
         @AssertTrue(message = "Stripe API key and webhook secret are required when Stripe is active")
         public boolean isStripeConfigurationValidWhenEnabled() {
             if (active != PaymentProvider.STRIPE || !stripe.enabled) {
                 return true;
             }
 
-            return hasText(stripe.apiKey) && hasText(stripe.webhookSecret);
+            return hasText(stripe.apiKey)
+                    && hasText(stripe.webhookSecret);
         }
 
         @AssertTrue(message = "Razorpay key id, key secret, and webhook secret are required when Razorpay is active")
@@ -75,6 +100,7 @@ public class PaymentProviderProperties {
     @Getter
     @Setter
     public static class Sandbox {
+
         private boolean enabled = true;
     }
 
@@ -82,7 +108,7 @@ public class PaymentProviderProperties {
     @Setter
     public static class Stripe {
 
-        private boolean enabled = false;
+        private boolean enabled = true;
 
         private String apiKey = "";
 
@@ -113,9 +139,9 @@ public class PaymentProviderProperties {
     public static class Checkout {
 
         @NotBlank(message = "Checkout success URL is required")
-        private String successUrl;
+        private String successUrl = "http://localhost:3000/payments/success?orderId={ORDER_ID}&paymentId={PAYMENT_ID}";
 
         @NotBlank(message = "Checkout cancel URL is required")
-        private String cancelUrl;
+        private String cancelUrl = "http://localhost:3000/payments/cancel?orderId={ORDER_ID}&paymentId={PAYMENT_ID}";
     }
 }

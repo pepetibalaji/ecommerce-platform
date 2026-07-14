@@ -1,6 +1,5 @@
 package com.ecommerce.payment.entity;
 
-
 import com.ecommerce.payment.enums.PaymentProvider;
 import com.ecommerce.payment.enums.PaymentStatus;
 import jakarta.persistence.CascadeType;
@@ -55,7 +54,9 @@ import java.util.UUID;
                 @Index(name = "idx_payments_user_id", columnList = "user_id"),
                 @Index(name = "idx_payments_status", columnList = "status"),
                 @Index(name = "idx_payments_provider", columnList = "provider"),
-                @Index(name = "idx_payments_created_at", columnList = "created_at")
+                @Index(name = "idx_payments_created_at", columnList = "created_at"),
+                @Index(name = "idx_payments_correlation_id", columnList = "correlation_id"),
+                @Index(name = "idx_payments_trace_id", columnList = "trace_id")
         }
 )
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
@@ -107,6 +108,14 @@ public class Payment {
     @Column(name = "failure_reason", columnDefinition = "TEXT")
     private String failureReason;
 
+    @Size(max = 128, message = "Correlation id must not exceed 128 characters")
+    @Column(name = "correlation_id", length = 128)
+    private String correlationId;
+
+    @Size(max = 128, message = "Trace id must not exceed 128 characters")
+    @Column(name = "trace_id", length = 128)
+    private String traceId;
+
     @NotNull(message = "Created timestamp is required")
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -151,12 +160,21 @@ public class Payment {
         }
 
         if (provider == null) {
-            provider = PaymentProvider.SANDBOX;
+            provider = PaymentProvider.STRIPE;
         }
+
+        normalizeCurrency();
     }
 
     @PreUpdate
     void preUpdate() {
         updatedAt = LocalDateTime.now();
+        normalizeCurrency();
+    }
+
+    private void normalizeCurrency() {
+        if (currency != null) {
+            currency = currency.trim().toUpperCase();
+        }
     }
 }

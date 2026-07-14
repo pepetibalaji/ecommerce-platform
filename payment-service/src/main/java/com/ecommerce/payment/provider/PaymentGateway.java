@@ -4,6 +4,8 @@ import com.ecommerce.payment.enums.PaymentProvider;
 import com.ecommerce.payment.provider.model.CheckoutSessionResult;
 import com.ecommerce.payment.provider.model.CreateCheckoutSessionCommand;
 import com.ecommerce.payment.provider.model.ProviderWebhookEvent;
+import com.ecommerce.payment.provider.model.RefundGatewayRequest;
+import com.ecommerce.payment.provider.model.RefundGatewayResponse;
 import com.ecommerce.payment.provider.model.RefundPaymentCommand;
 import com.ecommerce.payment.provider.model.RefundPaymentResult;
 
@@ -22,4 +24,6 @@ public interface PaymentGateway {
     ProviderWebhookEvent getPaymentStatus(String providerPaymentId);
 
     RefundPaymentResult refundPayment(RefundPaymentCommand command);
+
+    RefundGatewayResponse refund(RefundGatewayRequest request);
 }

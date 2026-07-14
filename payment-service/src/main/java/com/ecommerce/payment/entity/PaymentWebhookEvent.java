@@ -114,8 +114,14 @@ public class PaymentWebhookEvent {
 
     @PreUpdate
     void preUpdate() {
-        if (processingStatus == WebhookProcessingStatus.PROCESSED && processedAt == null) {
+        if (isFinalProcessingStatus() && processedAt == null) {
             processedAt = LocalDateTime.now();
         }
+    }
+
+    private boolean isFinalProcessingStatus() {
+        return processingStatus == WebhookProcessingStatus.PROCESSED
+                || processingStatus == WebhookProcessingStatus.IGNORED
+                || processingStatus == WebhookProcessingStatus.FAILED;
     }
 }

@@ -44,12 +44,19 @@ import java.util.UUID;
 @Table(
         name = "payment_refunds",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uk_payment_refunds_idempotency_key", columnNames = "idempotency_key")
+                @UniqueConstraint(
+                        name = "uk_payment_refunds_idempotency_key",
+                        columnNames = "idempotency_key"
+                )
         },
         indexes = {
                 @Index(name = "idx_payment_refunds_payment_id", columnList = "payment_id"),
                 @Index(name = "idx_payment_refunds_status", columnList = "status"),
-                @Index(name = "idx_payment_refunds_created_at", columnList = "created_at")
+                @Index(name = "idx_payment_refunds_created_at", columnList = "created_at"),
+                @Index(
+                        name = "idx_payment_refunds_payment_id_idempotency_key",
+                        columnList = "payment_id, idempotency_key"
+                )
         }
 )
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
@@ -129,10 +136,19 @@ public class PaymentRefund {
         if (status == null) {
             status = RefundStatus.REFUND_REQUESTED;
         }
+
+        normalizeCurrency();
     }
 
     @PreUpdate
     void preUpdate() {
         updatedAt = LocalDateTime.now();
+        normalizeCurrency();
+    }
+
+    private void normalizeCurrency() {
+        if (currency != null) {
+            currency = currency.trim().toUpperCase();
+        }
     }
 }

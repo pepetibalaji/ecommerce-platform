@@ -7,6 +7,8 @@ import com.ecommerce.payment.provider.PaymentGateway;
 import com.ecommerce.payment.provider.model.CheckoutSessionResult;
 import com.ecommerce.payment.provider.model.CreateCheckoutSessionCommand;
 import com.ecommerce.payment.provider.model.ProviderWebhookEvent;
+import com.ecommerce.payment.provider.model.RefundGatewayRequest;
+import com.ecommerce.payment.provider.model.RefundGatewayResponse;
 import com.ecommerce.payment.provider.model.RefundPaymentCommand;
 import com.ecommerce.payment.provider.model.RefundPaymentResult;
 import lombok.RequiredArgsConstructor;
@@ -51,5 +53,15 @@ public class RazorpayPaymentGateway implements PaymentGateway {
     @Override
     public RefundPaymentResult refundPayment(RefundPaymentCommand command) {
         throw new BadRequestException("Razorpay refund is not implemented in PAYMENT-102");
+    }
+
+    @Override
+    public RefundGatewayResponse refund(RefundGatewayRequest request) {
+        return new RefundGatewayResponse(
+                false,
+                null,
+                "UNSUPPORTED",
+                "Razorpay refund is not implemented yet"
+        );
     }
 }

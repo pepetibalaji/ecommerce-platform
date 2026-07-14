@@ -16,7 +16,7 @@ import org.springframework.context.annotation.Configuration;
         info = @Info(
                 title = "Payment Service API",
                 version = "v1",
-                description = "Payment processing, payment status, transaction visibility, and provider webhook service",
+                description = "Payment checkout, payment visibility, provider webhooks, and admin refund APIs",
                 contact = @Contact(
                         name = "Ecommerce Platform Team",
                         email = "support@ecommerce.com"
@@ -26,7 +26,10 @@ import org.springframework.context.annotation.Configuration;
                 )
         ),
         servers = {
-                @Server(url = "/", description = "Relative server for Gateway Swagger aggregation")
+                @Server(
+                        url = "/",
+                        description = "Relative server for Gateway Swagger aggregation"
+                )
         },
         security = {
                 @SecurityRequirement(name = "bearerAuth")
