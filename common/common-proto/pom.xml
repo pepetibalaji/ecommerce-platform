@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+<project xmlns="http://apache.org"
+         xmlns:xsi="http://w3.org"
          xsi:schemaLocation="
-         http://maven.apache.org/POM/4.0.0
-         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+         http://apache.org
+         https://apache.org">
 
     <modelVersion>4.0.0</modelVersion>
 
@@ -68,7 +68,11 @@
                 <groupId>org.xolstice.maven.plugins</groupId>
                 <artifactId>protobuf-maven-plugin</artifactId>
                 <version>${protobuf.maven.plugin.version}</version>
+                
                 <configuration>
+                    <!-- Prevents Windows file locks by disabling mid-build cleanup -->
+                    <clearOutputDirectory>false</clearOutputDirectory>
+                    
                     <protocArtifact>
                         com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}
                     </protocArtifact>
@@ -77,6 +81,7 @@
                         io.grpc:protoc-gen-grpc-java:${grpc.version}:exe:${os.detected.classifier}
                     </pluginArtifact>
                 </configuration>
+                
                 <executions>
                     <execution>
                         <id>compile-protobuf</id>

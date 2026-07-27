@@ -58,6 +58,12 @@
             <artifactId>grpc-stub</artifactId>
         </dependency>
 
+        <!-- Trace-context propagation for gRPC client calls -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing</artifactId>
+        </dependency>
+
         <!-- Jakarta annotation support -->
         <dependency>
             <groupId>jakarta.annotation</groupId>

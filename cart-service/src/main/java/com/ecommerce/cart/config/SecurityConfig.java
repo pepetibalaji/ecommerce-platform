@@ -9,7 +9,6 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.context.SecurityContextHolderFilter;
 
 @Configuration
 @EnableMethodSecurity
@@ -33,10 +32,6 @@ public class SecurityConfig {
     };
 
     private final JwtAuthenticationConverter jwtAuthenticationConverter;
-    
-   
-    private final ResponseTraceFilter responseTraceFilter; 
-
     @Bean
     public SecurityFilterChain cartSecurityFilterChain(HttpSecurity http)
             throws Exception {
@@ -47,10 +42,6 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
-                
-                // Tracing filter is hooked into the security chain entrance successfully
-                .addFilterBefore(responseTraceFilter, SecurityContextHolderFilter.class)
-                
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(SWAGGER_WHITELIST).permitAll()
                         .requestMatchers(ACTUATOR_WHITELIST).permitAll()

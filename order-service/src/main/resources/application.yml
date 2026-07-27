@@ -11,3 +11,11 @@ spring:
     autoconfigure:
         exclude:
             - net.devh.boot.grpc.server.autoconfigure.GrpcServerFactoryAutoConfiguration
+
+logging:
+    structured:
+        format:
+            console: logstash
+            file: logstash
+    file:
+        name: ${OBSERVABILITY_LOG_FILE:../logs/order-service.json}

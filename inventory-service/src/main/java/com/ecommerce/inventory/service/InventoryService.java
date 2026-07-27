@@ -1,6 +1,7 @@
 package com.ecommerce.inventory.service;
 
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.common.exception.ResourceAlreadyExistsException;
 
 import com.ecommerce.inventory.dto.InventoryResponse;
 
@@ -151,6 +152,12 @@ public class InventoryService {
     public InventoryResponse createInventory(
             CreateInventoryRequest request
     ) {
+
+        if (inventoryRepository.existsByProductId(request.getProductId())) {
+            throw new ResourceAlreadyExistsException(
+                    "Inventory already exists for product: " + request.getProductId()
+            );
+        }
 
         Inventory inventory = Inventory.builder()
                 .id(UUID.randomUUID())

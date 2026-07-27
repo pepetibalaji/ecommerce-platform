@@ -1,0 +1,39 @@
+local.file_match "application_logs" {
+  path_targets = [
+    { "__path__" = "/var/log/ecommerce/config-server.json", "service" = "config-server" },
+    { "__path__" = "/var/log/ecommerce/gateway-service.json", "service" = "gateway-service" },
+    { "__path__" = "/var/log/ecommerce/auth-service.json", "service" = "auth-service" },
+    { "__path__" = "/var/log/ecommerce/product-service.json", "service" = "product-service" },
+    { "__path__" = "/var/log/ecommerce/inventory-service.json", "service" = "inventory-service" },
+    { "__path__" = "/var/log/ecommerce/cart-service.json", "service" = "cart-service" },
+    { "__path__" = "/var/log/ecommerce/order-service.json", "service" = "order-service" },
+    { "__path__" = "/var/log/ecommerce/payment-service.json", "service" = "payment-service" },
+  ]
+}
+
+loki.source.file "application_logs" {
+  targets    = local.file_match.application_logs.targets
+  forward_to = [loki.process.application_logs.receiver]
+}
+
+loki.process "application_logs" {
+  stage.json {
+    expressions = {
+      level = "level",
+    }
+  }
+
+  stage.labels {
+    values = {
+      level = "level",
+    }
+  }
+
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

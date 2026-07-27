@@ -22,6 +22,7 @@
         <module>common/common-grpc</module>
         <module>common/common-redis</module>
         <module>common/common-events</module>
+        <module>common/common-tracing</module>
 
         <!-- Platform services -->
         <module>config-server</module>
@@ -201,6 +202,12 @@
             <dependency>
                 <groupId>com.ecommerce</groupId>
                 <artifactId>common-events</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.ecommerce</groupId>
+                <artifactId>common-tracing</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

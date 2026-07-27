@@ -17,7 +17,16 @@ management:
     endpoints:
         web:
             exposure:
-                include: health,info,refresh,prometheus
+                # 2. Add 'encrypt' and 'decrypt' to the exposed management endpoints
+                include: health,info,refresh,prometheus,encrypt,decrypt
     endpoint:
         health:
             show-details: always
+
+logging:
+    structured:
+        format:
+            console: logstash
+            file: logstash
+    file:
+        name: ${OBSERVABILITY_LOG_FILE:../logs/config-server.json}
