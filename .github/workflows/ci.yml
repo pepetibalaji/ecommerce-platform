@@ -209,4 +209,4 @@ jobs:
               run: docker build -t order-service ./order-service
 
             - name: Build Payment Image
-              run: docker build -f payment-service/Dockerfile -t payment-service .
+              run: docker build -t payment-service ./payment-service
