@@ -8,20 +8,20 @@ This is not a simple CRUD demo. It is a distributed backend platform designed ar
 
 ## Project Summary
 
-| Area | Details |
-|---|---|
-| Architecture | Microservices, event-driven, domain-oriented |
-| Language | Java 21 |
-| Framework | Spring Boot 3.x |
-| Security | Spring Security, OAuth2 Resource Server, Spring Authorization Server |
-| Databases | PostgreSQL, Redis |
-| Messaging | Apache Kafka |
-| Internal Communication | gRPC |
-| Configuration | Spring Cloud Config Server |
-| Observability | Actuator, Micrometer, Prometheus, Grafana, Zipkin |
-| API Documentation | Swagger / OpenAPI |
-| Infrastructure | Docker Compose |
-| Future Deployment Target | Kubernetes |
+| Area                     | Details                                                              |
+| ------------------------ | -------------------------------------------------------------------- |
+| Architecture             | Microservices, event-driven, domain-oriented                         |
+| Language                 | Java 21                                                              |
+| Framework                | Spring Boot 3.x                                                      |
+| Security                 | Spring Security, OAuth2 Resource Server, Spring Authorization Server |
+| Databases                | PostgreSQL, Redis                                                    |
+| Messaging                | Apache Kafka                                                         |
+| Internal Communication   | gRPC                                                                 |
+| Configuration            | Spring Cloud Config Server                                           |
+| Observability            | Actuator, Micrometer, Prometheus, Grafana, Zipkin                    |
+| API Documentation        | Swagger / OpenAPI                                                    |
+| Infrastructure           | Docker Compose                                                       |
+| Future Deployment Target | Kubernetes                                                           |
 
 ---
 
@@ -84,20 +84,20 @@ Kafka      ---> Domain events
 
 ## Technology Stack
 
-| Layer | Technology |
-|---|---|
-| Backend | Java 21, Spring Boot 3.x |
-| Security | Spring Security, OAuth2 Resource Server, Spring Authorization Server |
-| Persistence | PostgreSQL, Spring Data JPA, Flyway |
-| Cache / Fast State | Redis |
-| Messaging | Apache Kafka |
-| Internal RPC | gRPC, Protocol Buffers |
-| Config | Spring Cloud Config Server |
-| API Docs | Swagger / OpenAPI |
-| Observability | Actuator, Micrometer, Prometheus, Grafana, Zipkin |
-| Build | Maven Multi-Module |
-| Local Infra | Docker Compose |
-| Future Deployment | Kubernetes |
+| Layer              | Technology                                                           |
+| ------------------ | -------------------------------------------------------------------- |
+| Backend            | Java 21, Spring Boot 3.x                                             |
+| Security           | Spring Security, OAuth2 Resource Server, Spring Authorization Server |
+| Persistence        | PostgreSQL, Spring Data JPA, Flyway                                  |
+| Cache / Fast State | Redis                                                                |
+| Messaging          | Apache Kafka                                                         |
+| Internal RPC       | gRPC, Protocol Buffers                                               |
+| Config             | Spring Cloud Config Server                                           |
+| API Docs           | Swagger / OpenAPI                                                    |
+| Observability      | Actuator, Micrometer, Prometheus, Grafana, Zipkin                    |
+| Build              | Maven Multi-Module                                                   |
+| Local Infra        | Docker Compose                                                       |
+| Future Deployment  | Kubernetes                                                           |
 
 ---
 
@@ -112,7 +112,7 @@ ecommerce-platform
 ├── inventory-service
 ├── cart-service
 ├── order-service
-├── payment-service              # Planned
+├── payment-service
 ├── notification-service         # Planned
 ├── shipping-service             # Planned
 ├── address-service              # Planned
@@ -133,18 +133,18 @@ ecommerce-platform
 
 ## Current Implementation Status
 
-| Module | Status | Highlights |
-|---|---:|---|
-| Config Server | Completed | Centralized runtime config |
-| Auth Service | Completed core migration | OAuth2, JWT claims, refresh tokens, logout, admin users |
-| Product Service | Completed | Product CRUD, filtering, pagination, admin APIs |
-| Inventory Service | Completed | Stock management, gRPC APIs |
-| Cart Service | Completed | Redis-backed user cart |
-| Order Service | Completed current milestone | Order lifecycle, Inventory gRPC, Kafka `order-created` |
-| Payment Service | Planned | Payment processing and payment events |
-| Notification Service | Planned | Kafka-driven notifications |
-| Shipping Service | Planned | Shipment assignment and tracking |
-| Gateway Service | Planned / Pending | Routing, JWT validation, rate limiting, trace propagation |
+| Module               |                      Status | Highlights                                                |
+| -------------------- | --------------------------: | --------------------------------------------------------- |
+| Config Server        |                   Completed | Centralized runtime config                                |
+| Auth Service         |    Completed core migration | OAuth2, JWT claims, refresh tokens, logout, admin users   |
+| Product Service      |                   Completed | Product CRUD, filtering, pagination, admin APIs           |
+| Inventory Service    |                   Completed | Stock management, gRPC APIs                               |
+| Cart Service         |                   Completed | Redis-backed user cart                                    |
+| Order Service        | Completed current milestone | Order lifecycle, Inventory gRPC, Kafka `order-created`    |
+| Payment Service      |                   Completed | Payment processing and payment events                     |
+| Notification Service |                     Planned | Kafka-driven notifications                                |
+| Shipping Service     |                     Planned | Shipment assignment and tracking                          |
+| Gateway Service      |           Planned / Pending | Routing, JWT validation, rate limiting, trace propagation |
 
 ---
 
@@ -171,30 +171,30 @@ JWT claim contract:
 
 ```json
 {
-  "sub": "user@email.com",
-  "userId": "uuid",
-  "role": "CUSTOMER",
-  "status": "ACTIVE",
-  "tokenVersion": 0
+    "sub": "user@email.com",
+    "userId": "uuid",
+    "role": "CUSTOMER",
+    "status": "ACTIVE",
+    "tokenVersion": 0
 }
 ```
 
 Auth APIs:
 
-| Method | Endpoint | Access |
-|---|---|---|
-| POST | `/api/v1/auth/register` | Public |
-| POST | `/api/v1/auth/login` | Public |
-| POST | `/api/v1/auth/refresh` | Public |
-| POST | `/api/v1/auth/logout` | Authenticated |
-| GET | `/api/v1/users/me` | Authenticated |
-| PUT | `/api/v1/users/me` | Authenticated |
-| DELETE | `/api/v1/users/me` | Authenticated |
-| GET | `/api/v1/admin/users` | Admin |
-| GET | `/api/v1/admin/users/{id}` | Admin |
-| DELETE | `/api/v1/admin/users/{id}` | Admin |
-| PUT | `/api/v1/admin/users/{id}/role` | Admin |
-| POST | `/api/v1/admin/users/{id}/logout` | Admin |
+| Method | Endpoint                          | Access        |
+| ------ | --------------------------------- | ------------- |
+| POST   | `/api/v1/auth/register`           | Public        |
+| POST   | `/api/v1/auth/login`              | Public        |
+| POST   | `/api/v1/auth/refresh`            | Public        |
+| POST   | `/api/v1/auth/logout`             | Authenticated |
+| GET    | `/api/v1/users/me`                | Authenticated |
+| PUT    | `/api/v1/users/me`                | Authenticated |
+| DELETE | `/api/v1/users/me`                | Authenticated |
+| GET    | `/api/v1/admin/users`             | Admin         |
+| GET    | `/api/v1/admin/users/{id}`        | Admin         |
+| DELETE | `/api/v1/admin/users/{id}`        | Admin         |
+| PUT    | `/api/v1/admin/users/{id}/role`   | Admin         |
+| POST   | `/api/v1/admin/users/{id}/logout` | Admin         |
 
 ---
 
@@ -215,15 +215,15 @@ Features:
 
 Product APIs:
 
-| Method | Endpoint | Access |
-|---|---|---|
-| GET | `/api/v1/products` | Public |
-| GET | `/api/v1/products/{id}` | Public |
-| GET | `/api/v1/products?category=&minPrice=&maxPrice=&page=&size=` | Public |
-| POST | `/api/v1/admin/products` | Admin |
-| POST | `/api/v1/admin/products/bulk` | Admin |
-| PUT | `/api/v1/admin/products/{id}` | Admin |
-| DELETE | `/api/v1/admin/products/{id}` | Admin |
+| Method | Endpoint                                                     | Access |
+| ------ | ------------------------------------------------------------ | ------ |
+| GET    | `/api/v1/products`                                           | Public |
+| GET    | `/api/v1/products/{id}`                                      | Public |
+| GET    | `/api/v1/products?category=&minPrice=&maxPrice=&page=&size=` | Public |
+| POST   | `/api/v1/admin/products`                                     | Admin  |
+| POST   | `/api/v1/admin/products/bulk`                                | Admin  |
+| PUT    | `/api/v1/admin/products/{id}`                                | Admin  |
+| DELETE | `/api/v1/admin/products/{id}`                                | Admin  |
 
 ---
 
@@ -277,13 +277,13 @@ cart:{userId}
 
 Cart APIs:
 
-| Method | Endpoint | Access |
-|---|---|---|
-| POST | `/api/v1/cart` | Authenticated |
-| PUT | `/api/v1/cart/{itemId}` | Authenticated |
-| GET | `/api/v1/cart` | Authenticated |
+| Method | Endpoint                | Access        |
+| ------ | ----------------------- | ------------- |
+| POST   | `/api/v1/cart`          | Authenticated |
+| PUT    | `/api/v1/cart/{itemId}` | Authenticated |
+| GET    | `/api/v1/cart`          | Authenticated |
 | DELETE | `/api/v1/cart/{itemId}` | Authenticated |
-| DELETE | `/api/v1/cart` | Authenticated |
+| DELETE | `/api/v1/cart`          | Authenticated |
 
 ---
 
@@ -306,15 +306,15 @@ Features:
 
 Order APIs:
 
-| Method | Endpoint | Access |
-|---|---|---|
-| POST | `/api/v1/orders` | Authenticated |
-| GET | `/api/v1/orders` | Authenticated |
-| GET | `/api/v1/orders/{id}` | Authenticated |
-| GET | `/api/v1/orders?status=&page=&size=` | Authenticated |
-| PUT | `/api/v1/orders/{id}/cancel` | Authenticated |
-| GET | `/api/v1/admin/orders` | Admin |
-| PUT | `/api/v1/admin/orders/{id}/status` | Admin |
+| Method | Endpoint                             | Access        |
+| ------ | ------------------------------------ | ------------- |
+| POST   | `/api/v1/orders`                     | Authenticated |
+| GET    | `/api/v1/orders`                     | Authenticated |
+| GET    | `/api/v1/orders/{id}`                | Authenticated |
+| GET    | `/api/v1/orders?status=&page=&size=` | Authenticated |
+| PUT    | `/api/v1/orders/{id}/cancel`         | Authenticated |
+| GET    | `/api/v1/admin/orders`               | Admin         |
+| PUT    | `/api/v1/admin/orders/{id}/status`   | Admin         |
 
 Order creation flow:
 
@@ -375,12 +375,12 @@ Business services validate JWTs issued by Auth Service using:
 
 ```yaml
 spring:
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: http://localhost:8081
-          jwk-set-uri: http://localhost:8081/oauth2/jwks
+    security:
+        oauth2:
+            resourceserver:
+                jwt:
+                    issuer-uri: http://localhost:8081
+                    jwk-set-uri: http://localhost:8081/oauth2/jwks
 ```
 
 ### Important Identity Fix
@@ -409,15 +409,15 @@ This fix was applied to user-owned flows such as Cart and Order.
 
 ## Shared Modules
 
-| Module | Purpose |
-|---|---|
-| `common-security` | JWT claim helpers, authority conversion, Resource Server support |
-| `common-exception` | Shared exceptions and API error responses |
-| `common-proto` | Shared gRPC protobuf contracts |
-| `common-grpc` | Shared gRPC support |
-| `common-events` | Shared event models and Kafka topic constants |
-| `common-utils` | Utility classes |
-| `common-logging` | Structured logging and trace helpers |
+| Module             | Purpose                                                          |
+| ------------------ | ---------------------------------------------------------------- |
+| `common-security`  | JWT claim helpers, authority conversion, Resource Server support |
+| `common-exception` | Shared exceptions and API error responses                        |
+| `common-proto`     | Shared gRPC protobuf contracts                                   |
+| `common-grpc`      | Shared gRPC support                                              |
+| `common-events`    | Shared event models and Kafka topic constants                    |
+| `common-utils`     | Utility classes                                                  |
+| `common-logging`   | Structured logging and trace helpers                             |
 
 ---
 
@@ -450,30 +450,30 @@ Use this for host-running services:
 
 ```yaml
 spring:
-  kafka:
-    bootstrap-servers: localhost:29092
+    kafka:
+        bootstrap-servers: localhost:29092
 ```
 
 Use this for services running inside Docker network:
 
 ```yaml
 spring:
-  kafka:
-    bootstrap-servers: kafka:9092
+    kafka:
+        bootstrap-servers: kafka:9092
 ```
 
 Kafka producer config for Order Service:
 
 ```yaml
 spring:
-  kafka:
-    bootstrap-servers: localhost:29092
-    producer:
-      acks: all
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-      properties:
-        spring.json.add.type.headers: false
+    kafka:
+        bootstrap-servers: localhost:29092
+        producer:
+            acks: all
+            key-serializer: org.apache.kafka.common.serialization.StringSerializer
+            value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+            properties:
+                spring.json.add.type.headers: false
 ```
 
 ---
@@ -587,16 +587,16 @@ cart:{userId}
 
 Local infrastructure includes:
 
-| Component | Port |
-|---|---:|
-| PostgreSQL | 5433 |
-| Redis | 6379 |
-| Zookeeper | 2181 |
-| Kafka internal listener | 9092 |
-| Kafka host listener | 29092 |
-| Zipkin | 9411 |
-| Prometheus | 9090 |
-| Grafana | 3000 |
+| Component               |  Port |
+| ----------------------- | ----: |
+| PostgreSQL              |  5433 |
+| Redis                   |  6379 |
+| Zookeeper               |  2181 |
+| Kafka internal listener |  9092 |
+| Kafka host listener     | 29092 |
+| Zipkin                  |  9411 |
+| Prometheus              |  9090 |
+| Grafana                 |  3000 |
 
 Start infrastructure:
 
@@ -635,14 +635,14 @@ Local service `application.yml` files are intentionally minimal:
 
 ```yaml
 spring:
-  application:
-    name: order-service
+    application:
+        name: order-service
 
-  profiles:
-    active: dev
+    profiles:
+        active: dev
 
-  config:
-    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+    config:
+        import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
 ```
 
 Environment-specific config files:
@@ -660,34 +660,34 @@ order-service-dev.yml
 
 ## Swagger URLs
 
-| Service | Swagger UI |
-|---|---|
-| Auth Service | `http://localhost:8081/swagger-ui.html` |
-| Product Service | `http://localhost:8082/swagger-ui.html` |
+| Service           | Swagger UI                              |
+| ----------------- | --------------------------------------- |
+| Auth Service      | `http://localhost:8081/swagger-ui.html` |
+| Product Service   | `http://localhost:8082/swagger-ui.html` |
 | Inventory Service | `http://localhost:8084/swagger-ui.html` |
-| Cart Service | `http://localhost:8085/swagger-ui.html` |
-| Order Service | `http://localhost:8086/swagger-ui.html` |
+| Cart Service      | `http://localhost:8085/swagger-ui.html` |
+| Order Service     | `http://localhost:8086/swagger-ui.html` |
 
 ---
 
 ## Local Service Ports
 
-| Service | Port |
-|---|---:|
-| Config Server | 8888 |
-| Auth Service | 8081 |
-| Product Service | 8082 |
-| Inventory Service | 8084 |
-| Cart Service | 8085 |
-| Order Service | 8086 |
-| Inventory gRPC | 9091 |
-| PostgreSQL | 5433 |
-| Redis | 6379 |
-| Kafka Host Listener | 29092 |
-| Kafka Docker Listener | 9092 |
-| Zipkin | 9411 |
-| Prometheus | 9090 |
-| Grafana | 3000 |
+| Service               |  Port |
+| --------------------- | ----: |
+| Config Server         |  8888 |
+| Auth Service          |  8081 |
+| Product Service       |  8082 |
+| Inventory Service     |  8084 |
+| Cart Service          |  8085 |
+| Order Service         |  8086 |
+| Inventory gRPC        |  9091 |
+| PostgreSQL            |  5433 |
+| Redis                 |  6379 |
+| Kafka Host Listener   | 29092 |
+| Kafka Docker Listener |  9092 |
+| Zipkin                |  9411 |
+| Prometheus            |  9090 |
+| Grafana               |  3000 |
 
 ---
 
@@ -695,14 +695,14 @@ order-service-dev.yml
 
 The platform is designed for production-style observability.
 
-| Tool | Purpose |
-|---|---|
+| Tool                 | Purpose                         |
+| -------------------- | ------------------------------- |
 | Spring Boot Actuator | Health, metrics, runtime status |
-| Micrometer | Metrics instrumentation |
-| Prometheus | Metrics scraping |
-| Grafana | Metrics dashboards |
-| Zipkin | Distributed tracing |
-| Structured Logging | Trace-aware debugging |
+| Micrometer           | Metrics instrumentation         |
+| Prometheus           | Metrics scraping                |
+| Grafana              | Metrics dashboards              |
+| Zipkin               | Distributed tracing             |
+| Structured Logging   | Trace-aware debugging           |
 
 Common endpoints:
 
@@ -732,13 +732,13 @@ mvn -pl auth-service,product-service,inventory-service,cart-service,order-servic
 
 Current test coverage:
 
-| Service | Coverage |
-|---|---|
-| Auth Service | Register, login, refresh, logout, user profile, admin user flows |
-| Product Service | Product create/read/delete, filtering, pagination |
-| Inventory Service | Inventory create/update/get |
-| Cart Service | Add/update/get/remove/clear cart |
-| Order Service | Create order, reserve stock, insufficient stock, cancel order, admin status update |
+| Service           | Coverage                                                                           |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| Auth Service      | Register, login, refresh, logout, user profile, admin user flows                   |
+| Product Service   | Product create/read/delete, filtering, pagination                                  |
+| Inventory Service | Inventory create/update/get                                                        |
+| Cart Service      | Add/update/get/remove/clear cart                                                   |
+| Order Service     | Create order, reserve stock, insufficient stock, cancel order, admin status update |
 
 ---
 
@@ -789,12 +789,12 @@ Business errors use shared exception classes instead of raw Java exceptions.
 
 Examples:
 
-| Exception | HTTP Status |
-|---|---|
-| `ResourceNotFoundException` | 404 |
-| `ResourceAlreadyExistsException` | 409 |
-| `UnauthorizedException` | 401 |
-| `BadRequestException` | 400 |
+| Exception                        | HTTP Status |
+| -------------------------------- | ----------- |
+| `ResourceNotFoundException`      | 404         |
+| `ResourceAlreadyExistsException` | 409         |
+| `UnauthorizedException`          | 401         |
+| `BadRequestException`            | 400         |
 
 ### Stable Pagination
 
@@ -806,14 +806,14 @@ Order Service uses stable page serialization to avoid unstable `PageImpl` JSON o
 
 ### Next Services
 
-| Priority | Service | Purpose |
-|---|---|---|
-| 1 | Payment Service | Process payments and publish payment success/failure events |
-| 2 | Notification Service | Consume Kafka events and notify users |
-| 3 | Shipping Service | Shipment assignment and tracking |
-| 4 | Address Service | User address management |
-| 5 | Pricing Service | Coupons and discounts |
-| 6 | Search Service | Elasticsearch-powered product search |
+| Priority | Service              | Purpose                                                     |
+| -------- | -------------------- | ----------------------------------------------------------- |
+| 1        | Payment Service      | Process payments and publish payment success/failure events |
+| 2        | Notification Service | Consume Kafka events and notify users                       |
+| 3        | Shipping Service     | Shipment assignment and tracking                            |
+| 4        | Address Service      | User address management                                     |
+| 5        | Pricing Service      | Coupons and discounts                                       |
+| 6        | Search Service       | Elasticsearch-powered product search                        |
 
 ### Platform Hardening
 

@@ -1,0 +1,137 @@
+# =========================================================
+# PAYMENT SERVICE API TESTS
+# =========================================================
+# Service: payment-service
+# Base URL: http://localhost:8087
+#
+# Flow:
+# 1. Create an order through api/order.http.
+# 2. Payment Service consumes the order-created Kafka event and creates a
+#    PENDING payment record.
+# 3. Create a checkout session for that order.
+# 4. Verify the payment through the customer or admin endpoints below.
+# =========================================================
+
+@paymentBaseUrl = http://localhost:8087
+
+# Replace after Auth login.
+@accessToken = paste_customer_access_token_here
+@adminAccessToken = paste_admin_access_token_here
+
+# Replace after creating an order and receiving its ID.
+@orderId = paste_order_id_here
+
+# Replace with paymentId returned by checkout session or payment lookup.
+@paymentId = paste_payment_id_here
+
+# Use a unique value for every refund request. Reuse the same value only when
+# retrying that exact request.
+@refundIdempotencyKey = refund-unique-key-001
+
+# =========================================================
+# CUSTOMER PAYMENT APIs
+# Requires CUSTOMER or ADMIN token
+# =========================================================
+
+### Create checkout session for an order
+POST {{paymentBaseUrl}}/api/v1/payments/orders/{{orderId}}/checkout-session
+Authorization: Bearer {{accessToken}}
+
+### Get my payments
+GET {{paymentBaseUrl}}/api/v1/payments/me?page=0&size=10
+Authorization: Bearer {{accessToken}}
+
+### Get my payment by order ID
+GET {{paymentBaseUrl}}/api/v1/payments/orders/{{orderId}}
+Authorization: Bearer {{accessToken}}
+
+### Get my payment by payment ID
+GET {{paymentBaseUrl}}/api/v1/payments/{{paymentId}}
+Authorization: Bearer {{accessToken}}
+
+# =========================================================
+# ADMIN PAYMENT APIs
+# Requires ADMIN token
+# =========================================================
+
+### Get all payments
+GET {{paymentBaseUrl}}/api/v1/admin/payments?page=0&size=10
+Authorization: Bearer {{adminAccessToken}}
+
+### Get payments by status
+GET {{paymentBaseUrl}}/api/v1/admin/payments?status=PENDING&page=0&size=10
+Authorization: Bearer {{adminAccessToken}}
+
+### Get payment by ID as admin
+GET {{paymentBaseUrl}}/api/v1/admin/payments/{{paymentId}}
+Authorization: Bearer {{adminAccessToken}}
+
+### Request a refund
+POST {{paymentBaseUrl}}/api/v1/admin/payments/{{paymentId}}/refund
+Authorization: Bearer {{adminAccessToken}}
+Content-Type: application/json
+
+{
+  "orderId": "{{orderId}}",
+  "amount": 100.00,
+  "currency": "USD",
+  "reason": "Customer requested refund",
+  "idempotencyKey": "{{refundIdempotencyKey}}"
+}
+
+# =========================================================
+# PUBLIC PAYMENT PAGES
+# =========================================================
+
+### Payment success page
+GET {{paymentBaseUrl}}/public/payments/success?orderId={{orderId}}&paymentId={{paymentId}}
+
+### Payment cancellation page
+GET {{paymentBaseUrl}}/public/payments/cancel?orderId={{orderId}}&paymentId={{paymentId}}
+
+# =========================================================
+# WEBHOOK ENDPOINTS
+# These are invoked by the payment provider. Do not use real provider secrets
+# or production webhook payloads in this file.
+# =========================================================
+
+### Stripe webhook (requires a valid Stripe signature and provider payload)
+POST {{paymentBaseUrl}}/api/v1/payments/webhooks/stripe
+Content-Type: application/json
+Stripe-Signature: paste_valid_stripe_signature_here
+
+{}
+
+### Razorpay webhook (requires a valid Razorpay signature and provider payload)
+POST {{paymentBaseUrl}}/api/v1/payments/webhooks/razorpay
+Content-Type: application/json
+X-Razorpay-Signature: paste_valid_razorpay_signature_here
+
+{}
+
+# =========================================================
+# SECURITY CHECKS
+# =========================================================
+
+### Get payments without token - expected 401
+GET {{paymentBaseUrl}}/api/v1/payments/me
+
+### Get admin payments with customer token - expected 403
+GET {{paymentBaseUrl}}/api/v1/admin/payments?page=0&size=10
+Authorization: Bearer {{accessToken}}
+
+# =========================================================
+# SWAGGER / ACTUATOR
+# =========================================================
+
+### Swagger UI
+GET {{paymentBaseUrl}}/swagger-ui.html
+
+### OpenAPI JSON
+GET {{paymentBaseUrl}}/v3/api-docs
+
+### Health
+GET {{paymentBaseUrl}}/actuator/health
+
+### Prometheus metrics
+GET {{paymentBaseUrl}}/actuator/prometheus

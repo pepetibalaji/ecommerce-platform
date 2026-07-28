@@ -187,13 +187,10 @@ for host-running Spring Boot services.
 
 ## 7. Create Kafka Topics
 
-Run:
+Kafka topics are created automatically by the `kafka-init` service when you run
+`docker compose up -d`.
 
-```powershell
-.\scripts\create-kafka-topics.ps1
-```
-
-Or create manually:
+To recreate an individual topic manually:
 
 ```powershell
 docker exec -it ecommerce-kafka kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic order-created --partitions 3 --replication-factor 1

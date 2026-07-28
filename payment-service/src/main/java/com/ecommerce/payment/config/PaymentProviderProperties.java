@@ -30,11 +30,12 @@ public class PaymentProviderProperties {
     public static class Provider {
 
         /*
-         * Stripe Test Mode is the active implementation provider.
-         * Sandbox remains available as a local fallback through config override.
+         * Local and automated test runs use the deterministic sandbox provider.
+         * Deployments that provide Stripe test-mode credentials can explicitly
+         * select STRIPE through Config Server configuration.
          */
         @NotNull(message = "Active payment provider is required")
-        private PaymentProvider active = PaymentProvider.STRIPE;
+        private PaymentProvider active = PaymentProvider.SANDBOX;
 
         @NotBlank(message = "Payment provider mode is required")
         private String mode = "test";
@@ -102,13 +103,16 @@ public class PaymentProviderProperties {
     public static class Sandbox {
 
         private boolean enabled = true;
+
+        /** Local-only secret used by deterministic sandbox webhook fixtures. */
+        private String webhookSecret = "sandbox-test-signature";
     }
 
     @Getter
     @Setter
     public static class Stripe {
 
-        private boolean enabled = true;
+        private boolean enabled = false;
 
         private String apiKey = "";
 

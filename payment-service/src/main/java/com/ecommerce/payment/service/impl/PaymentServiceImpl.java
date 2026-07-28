@@ -9,6 +9,7 @@ import com.ecommerce.payment.entity.Payment;
 import com.ecommerce.payment.enums.PaymentProvider;
 import com.ecommerce.payment.enums.PaymentStatus;
 import com.ecommerce.payment.mapper.PaymentMapper;
+import com.ecommerce.payment.observability.PaymentMetrics;
 import com.ecommerce.payment.repository.PaymentRepository;
 import com.ecommerce.payment.service.PaymentService;
 import jakarta.validation.Valid;
@@ -36,6 +37,7 @@ public class PaymentServiceImpl implements PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final PaymentMapper paymentMapper;
+    private final PaymentMetrics paymentMetrics;
 
     @Override
     public PaymentResponse createPayment(@Valid CreatePaymentRequest request) {
@@ -55,6 +57,7 @@ public class PaymentServiceImpl implements PaymentService {
         payment.setStatus(PaymentStatus.PENDING);
 
         Payment savedPayment = paymentRepository.save(payment);
+        paymentMetrics.paymentCreated();
 
         return paymentMapper.toResponse(savedPayment);
     }
@@ -153,6 +156,7 @@ public class PaymentServiceImpl implements PaymentService {
 
         try {
             Payment saved = paymentRepository.saveAndFlush(payment);
+            paymentMetrics.paymentCreated();
 
             log.info(
                     "Prepared PENDING payment from order-created event. orderId={}, paymentId={}, amount={}, currency={}, idempotencyKey={}, correlationId={}, traceId={}",

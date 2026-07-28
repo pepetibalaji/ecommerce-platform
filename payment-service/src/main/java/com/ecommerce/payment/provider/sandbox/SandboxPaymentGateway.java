@@ -2,6 +2,7 @@ package com.ecommerce.payment.provider.sandbox;
 
 import com.ecommerce.common.exception.BadRequestException;
 import com.ecommerce.payment.config.PaymentProviderProperties;
+import com.ecommerce.payment.dto.response.ProviderRefundStatus;
 import com.ecommerce.payment.enums.PaymentProvider;
 import com.ecommerce.payment.provider.PaymentGateway;
 import com.ecommerce.payment.provider.model.CheckoutSessionResult;
@@ -12,14 +13,20 @@ import com.ecommerce.payment.provider.model.RefundGatewayRequest;
 import com.ecommerce.payment.provider.model.RefundGatewayResponse;
 import com.ecommerce.payment.provider.model.RefundPaymentCommand;
 import com.ecommerce.payment.provider.model.RefundPaymentResult;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
+import java.util.Locale;
 
 @Component
 @RequiredArgsConstructor
 public class SandboxPaymentGateway implements PaymentGateway {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final PaymentProviderProperties properties;
 
@@ -50,8 +57,9 @@ public class SandboxPaymentGateway implements PaymentGateway {
 
     @Override
     public void verifyWebhookSignature(String payload, String signature) {
-        if (signature == null || signature.isBlank()) {
-            throw new BadRequestException("Sandbox webhook signature is required");
+        String expected = properties.getProvider().getSandbox().getWebhookSecret();
+        if (signature == null || signature.isBlank() || !signature.equals(expected)) {
+            throw new BadRequestException("Invalid sandbox webhook signature");
         }
     }
 
@@ -59,13 +67,27 @@ public class SandboxPaymentGateway implements PaymentGateway {
     public ProviderWebhookEvent parseWebhookEvent(String payload, String signature) {
         verifyWebhookSignature(payload, signature);
 
-        return ProviderWebhookEvent.builder()
-                .provider(PaymentProvider.SANDBOX)
-                .providerEventId("sandbox-event-" + System.currentTimeMillis())
-                .eventType("sandbox.payment.ignored")
-                .status(ProviderPaymentStatus.IGNORED)
-                .failureReason("Sandbox webhook parsing is placeholder only")
-                .build();
+        try {
+            JsonNode event = OBJECT_MAPPER.readTree(payload);
+            String eventId = required(event, "eventId");
+            String eventType = required(event, "eventType").toLowerCase(Locale.ROOT);
+            ProviderRefundStatus refundStatus = refundStatus(eventType);
+
+            return ProviderWebhookEvent.builder()
+                    .provider(PaymentProvider.SANDBOX)
+                    .providerEventId(eventId)
+                    .eventType(eventType)
+                    .status(paymentStatus(eventType, refundStatus))
+                    .refundStatus(refundStatus)
+                    .providerSessionId(text(event, "providerSessionId"))
+                    .providerPaymentIntentId(text(event, "providerPaymentIntentId"))
+                    .providerChargeId(text(event, "providerChargeId"))
+                    .providerRefundId(text(event, "providerRefundId"))
+                    .failureReason(text(event, "failureReason"))
+                    .build();
+        } catch (JsonProcessingException exception) {
+            throw new BadRequestException("Invalid sandbox webhook payload");
+        }
     }
 
     @Override
@@ -95,5 +117,40 @@ public class SandboxPaymentGateway implements PaymentGateway {
                 "processing",
                 null
         );
+    }
+
+    private String required(JsonNode event, String field) {
+        String value = text(event, field);
+        if (value == null) {
+            throw new BadRequestException("Sandbox webhook " + field + " is required");
+        }
+        return value;
+    }
+
+    private String text(JsonNode event, String field) {
+        JsonNode value = event.get(field);
+        return value == null || value.isNull() || value.asText().isBlank() ? null : value.asText();
+    }
+
+    private ProviderPaymentStatus paymentStatus(String eventType, ProviderRefundStatus refundStatus) {
+        if (refundStatus != null) {
+            return ProviderPaymentStatus.IGNORED;
+        }
+        return switch (eventType) {
+            case "payment.succeeded", "checkout.session.completed" -> ProviderPaymentStatus.SUCCESS;
+            case "payment.failed" -> ProviderPaymentStatus.FAILED;
+            case "payment.cancelled", "checkout.session.expired" -> ProviderPaymentStatus.CANCELLED;
+            case "payment.processing" -> ProviderPaymentStatus.PROCESSING;
+            default -> ProviderPaymentStatus.IGNORED;
+        };
+    }
+
+    private ProviderRefundStatus refundStatus(String eventType) {
+        return switch (eventType) {
+            case "refund.succeeded" -> ProviderRefundStatus.SUCCESS;
+            case "refund.failed" -> ProviderRefundStatus.FAILED;
+            case "refund.processing" -> ProviderRefundStatus.PROCESSING;
+            default -> null;
+        };
     }
 }

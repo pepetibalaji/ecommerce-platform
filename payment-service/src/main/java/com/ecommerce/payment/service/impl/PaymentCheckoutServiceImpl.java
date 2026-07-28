@@ -12,6 +12,7 @@ import com.ecommerce.payment.provider.PaymentGateway;
 import com.ecommerce.payment.provider.PaymentGatewayFactory;
 import com.ecommerce.payment.provider.model.CheckoutSessionResult;
 import com.ecommerce.payment.provider.model.CreateCheckoutSessionCommand;
+import com.ecommerce.payment.observability.PaymentMetrics;
 import com.ecommerce.payment.repository.PaymentAttemptRepository;
 import com.ecommerce.payment.repository.PaymentRepository;
 import com.ecommerce.payment.service.PaymentCheckoutService;
@@ -38,6 +39,7 @@ public class PaymentCheckoutServiceImpl implements PaymentCheckoutService {
     private final PaymentAttemptRepository paymentAttemptRepository;
 
     private final PaymentGatewayFactory paymentGatewayFactory;
+    private final PaymentMetrics paymentMetrics;
 
     @Override
     public CreateCheckoutSessionResponse createCheckoutSession(UUID orderId, UUID userId) {
@@ -73,7 +75,10 @@ public class PaymentCheckoutServiceImpl implements PaymentCheckoutService {
                 .idempotencyKey(payment.getIdempotencyKey() + ":checkout")
                 .build();
 
-        CheckoutSessionResult result = paymentGateway.createCheckoutSession(command);
+        CheckoutSessionResult result = paymentMetrics.recordProviderLatency(
+                payment.getProvider(),
+                () -> paymentGateway.createCheckoutSession(command)
+        );
 
         PaymentAttempt attempt = PaymentAttempt.builder()
                 .payment(payment)
@@ -92,6 +97,7 @@ public class PaymentCheckoutServiceImpl implements PaymentCheckoutService {
         payment.setStatus(PaymentStatus.REQUIRES_CUSTOMER_ACTION);
         payment.setFailureReason(null);
         paymentRepository.save(payment);
+        paymentMetrics.checkoutSessionCreated(result.getProvider());
 
         return toCheckoutResponse(payment, savedAttempt);
     }
