@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: ecommerce-observability
+    orgId: 1
+    folder: Ecommerce
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/json

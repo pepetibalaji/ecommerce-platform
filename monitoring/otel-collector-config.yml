@@ -16,15 +16,14 @@ processors:
         send_batch_size: 1024
 
 exporters:
-    # FIX: Updated to your exact container_name from docker-compose
     otlp/tempo:
-        endpoint: ecommerce-tempo:4317
+        endpoint: tempo:4317
         tls:
             insecure: true
     prometheus:
         endpoint: 0.0.0.0:8889
-    debug:
-        verbosity: basic
+        resource_to_telemetry_conversion:
+            enabled: true
 
 extensions:
     health_check:
@@ -42,7 +41,6 @@ service:
                 - batch
             exporters:
                 - otlp/tempo
-                - debug
         metrics:
             receivers:
                 - otlp
@@ -51,4 +49,3 @@ service:
                 - batch
             exporters:
                 - prometheus
-                - debug

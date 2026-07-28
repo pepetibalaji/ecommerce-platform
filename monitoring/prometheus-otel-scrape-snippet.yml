@@ -1,5 +1,0 @@
-- job_name: "otel-collector-exported-metrics"
-  static_configs:
-      - targets:
-            # FIX: Updated to match your exact container_name from docker-compose
-            - "ecommerce-otel-collector:8889"

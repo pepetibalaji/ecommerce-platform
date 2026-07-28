@@ -11,6 +11,7 @@ volumes:
     tempo-data:
     prometheus-data:
     grafana-data:
+    loki-data:
 
 x-logging: &default-logging
     driver: json-file
@@ -150,6 +151,34 @@ services:
             - ecommerce-network
         logging: *default-logging
 
+    loki:
+        image: grafana/loki:3.5.5
+        container_name: ecommerce-loki
+        restart: unless-stopped
+        command: ["-config.file=/etc/loki/config.yml"]
+        ports:
+            - "${LOKI_PORT:-3100}:3100"
+        volumes:
+            - ./monitoring/loki.yml:/etc/loki/config.yml:ro
+            - loki-data:/loki
+        networks:
+            - ecommerce-network
+        logging: *default-logging
+
+    alloy:
+        image: grafana/alloy:v1.10.0
+        container_name: ecommerce-alloy
+        restart: unless-stopped
+        command: ["run", "/etc/alloy/config.alloy", "--server.http.listen-addr=0.0.0.0:12345"]
+        volumes:
+            - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
+            - ./logs:/var/log/ecommerce:ro
+        networks:
+            - ecommerce-network
+        depends_on:
+            - loki
+        logging: *default-logging
+
     otel-collector:
         image: otel/opentelemetry-collector-contrib:${OTEL_COLLECTOR_VERSION:-0.154.0}
         container_name: ecommerce-otel-collector
@@ -178,12 +207,14 @@ services:
             - "${PROMETHEUS_PORT:-9090}:9090"
         volumes:
             - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+            - ./monitoring/prometheus-alerts.yml:/etc/prometheus/alerts.yml:ro
             - prometheus-data:/prometheus
         command:
             - "--config.file=/etc/prometheus/prometheus.yml"
             - "--storage.tsdb.path=/prometheus"
             - "--storage.tsdb.retention.time=15d"
             - "--web.enable-lifecycle"
+            - "--web.enable-remote-write-receiver"
         networks:
             - ecommerce-network
         depends_on:
@@ -210,9 +241,11 @@ services:
         volumes:
             - grafana-data:/var/lib/grafana
             - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+            - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
         networks:
             - ecommerce-network
         depends_on:
             - prometheus
             - tempo
+            - loki
         logging: *default-logging

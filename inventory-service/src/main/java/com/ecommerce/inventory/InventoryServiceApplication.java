@@ -5,7 +5,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication(scanBasePackages = {
         "com.ecommerce.inventory",
-        "com.ecommerce.common.security"
+        "com.ecommerce.common.security",
+        "com.ecommerce.common.exception"
 })
 public class InventoryServiceApplication {
 

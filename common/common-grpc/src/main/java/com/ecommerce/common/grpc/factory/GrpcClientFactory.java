@@ -3,6 +3,7 @@ package com.ecommerce.common.grpc.factory;
 import com.ecommerce.common.grpc.config.GrpcClientProperties;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+import io.grpc.ClientInterceptor;
 import io.grpc.stub.AbstractStub;
 import jakarta.annotation.PreDestroy;
 import java.util.Map;
@@ -13,10 +14,12 @@ import java.util.function.Function;
 public class GrpcClientFactory {
 
     private final GrpcClientProperties properties;
+    private final ClientInterceptor tracingInterceptor;
     private final Map<String, ManagedChannel> channels = new ConcurrentHashMap<>();
 
-    public GrpcClientFactory(GrpcClientProperties properties) {
+    public GrpcClientFactory(GrpcClientProperties properties, ClientInterceptor tracingInterceptor) {
         this.properties = properties;
+        this.tracingInterceptor = tracingInterceptor;
     }
 
     public ManagedChannel channel(String clientName) {
@@ -57,6 +60,7 @@ public class GrpcClientFactory {
             builder.useTransportSecurity();
         }
 
+        builder.intercept(tracingInterceptor);
         return builder.build();
     }
 
