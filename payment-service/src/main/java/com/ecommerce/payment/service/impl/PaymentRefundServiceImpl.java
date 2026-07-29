@@ -13,6 +13,7 @@ import com.ecommerce.payment.enums.PaymentAttemptStatus;
 import com.ecommerce.payment.enums.PaymentStatus;
 import com.ecommerce.payment.enums.RefundStatus;
 import com.ecommerce.payment.mapper.PaymentRefundMapper;
+import com.ecommerce.payment.observability.PaymentMetrics;
 import com.ecommerce.payment.provider.PaymentGateway;
 import com.ecommerce.payment.provider.PaymentGatewayFactory;
 import com.ecommerce.payment.provider.model.RefundGatewayRequest;
@@ -45,6 +46,7 @@ public class PaymentRefundServiceImpl implements PaymentRefundService {
     private final PaymentAttemptRepository paymentAttemptRepository;
     private final PaymentGatewayFactory paymentGatewayFactory;
     private final PaymentRefundMapper paymentRefundMapper;
+    private final PaymentMetrics paymentMetrics;
 
     @Override
     public PaymentRefundResponse createPaymentRefund(@Valid CreatePaymentRefundRequest request) {
@@ -178,6 +180,7 @@ public class PaymentRefundServiceImpl implements PaymentRefundService {
                 .build();
 
         paymentRefundRepository.saveAndFlush(refund);
+        paymentMetrics.refundRequested(payment.getProvider());
 
         payment.setStatus(PaymentStatus.REFUND_REQUESTED);
         payment.setFailureReason(null);
@@ -205,6 +208,12 @@ public class PaymentRefundServiceImpl implements PaymentRefundService {
             refund.setStatus(RefundStatus.REFUND_FAILED);
             payment.setStatus(PaymentStatus.REFUND_FAILED);
             payment.setFailureReason(providerResponse.failureReason());
+        }
+
+        if (providerResponse.success()) {
+            paymentMetrics.refundSucceeded(payment.getProvider());
+        } else {
+            paymentMetrics.refundFailed(payment.getProvider());
         }
 
         PaymentRefund savedRefund = paymentRefundRepository.save(refund);

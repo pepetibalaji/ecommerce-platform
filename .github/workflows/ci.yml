@@ -14,6 +14,7 @@ on:
             - "inventory-service/**"
             - "cart-service/**"
             - "order-service/**"
+            - "payment-service/**"
             - "docker-compose.yml"
             - "monitoring/**"
             - ".github/workflows/ci.yml"
@@ -31,6 +32,7 @@ on:
             - "inventory-service/**"
             - "cart-service/**"
             - "order-service/**"
+            - "payment-service/**"
             - "docker-compose.yml"
             - "monitoring/**"
             - ".github/workflows/ci.yml"
@@ -48,7 +50,7 @@ jobs:
         runs-on: ubuntu-latest
 
         env:
-            MAVEN_MODULES: gateway-service,auth-service,product-service,inventory-service,cart-service,order-service
+            MAVEN_MODULES: gateway-service,auth-service,product-service,inventory-service,cart-service,order-service,payment-service
             KAFKA_IMAGE: apache/kafka:4.3.0
 
         services:
@@ -172,7 +174,7 @@ jobs:
         needs: build
 
         env:
-            MAVEN_MODULES: gateway-service,auth-service,product-service,inventory-service,cart-service,order-service
+            MAVEN_MODULES: gateway-service,auth-service,product-service,inventory-service,cart-service,order-service,payment-service
 
         steps:
             - name: Checkout Repository
@@ -205,3 +207,6 @@ jobs:
 
             - name: Build Order Image
               run: docker build -t order-service ./order-service
+
+            - name: Build Payment Image
+              run: docker build -t payment-service ./payment-service

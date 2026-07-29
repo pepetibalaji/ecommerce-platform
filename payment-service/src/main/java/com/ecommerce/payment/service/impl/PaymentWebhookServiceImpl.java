@@ -12,6 +12,7 @@ import com.ecommerce.payment.enums.PaymentStatus;
 import com.ecommerce.payment.enums.RefundStatus;
 import com.ecommerce.payment.enums.WebhookProcessingStatus;
 import com.ecommerce.payment.kafka.producer.PaymentEventPublisher;
+import com.ecommerce.payment.observability.PaymentMetrics;
 import com.ecommerce.payment.provider.PaymentGateway;
 import com.ecommerce.payment.provider.PaymentGatewayFactory;
 import com.ecommerce.payment.provider.model.ProviderPaymentStatus;
@@ -47,6 +48,7 @@ public class PaymentWebhookServiceImpl implements PaymentWebhookService {
     private final PaymentRefundRepository paymentRefundRepository;
     private final PaymentWebhookEventRepository paymentWebhookEventRepository;
     private final PaymentEventPublisher paymentEventPublisher;
+    private final PaymentMetrics paymentMetrics;
 
     @Override
     public WebhookAckResponse processWebhook(
@@ -56,9 +58,19 @@ public class PaymentWebhookServiceImpl implements PaymentWebhookService {
     ) {
         PaymentGateway gateway = paymentGatewayFactory.getGateway(provider);
 
-        ProviderWebhookEvent providerEvent = gateway.parseWebhookEvent(payload, signature);
+        ProviderWebhookEvent providerEvent;
+        try {
+            providerEvent = paymentMetrics.recordProviderLatency(
+                    provider,
+                    () -> gateway.parseWebhookEvent(payload, signature)
+            );
+        } catch (RuntimeException exception) {
+            paymentMetrics.webhookInvalidSignature(provider);
+            throw exception;
+        }
 
         PaymentProvider eventProvider = resolveProvider(provider, providerEvent);
+        paymentMetrics.webhookReceived(eventProvider);
 
         boolean refundEvent = isRefundEvent(providerEvent);
 
@@ -97,6 +109,7 @@ public class PaymentWebhookServiceImpl implements PaymentWebhookService {
         );
 
         if (insertedRows == 0) {
+            paymentMetrics.webhookDuplicate(eventProvider);
             log.info(
                     "Duplicate webhook ignored. provider={}, providerEventId={}, eventType={}",
                     eventProvider,
@@ -442,12 +455,18 @@ public class PaymentWebhookServiceImpl implements PaymentWebhookService {
 
     private void publishOutcomeIfTerminal(Payment payment) {
         if (payment.getStatus() == PaymentStatus.SUCCESS) {
+            paymentMetrics.paymentSucceeded(payment.getProvider());
             paymentEventPublisher.publishPaymentSuccess(payment);
             return;
         }
 
         if (payment.getStatus() == PaymentStatus.FAILED
                 || payment.getStatus() == PaymentStatus.CANCELLED) {
+            if (payment.getStatus() == PaymentStatus.FAILED) {
+                paymentMetrics.paymentFailed(payment.getProvider());
+            } else {
+                paymentMetrics.paymentCancelled(payment.getProvider());
+            }
             paymentEventPublisher.publishPaymentFailed(payment);
         }
     }
