@@ -17,8 +17,7 @@ management:
     endpoints:
         web:
             exposure:
-                # 2. Add 'encrypt' and 'decrypt' to the exposed management endpoints
-                include: health,info,refresh,prometheus,encrypt,decrypt
+                include: health,info,refresh,prometheus
     endpoint:
         health:
             show-details: always
@@ -30,3 +29,11 @@ logging:
             file: logstash
     file:
         name: ${OBSERVABILITY_LOG_FILE:../logs/config-server.json}
+    logback:
+        rollingpolicy:
+            # Alloy forwards the active file to Grafana Cloud. Keep only a small
+            # on-host buffer so a delivery outage cannot exhaust disk space.
+            max-file-size: ${OBSERVABILITY_LOG_MAX_FILE_SIZE:5MB}
+            max-history: ${OBSERVABILITY_LOG_MAX_HISTORY:1}
+            total-size-cap: ${OBSERVABILITY_LOG_TOTAL_SIZE_CAP:5MB}
+            clean-history-on-start: true

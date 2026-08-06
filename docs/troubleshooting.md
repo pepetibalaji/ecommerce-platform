@@ -63,7 +63,7 @@ spring:
 Config Server should load:
 
 ```text
-order-service-dev.yml
+dev/order-service-dev.yml
 ```
 
 Verify config is being served:
@@ -93,7 +93,7 @@ http://localhost:8081/oauth2/jwks
 - [ ] Config Server is running on port `8888`
 - [ ] Service `spring.application.name` matches config filename
 - [ ] Active profile is `dev`
-- [ ] Config file is named correctly, for example `order-service-dev.yml`
+- [ ] Config file is named correctly, for example `dev/order-service-dev.yml`
 - [ ] Config repo changes are saved/committed if Git-backed
 - [ ] Config Server has been restarted after config changes
 

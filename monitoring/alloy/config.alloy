@@ -1,3 +1,42 @@
+// Grafana Cloud credentials are supplied by Docker environment variables.
+// Keep the real token in the ignored repository-root .env file.
+
+prometheus.remote_write "grafana_cloud" {
+  external_labels = {
+    environment = sys.env("OBSERVABILITY_ENVIRONMENT"),
+    cluster     = sys.env("OBSERVABILITY_CLUSTER"),
+  }
+
+  endpoint {
+    name = "grafana-cloud-metrics"
+    url  = sys.env("GRAFANA_CLOUD_METRICS_URL")
+
+    basic_auth {
+      username = sys.env("GRAFANA_CLOUD_METRICS_USERNAME")
+      password = sys.env("GRAFANA_CLOUD_TOKEN")
+    }
+  }
+}
+
+// The services run on the Windows host while Alloy runs in Docker.
+// Docker Desktop exposes the host as host.docker.internal.
+prometheus.scrape "spring_boot" {
+  targets = [
+    { "__address__" = "host.docker.internal:8888", "service" = "config-server" },
+    { "__address__" = "host.docker.internal:8080", "service" = "gateway-service" },
+    { "__address__" = "host.docker.internal:8081", "service" = "auth-service" },
+    { "__address__" = "host.docker.internal:8082", "service" = "product-service" },
+    { "__address__" = "host.docker.internal:8084", "service" = "inventory-service" },
+    { "__address__" = "host.docker.internal:8085", "service" = "cart-service" },
+    { "__address__" = "host.docker.internal:8086", "service" = "order-service" },
+    { "__address__" = "host.docker.internal:8087", "service" = "payment-service" },
+  ]
+
+  metrics_path    = "/actuator/prometheus"
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
 local.file_match "application_logs" {
   path_targets = [
     { "__path__" = "/var/log/ecommerce/config-server.json", "service" = "config-server" },
@@ -29,11 +68,62 @@ loki.process "application_logs" {
     }
   }
 
+  stage.static_labels {
+    values = {
+      environment = sys.env("OBSERVABILITY_ENVIRONMENT"),
+    }
+  }
+
   forward_to = [loki.write.default.receiver]
 }
 
 loki.write "default" {
   endpoint {
-    url = "http://loki:3100/loki/api/v1/push"
+    url = sys.env("GRAFANA_CLOUD_LOKI_URL")
+
+    basic_auth {
+      username = sys.env("GRAFANA_CLOUD_LOKI_USERNAME")
+      password = sys.env("GRAFANA_CLOUD_TOKEN")
+    }
   }
+
+}
+
+// Spring Boot sends OTLP traces to Alloy on localhost:4318. Alloy batches
+// them and exports them to Grafana Cloud over HTTPS.
+otelcol.receiver.otlp "spring_boot" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  output {
+    traces = [otelcol.processor.batch.traces.input]
+  }
+}
+
+otelcol.processor.batch "traces" {
+  timeout         = "5s"
+  send_batch_size = 1024
+
+  output {
+    traces = [otelcol.exporter.otlphttp.grafana_cloud.input]
+  }
+}
+
+otelcol.exporter.otlphttp "grafana_cloud" {
+  client {
+    endpoint = sys.env("GRAFANA_CLOUD_OTLP_ENDPOINT")
+    auth     = otelcol.auth.basic.grafana_cloud_otlp.handler
+  }
+}
+
+// The numeric OTLP instance ID is supplied by Grafana Cloud's OpenTelemetry
+// connection page. The access-policy token has metrics, logs, and traces write scopes.
+otelcol.auth.basic "grafana_cloud_otlp" {
+  username = sys.env("GRAFANA_CLOUD_OTLP_USERNAME")
+  password = sys.env("GRAFANA_CLOUD_TOKEN")
 }

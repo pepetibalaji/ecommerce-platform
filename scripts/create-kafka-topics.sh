@@ -13,18 +13,8 @@ echo "Kafka broker is online. Creating topics..."
 
 topics="
 order-created:3
-inventory-reserved:3
-inventory-released:3
 payment-success:3
 payment-failed:3
-order-completed:3
-order-cancelled:3
-shipment-created:3
-notification-requested:3
-order-dlq:1
-inventory-dlq:1
-payment-dlq:1
-notification-dlq:1
 "
 
 printf "%s\n" "$topics" | while IFS=: read -r topic partitions; do

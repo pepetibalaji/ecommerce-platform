@@ -10,7 +10,7 @@ The current local platform includes:
 - Inventory Service
 - Cart Service
 - Order Service
-- PostgreSQL
+- Neon Managed PostgreSQL (PostgreSQL Docker is an optional fallback)
 - Redis
 - Kafka
 - Zookeeper
@@ -91,8 +91,6 @@ This starts:
 
 | Component               |  Port |
 | ----------------------- | ----: |
-| PostgreSQL              |  5433 |
-| Redis                   |  6379 |
 | Zookeeper               |  2181 |
 | Kafka internal listener |  9092 |
 | Kafka host listener     | 29092 |
@@ -109,8 +107,6 @@ docker ps
 Expected containers:
 
 ```text
-ecommerce-postgres
-ecommerce-redis
 ecommerce-zookeeper
 ecommerce-kafka
 zipkin
@@ -120,9 +116,9 @@ grafana
 
 ---
 
-## 5. PostgreSQL Database Setup
+## 5. Database Setup
 
-The services use separate logical databases:
+DEV services use separate Neon databases by default:
 
 | Service           | Database       |
 | ----------------- | -------------- |
@@ -130,20 +126,53 @@ The services use separate logical databases:
 | Product Service   | `product_db`   |
 | Inventory Service | `inventory_db` |
 | Order Service     | `order_db`     |
+| Payment Service   | `payment_db`   |
 
-If these databases do not exist, create them manually:
+Connection details never belong in this repository or the Config Repository.
+Provide them through the ignored environment file used at service runtime.
+
+### Local PostgreSQL fallback
+
+To use Docker PostgreSQL during an offline or fallback workflow, start the
+optional Compose profile:
 
 ```bash
-docker exec -it ecommerce-postgres psql -U ecommerce_user -d ecommerce
+docker compose --profile local-postgres up -d
 ```
 
-Then run:
+### Local Redis fallback
+
+The default Redis provider is Upstash. If you need a local Redis instance,
+start it explicitly:
+
+```bash
+docker compose --profile local-redis up -d
+```
+
+Then point the relevant Config Repository profile at `redis:6379` for services
+running in Compose, or `localhost:6379` for services running on your machine.
+
+Then create the fallback databases if required:
+
+```bash
+docker exec -it ecommerce-postgres psql -U ecommerce_user -d ecommerce -c "CREATE DATABASE auth_db;"
+docker exec -it ecommerce-postgres psql -U ecommerce_user -d ecommerce -c "CREATE DATABASE product_db;"
+docker exec -it ecommerce-postgres psql -U ecommerce_user -d ecommerce -c "CREATE DATABASE inventory_db;"
+docker exec -it ecommerce-postgres psql -U ecommerce_user -d ecommerce -c "CREATE DATABASE order_db;"
+docker exec -it ecommerce-postgres psql -U ecommerce_user -d ecommerce -c "CREATE DATABASE payment_db;"
+```
+
+Update the local fallback datasource values in the runtime environment file
+before starting services; never add them to service `application.yml` files.
+
+The equivalent SQL is:
 
 ```sql
 CREATE DATABASE auth_db;
 CREATE DATABASE product_db;
 CREATE DATABASE inventory_db;
 CREATE DATABASE order_db;
+CREATE DATABASE payment_db;
 ```
 
 Exit:
@@ -206,6 +235,8 @@ Expected:
 
 ```text
 order-created
+payment-success
+payment-failed
 ```
 
 Consume events:

@@ -75,7 +75,7 @@ Async Communication:
 Order Service ---> Kafka topic: order-created
 
 Storage:
-PostgreSQL ---> Auth, Product, Inventory, Order
+Neon PostgreSQL ---> Auth, Product, Inventory, Order, Payment
 Redis      ---> Cart, token blacklist, cache
 Kafka      ---> Domain events
 ```
@@ -585,11 +585,12 @@ cart:{userId}
 
 ## Docker Compose Infrastructure
 
-Local infrastructure includes:
+Local infrastructure uses Neon Managed PostgreSQL and Upstash Redis by default.
+Docker Compose provides Kafka and observability services; its PostgreSQL and
+Redis containers are explicit local fallbacks.
 
 | Component               |  Port |
 | ----------------------- | ----: |
-| PostgreSQL              |  5433 |
 | Redis                   |  6379 |
 | Zookeeper               |  2181 |
 | Kafka internal listener |  9092 |
@@ -602,6 +603,18 @@ Start infrastructure:
 
 ```bash
 docker compose up -d
+```
+
+To use local PostgreSQL and/or Redis fallbacks instead, start the matching
+profiles and update the runtime connection values in the environment file for
+that environment:
+
+```bash
+docker compose --profile local-postgres up -d
+```
+
+```bash
+docker compose --profile local-redis up -d
 ```
 
 Create Kafka topic:
@@ -629,7 +642,9 @@ docker exec -it ecommerce-kafka kafka-console-consumer \
 
 ## Config Server
 
-Services use Spring Cloud Config Server for runtime configuration.
+Services use Spring Cloud Config Server for runtime configuration. Secrets are
+provided through ignored environment files at service runtime, not committed to
+this repository or the Config Repository.
 
 Local service `application.yml` files are intentionally minimal:
 
@@ -654,6 +669,7 @@ product-service-dev.yml
 inventory-service-dev.yml
 cart-service-dev.yml
 order-service-dev.yml
+payment-service-dev.yml
 ```
 
 ---

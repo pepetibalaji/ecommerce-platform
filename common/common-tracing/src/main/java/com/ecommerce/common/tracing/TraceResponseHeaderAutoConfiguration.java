@@ -8,10 +8,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
@@ -33,13 +33,12 @@ public class TraceResponseHeaderAutoConfiguration {
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
     @ConditionalOnClass(OncePerRequestFilter.class)
-    @ConditionalOnBean(Tracer.class)
     static class ServletTraceResponseHeaderConfiguration {
 
         @Bean
         @Order(Ordered.HIGHEST_PRECEDENCE + 10)
         @ConditionalOnMissingBean(name = "traceIdResponseFilter")
-        OncePerRequestFilter traceIdResponseFilter(Tracer tracer) {
+        OncePerRequestFilter traceIdResponseFilter(ObjectProvider<Tracer> tracerProvider) {
             return new OncePerRequestFilter() {
                 @Override
                 protected void doFilterInternal(
@@ -47,13 +46,21 @@ public class TraceResponseHeaderAutoConfiguration {
                         HttpServletResponse response,
                         FilterChain filterChain
                 ) throws ServletException, IOException {
-                    setServletTraceIdHeader(response, tracer);
-                    filterChain.doFilter(request, response);
+                    setServletTraceIdHeader(response, tracerProvider.getIfAvailable());
+                    try {
+                        filterChain.doFilter(request, response);
+                    } finally {
+                        // The server observation may create the span later in the filter chain.
+                        setServletTraceIdHeader(response, tracerProvider.getIfAvailable());
+                    }
                 }
             };
         }
 
         private static void setServletTraceIdHeader(HttpServletResponse response, Tracer tracer) {
+            if (tracer == null || response.isCommitted()) {
+                return;
+            }
             currentSpan(tracer).ifPresent(span -> {
                 response.setHeader(TRACE_ID_HEADER, span.context().traceId());
                 response.setHeader(SPAN_ID_HEADER, span.context().spanId());
@@ -64,16 +71,18 @@ public class TraceResponseHeaderAutoConfiguration {
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.REACTIVE)
     @ConditionalOnClass(WebFilter.class)
-    @ConditionalOnBean(Tracer.class)
     static class ReactiveTraceResponseHeaderConfiguration {
 
         @Bean
         @Order(Ordered.HIGHEST_PRECEDENCE + 10)
         @ConditionalOnMissingBean(name = "traceIdResponseWebFilter")
-        WebFilter traceIdResponseWebFilter(Tracer tracer) {
+        WebFilter traceIdResponseWebFilter(ObjectProvider<Tracer> tracerProvider) {
             return (exchange, chain) -> {
                 exchange.getResponse().beforeCommit(() -> {
-                    setTraceIdHeader(exchange.getResponse().getHeaders(), tracer);
+                    Tracer tracer = tracerProvider.getIfAvailable();
+                    if (tracer != null) {
+                        setTraceIdHeader(exchange.getResponse().getHeaders(), tracer);
+                    }
                     return Mono.empty();
                 });
                 return chain.filter(exchange);
