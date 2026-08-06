@@ -8,6 +8,7 @@ on:
         paths:
             - "pom.xml"
             - "common/**"
+            - "config-server/**"
             - "gateway-service/**"
             - "auth-service/**"
             - "product-service/**"
@@ -16,6 +17,7 @@ on:
             - "order-service/**"
             - "payment-service/**"
             - "docker-compose.yml"
+            - "scripts/create-kafka-topics.sh"
             - "monitoring/**"
             - ".github/workflows/ci.yml"
 
@@ -26,6 +28,7 @@ on:
         paths:
             - "pom.xml"
             - "common/**"
+            - "config-server/**"
             - "gateway-service/**"
             - "auth-service/**"
             - "product-service/**"
@@ -34,6 +37,7 @@ on:
             - "order-service/**"
             - "payment-service/**"
             - "docker-compose.yml"
+            - "scripts/create-kafka-topics.sh"
             - "monitoring/**"
             - ".github/workflows/ci.yml"
 
@@ -50,7 +54,7 @@ jobs:
         runs-on: ubuntu-latest
 
         env:
-            MAVEN_MODULES: gateway-service,auth-service,product-service,inventory-service,cart-service,order-service,payment-service
+            MAVEN_MODULES: config-server,gateway-service,auth-service,product-service,inventory-service,cart-service,order-service,payment-service
             KAFKA_IMAGE: apache/kafka:4.3.0
 
         services:
@@ -133,19 +137,8 @@ jobs:
 
             - name: Create Kafka Topics
               run: |
-                  docker exec ecommerce-ci-kafka /bin/bash -lc "
-                    set -e
-
-                    /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic order-created --partitions 3 --replication-factor 1
-                    /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic inventory-reserved --partitions 3 --replication-factor 1
-                    /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic payment-success --partitions 3 --replication-factor 1
-                    /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic payment-failed --partitions 3 --replication-factor 1
-
-                    /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic order-dlq --partitions 1 --replication-factor 1
-                    /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic payment-dlq --partitions 1 --replication-factor 1
-
-                    /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
-                  "
+                  docker cp scripts/create-kafka-topics.sh ecommerce-ci-kafka:/tmp/create-kafka-topics.sh
+                  docker exec -e KAFKA_BOOTSTRAP_SERVER=localhost:9092 ecommerce-ci-kafka /bin/sh /tmp/create-kafka-topics.sh
 
             - name: Build and Verify
               run: mvn -pl "$MAVEN_MODULES" -am clean verify
@@ -174,7 +167,7 @@ jobs:
         needs: build
 
         env:
-            MAVEN_MODULES: gateway-service,auth-service,product-service,inventory-service,cart-service,order-service,payment-service
+            MAVEN_MODULES: config-server,gateway-service,auth-service,product-service,inventory-service,cart-service,order-service,payment-service
 
         steps:
             - name: Checkout Repository
@@ -192,6 +185,9 @@ jobs:
 
             - name: Build Gateway Image
               run: docker build -t gateway-service ./gateway-service
+
+            - name: Build Config Server Image
+              run: docker build -t config-server ./config-server
 
             - name: Build Auth Image
               run: docker build -t auth-service ./auth-service

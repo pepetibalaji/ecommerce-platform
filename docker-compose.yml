@@ -21,6 +21,8 @@ x-logging: &default-logging
 
 services:
     postgres:
+        # Default local DEV database. Stage uses Neon through the service
+        # environment variables supplied by the configuration repository.
         image: postgres:16.14-alpine
         container_name: ecommerce-postgres
         restart: unless-stopped
@@ -44,6 +46,8 @@ services:
         logging: *default-logging
 
     redis:
+        # Default local DEV cache. Stage uses Upstash with TLS enabled through
+        # the service environment variables supplied by the configuration repository.
         image: redis:8.8-alpine
         container_name: ecommerce-redis
         restart: unless-stopped
@@ -166,20 +170,37 @@ services:
         logging: *default-logging
 
     alloy:
+        # Run only in the hosted environment: docker compose --env-file
+        # ../ecommerce-config-repo/.env.stage --profile stage-observability up alloy
+        profiles: ["stage-observability"]
         image: grafana/alloy:v1.10.0
         container_name: ecommerce-alloy
         restart: unless-stopped
         command: ["run", "/etc/alloy/config.alloy", "--server.http.listen-addr=0.0.0.0:12345"]
+        ports:
+            # Spring Boot services running on the host send OTLP traces here.
+            - "${OTEL_GRPC_PORT:-4317}:4317"
+            - "${OTEL_HTTP_PORT:-4318}:4318"
         volumes:
             - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
             - ./logs:/var/log/ecommerce:ro
+        environment:
+            GRAFANA_CLOUD_METRICS_URL: ${GRAFANA_CLOUD_METRICS_URL:-}
+            GRAFANA_CLOUD_METRICS_USERNAME: ${GRAFANA_CLOUD_METRICS_USERNAME:-}
+            GRAFANA_CLOUD_LOKI_URL: ${GRAFANA_CLOUD_LOKI_URL:-}
+            GRAFANA_CLOUD_LOKI_USERNAME: ${GRAFANA_CLOUD_LOKI_USERNAME:-}
+            GRAFANA_CLOUD_OTLP_ENDPOINT: ${GRAFANA_CLOUD_OTLP_ENDPOINT:-}
+            GRAFANA_CLOUD_OTLP_USERNAME: ${GRAFANA_CLOUD_OTLP_USERNAME:-}
+            GRAFANA_CLOUD_TOKEN: ${GRAFANA_CLOUD_TOKEN:-}
+            OBSERVABILITY_ENVIRONMENT: ${OBSERVABILITY_ENVIRONMENT:-local}
+            OBSERVABILITY_CLUSTER: ${OBSERVABILITY_CLUSTER:-ecommerce-local}
         networks:
             - ecommerce-network
-        depends_on:
-            - loki
         logging: *default-logging
 
     otel-collector:
+        # Default local collector. Alloy owns these ports only when the
+        # explicit stage-observability profile is used instead.
         image: otel/opentelemetry-collector-contrib:${OTEL_COLLECTOR_VERSION:-0.154.0}
         container_name: ecommerce-otel-collector
         restart: unless-stopped
@@ -219,10 +240,6 @@ services:
             - ecommerce-network
         depends_on:
             kafka:
-                condition: service_healthy
-            postgres:
-                condition: service_healthy
-            redis:
                 condition: service_healthy
             otel-collector:
                 condition: service_started

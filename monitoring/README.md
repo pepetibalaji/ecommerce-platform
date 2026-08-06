@@ -1,13 +1,12 @@
 # Local observability stack
 
 This folder configures the local development observability stack started by
-`docker compose up`:
+`docker compose up -d`:
 
 ```text
-Spring Boot services (host) --OTLP--> OpenTelemetry Collector --OTLP--> Tempo
-Spring Boot services (host) --/actuator/prometheus--> Prometheus <--remote write-- Tempo metrics generator
-Spring Boot services (host) --JSON files--> Alloy --> Loki
-Grafana --> Prometheus, Tempo, and Loki
+Spring Boot services (host) --OTLP--> OpenTelemetry Collector --> Tempo
+Spring Boot services (host) --/actuator/prometheus--> Prometheus --> Grafana
+Spring Boot services (host) --JSON files--> Loki --> Grafana
 ```
 
 ## Service prerequisites
@@ -36,7 +35,35 @@ Services write JSON logs to `../logs/<service-name>.json` by default, relative
 to the service module. That resolves to the repository-level `logs` directory
 when a service is started from its module. If you launch a JAR from somewhere
 else, set `OBSERVABILITY_LOG_FILE` to the absolute path of the corresponding
-file under `<repository>/logs`; Alloy reads that directory into Loki.
+file under `<repository>/logs`; Alloy reads that directory and forwards it to
+Grafana Cloud Logs.
+
+## Hosted logging
+
+Run Alloy alongside the services and mount the same log directory read-only at
+`/var/log/ecommerce`. Configure these values as deployment secrets/environment
+variables; never commit the Grafana Cloud token:
+
+```text
+GRAFANA_CLOUD_LOKI_URL=https://logs-<region>.grafana.net/loki/api/v1/push
+GRAFANA_CLOUD_LOKI_USERNAME=<Loki instance ID>
+GRAFANA_CLOUD_TOKEN=<access-policy token with Logs:Write>
+OBSERVABILITY_ENVIRONMENT=production
+OBSERVABILITY_CLUSTER=ecommerce-production
+```
+
+For staging, run only Alloy with the stage environment file from the
+configuration repository:
+
+```powershell
+docker compose --env-file ../ecommerce-config-repo/.env.stage --profile stage-observability up -d alloy
+```
+
+Each service retains at most 10 MB locally by default (a 5 MB active file plus
+up to one rolled file). This is only a short buffer for Alloy; Grafana Cloud
+Free retains ingested logs for 14 days, then removes them automatically. You
+can lower the local limits with `OBSERVABILITY_LOG_MAX_FILE_SIZE`,
+`OBSERVABILITY_LOG_MAX_HISTORY`, and `OBSERVABILITY_LOG_TOTAL_SIZE_CAP`.
 
 ## Naming and correlation standard
 

@@ -15,3 +15,9 @@ logging:
             file: logstash
     file:
         name: ${OBSERVABILITY_LOG_FILE:../logs/cart-service.json}
+    logback:
+        rollingpolicy:
+            max-file-size: ${OBSERVABILITY_LOG_MAX_FILE_SIZE:5MB}
+            max-history: ${OBSERVABILITY_LOG_MAX_HISTORY:1}
+            total-size-cap: ${OBSERVABILITY_LOG_TOTAL_SIZE_CAP:5MB}
+            clean-history-on-start: true
