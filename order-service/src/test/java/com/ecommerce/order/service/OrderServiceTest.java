@@ -1,6 +1,8 @@
 package com.ecommerce.order.service;
 
 import com.ecommerce.common.events.order.OrderCreatedEvent;
+import com.ecommerce.common.events.payment.PaymentFailedEvent;
+import com.ecommerce.common.events.payment.PaymentSuccessEvent;
 import com.ecommerce.common.exception.BadRequestException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.order.dto.CreateOrderItemRequest;
@@ -11,9 +13,12 @@ import com.ecommerce.order.dto.UpdateOrderStatusRequest;
 import com.ecommerce.order.entity.Order;
 import com.ecommerce.order.entity.OrderItem;
 import com.ecommerce.order.entity.OrderStatus;
+import com.ecommerce.order.entity.InventoryReleaseReason;
 import com.ecommerce.order.grpc.InventoryGrpcClient;
 import com.ecommerce.order.kafka.OrderEventPublisher;
 import com.ecommerce.order.repository.OrderRepository;
+import com.ecommerce.order.repository.OrderProcessedEventRepository;
+import com.ecommerce.order.observability.PaymentOutcomeMetrics;
 import com.ecommerce.proto.inventory.InventoryDetails;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,9 +43,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest {
@@ -53,6 +61,15 @@ class OrderServiceTest {
 
     @Mock
     private OrderEventPublisher orderEventPublisher;
+
+    @Mock
+    private OrderProcessedEventRepository orderProcessedEventRepository;
+
+    @Mock
+    private PaymentOutcomeMetrics paymentOutcomeMetrics;
+
+    @Mock
+    private InventoryReleaseOutboxService inventoryReleaseOutboxService;
 
     @InjectMocks
     private OrderServiceImpl orderService;
@@ -88,7 +105,7 @@ class OrderServiceTest {
 
         doNothing()
                 .when(inventoryGrpcClient)
-                .reserveStock(productId, 2);
+                .reserveStock(eq(productId), eq(2), any(UUID.class));
 
         UUID orderId =
                 UUID.randomUUID();
@@ -133,7 +150,7 @@ class OrderServiceTest {
                 .getInventory(productId);
 
         verify(inventoryGrpcClient)
-                .reserveStock(productId, 2);
+                .reserveStock(eq(productId), eq(2), any(UUID.class));
 
         ArgumentCaptor<Order> orderCaptor =
                 ArgumentCaptor.forClass(Order.class);
@@ -155,6 +172,13 @@ class OrderServiceTest {
 
         assertThat(savedOrder.getShippingCountry())
                 .isEqualTo("IN");
+
+        UUID reservationId = savedOrder.getItems().getFirst().getInventoryReservationId();
+
+        assertThat(reservationId).isNotNull();
+
+        verify(inventoryGrpcClient)
+                .reserveStock(productId, 2, reservationId);
 
         ArgumentCaptor<OrderCreatedEvent> eventCaptor =
                 ArgumentCaptor.forClass(OrderCreatedEvent.class);
@@ -197,7 +221,7 @@ class OrderServiceTest {
 
         doNothing()
                 .when(inventoryGrpcClient)
-                .reserveStock(productId, 2);
+                .reserveStock(eq(productId), eq(2), any(UUID.class));
 
         UUID orderId =
                 UUID.randomUUID();
@@ -250,7 +274,7 @@ class OrderServiceTest {
                 .getInventory(any());
 
         verify(inventoryGrpcClient, never())
-                .reserveStock(any(), anyInt());
+                .reserveStock(any(), anyInt(), any(UUID.class));
 
         verify(orderRepository, never())
                 .save(any(Order.class));
@@ -279,7 +303,7 @@ class OrderServiceTest {
         );
 
         verify(inventoryGrpcClient, never())
-                .reserveStock(any(), anyInt());
+                .reserveStock(any(), anyInt(), any(UUID.class));
 
         verify(orderRepository, never())
                 .save(any(Order.class));
@@ -301,7 +325,7 @@ class OrderServiceTest {
 
         order.getItems().add(item);
 
-        when(orderRepository.findById(orderId))
+        when(orderRepository.findByIdForUpdate(orderId))
                 .thenReturn(Optional.of(order));
 
         when(orderRepository.save(any(Order.class)))
@@ -316,8 +340,11 @@ class OrderServiceTest {
         assertThat(response.getCurrency())
                 .isEqualTo("INR");
 
-        verify(inventoryGrpcClient)
-                .releaseStock(productId, 2);
+        verify(inventoryReleaseOutboxService)
+                .enqueueFor(order, InventoryReleaseReason.CANCELLED);
+
+        verify(inventoryGrpcClient, never())
+                .releaseStock(any(), anyInt(), any(UUID.class));
 
         verify(orderRepository)
                 .save(order);
@@ -375,7 +402,7 @@ class OrderServiceTest {
         Order order =
                 existingOrder(orderId, OrderStatus.PENDING);
 
-        when(orderRepository.findById(orderId))
+        when(orderRepository.findByIdForUpdate(orderId))
                 .thenReturn(Optional.of(order));
 
         when(orderRepository.save(any(Order.class)))
@@ -397,6 +424,168 @@ class OrderServiceTest {
 
         verify(orderRepository)
                 .save(order);
+    }
+
+    @Test
+    void handlePaymentSuccess_shouldConfirmPendingOrderAndRecordEvent() {
+        UUID orderId = UUID.randomUUID();
+        UUID paymentId = UUID.randomUUID();
+        PaymentSuccessEvent event = new PaymentSuccessEvent(
+                paymentId, orderId, userId, new BigDecimal("100.00"), "INR",
+                "SANDBOX", "transaction-1", "correlation-1", "trace-1");
+        Order order = existingOrder(orderId, OrderStatus.PENDING);
+
+        order.getItems().add(existingOrderItem(order));
+
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(orderProcessedEventRepository.existsByEventId(event.getEventId())).thenReturn(false);
+
+        orderService.handlePaymentSuccess(event);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(order.getPaymentId()).isEqualTo(paymentId);
+        assertThat(order.getPaymentConfirmedAt()).isNotNull();
+        verify(orderRepository).save(order);
+        verify(orderProcessedEventRepository).save(any());
+    }
+
+    @Test
+    void handlePaymentFailure_shouldMarkPendingOrderAsPaymentFailedAndRecordEvent() {
+        UUID orderId = UUID.randomUUID();
+        UUID paymentId = UUID.randomUUID();
+        PaymentFailedEvent event = new PaymentFailedEvent(
+                paymentId, orderId, userId, new BigDecimal("100.00"), "INR",
+                "SANDBOX", "DECLINED", "Card was declined", "correlation-1", "trace-1");
+        Order order = existingOrder(orderId, OrderStatus.PENDING);
+
+        order.getItems().add(existingOrderItem(order));
+
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(orderProcessedEventRepository.existsByEventId(event.getEventId())).thenReturn(false);
+
+        orderService.handlePaymentFailure(event);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+        assertThat(order.getPaymentId()).isEqualTo(paymentId);
+        assertThat(order.getPaymentFailedAt()).isNotNull();
+        assertThat(order.getPaymentFailureReason()).isEqualTo("Card was declined");
+        verify(orderRepository).save(order);
+        verify(inventoryReleaseOutboxService)
+                .enqueueFor(order, InventoryReleaseReason.PAYMENT_FAILED);
+        verify(orderProcessedEventRepository).save(any());
+    }
+
+    @Test
+    void handlePaymentFailure_shouldRemainRetryableWhenReservationIdIsMissing() {
+        UUID orderId = UUID.randomUUID();
+        PaymentFailedEvent event = new PaymentFailedEvent(
+                UUID.randomUUID(), orderId, userId, new BigDecimal("100.00"), "INR",
+                "SANDBOX", "DECLINED", "Card was declined", "correlation-1", "trace-1");
+        Order order = existingOrder(orderId, OrderStatus.PENDING);
+        OrderItem item = existingOrderItem(order);
+        item.setInventoryReservationId(null);
+        order.getItems().add(item);
+
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(orderProcessedEventRepository.existsByEventId(event.getEventId())).thenReturn(false);
+        doThrow(new IllegalStateException("Missing inventory reservation id"))
+                .when(inventoryReleaseOutboxService)
+                .enqueueFor(order, InventoryReleaseReason.PAYMENT_FAILED);
+
+        assertThrows(IllegalStateException.class, () -> orderService.handlePaymentFailure(event));
+
+        verify(orderRepository, never()).save(order);
+        verify(orderProcessedEventRepository, never()).save(any());
+    }
+
+    @Test
+    void updateOrderStatus_shouldQueueInventoryReleaseWhenCancelling() {
+        UUID orderId = UUID.randomUUID();
+        Order order = existingOrder(orderId, OrderStatus.PENDING);
+        order.getItems().add(existingOrderItem(order));
+
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UpdateOrderStatusRequest request = new UpdateOrderStatusRequest();
+        request.setStatus(OrderStatus.CANCELLED);
+
+        OrderResponse response = orderService.updateOrderStatus(orderId, request);
+
+        assertThat(response.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        verify(inventoryReleaseOutboxService)
+                .enqueueFor(order, InventoryReleaseReason.CANCELLED);
+    }
+
+    @Test
+    void handlePaymentSuccess_shouldIgnoreDuplicateEvent() {
+        UUID orderId = UUID.randomUUID();
+        PaymentSuccessEvent event = new PaymentSuccessEvent(
+                UUID.randomUUID(), orderId, userId, new BigDecimal("100.00"), "INR",
+                "SANDBOX", "transaction-1", "correlation-1", "trace-1");
+        Order order = existingOrder(orderId, OrderStatus.PENDING);
+
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(orderProcessedEventRepository.existsByEventId(event.getEventId())).thenReturn(true);
+
+        orderService.handlePaymentSuccess(event);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+        verify(orderRepository, never()).save(order);
+        verifyNoInteractions(inventoryReleaseOutboxService);
+        verify(orderProcessedEventRepository, never()).save(any());
+    }
+
+    @Test
+    void handlePaymentFailure_shouldIgnoreLateFailureForConfirmedOrder() {
+        UUID orderId = UUID.randomUUID();
+        PaymentFailedEvent event = new PaymentFailedEvent(
+                UUID.randomUUID(), orderId, userId, new BigDecimal("100.00"), "INR",
+                "SANDBOX", "DECLINED", "Card was declined", "correlation-1", "trace-1");
+        Order order = existingOrder(orderId, OrderStatus.CONFIRMED);
+
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(orderProcessedEventRepository.existsByEventId(event.getEventId())).thenReturn(false);
+
+        orderService.handlePaymentFailure(event);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        verify(orderRepository, never()).save(order);
+        verifyNoInteractions(inventoryReleaseOutboxService);
+        verify(orderProcessedEventRepository, times(1)).save(any());
+    }
+
+    @Test
+    void handlePaymentSuccess_shouldIgnoreLateSuccessForCancelledOrder() {
+        UUID orderId = UUID.randomUUID();
+        PaymentSuccessEvent event = new PaymentSuccessEvent(
+                UUID.randomUUID(), orderId, userId, new BigDecimal("100.00"), "INR",
+                "SANDBOX", "transaction-1", "correlation-1", "trace-1");
+        Order order = existingOrder(orderId, OrderStatus.CANCELLED);
+
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(orderProcessedEventRepository.existsByEventId(event.getEventId())).thenReturn(false);
+
+        orderService.handlePaymentSuccess(event);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        verify(orderRepository, never()).save(order);
+        verifyNoInteractions(inventoryReleaseOutboxService);
+        verify(orderProcessedEventRepository).save(any());
+    }
+
+    @Test
+    void handlePaymentSuccess_shouldFailForUnknownOrder() {
+        UUID orderId = UUID.randomUUID();
+        PaymentSuccessEvent event = new PaymentSuccessEvent(
+                UUID.randomUUID(), orderId, userId, new BigDecimal("100.00"), "INR",
+                "SANDBOX", "transaction-1", "correlation-1", "trace-1");
+
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class, () -> orderService.handlePaymentSuccess(event));
+        verifyNoInteractions(inventoryReleaseOutboxService);
+        verify(orderProcessedEventRepository, never()).save(any());
     }
 
     private CreateOrderRequest createOrderRequest(
@@ -482,6 +671,7 @@ class OrderServiceTest {
         item.setId(UUID.randomUUID());
         item.setOrder(order);
         item.setProductId(productId);
+        item.setInventoryReservationId(UUID.randomUUID());
         item.setQuantity(2);
         item.setPrice(new BigDecimal("100.00"));
 

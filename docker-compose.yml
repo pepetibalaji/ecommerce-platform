@@ -139,6 +139,18 @@ services:
                 condition: service_healthy
         logging: *default-logging
 
+    kafka-exporter:
+        image: danielqsj/kafka-exporter:v1.7.0
+        container_name: ecommerce-kafka-exporter
+        restart: unless-stopped
+        command: ["--kafka.server=kafka:9092"]
+        networks:
+            - ecommerce-network
+        depends_on:
+            kafka:
+                condition: service_healthy
+        logging: *default-logging
+
     tempo:
         image: grafana/tempo:${TEMPO_VERSION:-2.10.7}
         container_name: ecommerce-tempo

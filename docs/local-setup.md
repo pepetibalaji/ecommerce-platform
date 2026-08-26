@@ -5,16 +5,19 @@ This guide explains how to run the ecommerce microservices platform locally.
 The current local platform includes:
 
 - Config Server
+- API Gateway
 - Auth Service
 - Product Service
 - Inventory Service
 - Cart Service
 - Order Service
-- Neon Managed PostgreSQL (PostgreSQL Docker is an optional fallback)
+- Payment Service
+- PostgreSQL
 - Redis
 - Kafka
-- Zookeeper
-- Zipkin
+- OpenTelemetry Collector
+- Tempo
+- Loki
 - Prometheus
 - Grafana
 
@@ -91,10 +94,14 @@ This starts:
 
 | Component               |  Port |
 | ----------------------- | ----: |
-| Zookeeper               |  2181 |
+| PostgreSQL              |  5433 |
+| Redis                   |  6379 |
 | Kafka internal listener |  9092 |
 | Kafka host listener     | 29092 |
-| Zipkin                  |  9411 |
+| Tempo HTTP API          |  3200 |
+| Loki                    |  3100 |
+| OpenTelemetry gRPC      |  4317 |
+| OpenTelemetry HTTP      |  4318 |
 | Prometheus              |  9090 |
 | Grafana                 |  3000 |
 
@@ -107,18 +114,20 @@ docker ps
 Expected containers:
 
 ```text
-ecommerce-zookeeper
+ecommerce-postgres
+ecommerce-redis
 ecommerce-kafka
-zipkin
-prometheus
-grafana
+ecommerce-kafka-init
+ecommerce-otel-collector
+ecommerce-prometheus
+ecommerce-grafana
 ```
 
 ---
 
 ## 5. Database Setup
 
-DEV services use separate Neon databases by default:
+Services own separate logical PostgreSQL databases:
 
 | Service           | Database       |
 | ----------------- | -------------- |
@@ -128,31 +137,12 @@ DEV services use separate Neon databases by default:
 | Order Service     | `order_db`     |
 | Payment Service   | `payment_db`   |
 
-Connection details never belong in this repository or the Config Repository.
-Provide them through the ignored environment file used at service runtime.
+`docker compose up -d` starts PostgreSQL and Redis without a Compose profile.
+To use those local stores from Maven/IDE services, point runtime configuration
+at `localhost:5433` and `localhost:6379`. For services running inside the
+Compose network, use `postgres:5432` and `redis:6379`.
 
-### Local PostgreSQL fallback
-
-To use Docker PostgreSQL during an offline or fallback workflow, start the
-optional Compose profile:
-
-```bash
-docker compose --profile local-postgres up -d
-```
-
-### Local Redis fallback
-
-The default Redis provider is Upstash. If you need a local Redis instance,
-start it explicitly:
-
-```bash
-docker compose --profile local-redis up -d
-```
-
-Then point the relevant Config Repository profile at `redis:6379` for services
-running in Compose, or `localhost:6379` for services running on your machine.
-
-Then create the fallback databases if required:
+Create the logical service databases if required:
 
 ```bash
 docker exec -it ecommerce-postgres psql -U ecommerce_user -d ecommerce -c "CREATE DATABASE auth_db;"
@@ -162,7 +152,7 @@ docker exec -it ecommerce-postgres psql -U ecommerce_user -d ecommerce -c "CREAT
 docker exec -it ecommerce-postgres psql -U ecommerce_user -d ecommerce -c "CREATE DATABASE payment_db;"
 ```
 
-Update the local fallback datasource values in the runtime environment file
+Update the local datasource values in the runtime environment file
 before starting services; never add them to service `application.yml` files.
 
 The equivalent SQL is:
@@ -237,6 +227,7 @@ Expected:
 order-created
 payment-success
 payment-failed
+order-dlq
 ```
 
 Consume events:
@@ -258,11 +249,18 @@ Start services in this order:
 4. Inventory Service
 5. Cart Service
 6. Order Service
+7. Payment Service
+8. API Gateway
 ```
 
 ---
 
 ## 9. Start Config Server
+
+> **Current configuration-layout caveat:** Config Server has no Git
+> `search-paths` setting, while the referenced configuration repository stores
+> files in `dev/`, `stage/`, and `prod/` directories. Resolve that mismatch
+> before relying on `/service/profile` responses for a full local bootstrap.
 
 ```bash
 cd config-server
@@ -477,6 +475,8 @@ Order Service depends on:
 | Inventory Service | `http://localhost:8084/swagger-ui.html` |
 | Cart Service      | `http://localhost:8085/swagger-ui.html` |
 | Order Service     | `http://localhost:8086/swagger-ui.html` |
+| Payment Service   | `http://localhost:8087/swagger-ui.html` |
+| API Gateway       | `http://localhost:8080/swagger-ui.html` when dev/stage aggregation routes are active |
 
 ---
 
@@ -485,12 +485,15 @@ Order Service depends on:
 | Service           | Port |
 | ----------------- | ---: |
 | Config Server     | 8888 |
+| API Gateway       | 8080 |
 | Auth Service      | 8081 |
 | Product Service   | 8082 |
 | Inventory Service | 8084 |
 | Cart Service      | 8085 |
 | Order Service     | 8086 |
+| Payment Service   | 8087 |
 | Inventory gRPC    | 9091 |
+| Payment gRPC      | 9092 |
 
 Infrastructure ports:
 
@@ -500,8 +503,10 @@ Infrastructure ports:
 | Redis                 |  6379 |
 | Kafka host listener   | 29092 |
 | Kafka Docker listener |  9092 |
-| Zookeeper             |  2181 |
-| Zipkin                |  9411 |
+| Tempo HTTP API        |  3200 |
+| Loki                  |  3100 |
+| OpenTelemetry gRPC    |  4317 |
+| OpenTelemetry HTTP    |  4318 |
 | Prometheus            |  9090 |
 | Grafana               |  3000 |
 
@@ -618,6 +623,83 @@ Verify Kafka event:
 ```powershell
 docker exec -it ecommerce-kafka kafka-console-consumer --bootstrap-server kafka:9092 --topic order-created --from-beginning
 ```
+
+---
+
+### Payment Outcome Smoke Test
+
+After the provider has sent a verified payment webhook, Payment Service publishes
+an outcome event and Order Service consumes it.
+
+```text
+payment-success  -> PENDING order becomes CONFIRMED; its inventory reservation stays held
+payment-failed   -> PENDING order becomes PAYMENT_FAILED; a durable release command returns stock
+```
+
+1. Create an order and save its ID as `<order-id>`.
+2. Complete or fail its checkout flow using the configured payment provider. The
+   provider webhook, rather than the browser success URL, is the source of truth.
+3. Verify the payment outcome event was published:
+
+```powershell
+docker exec -it ecommerce-kafka kafka-console-consumer --bootstrap-server kafka:9092 --topic payment-success --from-beginning
+```
+
+Use `--topic payment-failed` when testing a failed payment.
+
+4. Retrieve the order after the listener has processed the event:
+
+```http
+GET http://localhost:8086/api/v1/orders/<order-id>
+Authorization: Bearer <access-token>
+```
+
+Expected successful-payment response fields:
+
+```json
+{
+  "status": "CONFIRMED",
+  "paymentId": "<payment-id>",
+  "paymentConfirmedAt": "<timestamp>"
+}
+```
+
+For a failed payment, expect `status: PAYMENT_FAILED`, `paymentId`,
+`paymentFailedAt`, and optionally `paymentFailureReason`. Within the default
+five-second release-worker interval, Inventory Service should move that item's
+reservation from `RESERVED` to `RELEASED`: `reservedStock` decreases and
+`availableStock` increases by the order quantity. The Order Service database
+also records a `COMPLETED` row in `order_inventory_release_outbox` for each
+order item.
+
+Replaying the same Kafka event must not change the order or release stock a
+second time. Temporarily stopping Inventory Service after a payment failure is
+also a useful retry test: the outbox row remains `PENDING` with an increasing
+`attempt_count`, then completes safely once Inventory Service is available.
+
+Payment success does **not** deduct inventory again. The order already reserved
+stock when it was created; a future fulfillment/shipment flow must call the
+reservation-aware `DeductStock` operation to move `RESERVED` to `DEDUCTED`.
+
+Order Service uses these defaults, which may be overridden per environment:
+
+```yaml
+order:
+  inventory-release:
+    fixed-delay-ms: 5000
+    initial-delay-ms: 1000
+    batch-size: 25
+```
+
+### Reservation-aware rollout order
+
+Deploy Inventory Service (including `V2__add_inventory_reservations.sql`) before
+deploying Order Service with `V4__add_inventory_reservations_and_release_outbox.sql`.
+That order ensures Order Service never sends a `reservationId` to an older
+Inventory Service that would ignore it. Existing `PENDING` or `CONFIRMED`
+orders created before this deployment have no reservation IDs; audit and
+manually remediate those orders before sending payment failures or cancellations
+through the new automatic release flow.
 
 ---
 
@@ -738,15 +820,16 @@ localhost:29092
 
 ### Kafka Cluster ID Mismatch
 
-This usually means Kafka data belongs to an old Zookeeper cluster.
+This usually means persisted Kafka KRaft data no longer matches the current
+local broker configuration.
 
 For local development:
 
 ```powershell
-docker compose stop kafka zookeeper
-docker compose rm -f kafka zookeeper
+docker compose stop kafka
+docker compose rm -f kafka
 docker volume rm ecommerce-platform_kafka-data
-docker compose up -d
+docker compose up -d kafka kafka-init
 ```
 
 Do not remove all volumes unless you want to reset PostgreSQL and Redis too.

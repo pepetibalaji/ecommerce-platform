@@ -1,0 +1,69 @@
+{
+  "uid": "order-payment-outcomes",
+  "title": "Ecommerce - Order Payment Outcomes",
+  "tags": ["ecommerce", "order", "payment", "kafka"],
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Payment outcome listener deliveries",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (outcome) (rate(order_payment_outcome_consumed_count_total{service=\"order-service\"}[$__rate_interval]))", "legendFormat": "{{outcome}}" }],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "title": "Orders updated from payment outcomes",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (outcome) (rate(order_payment_outcome_order_updated_count_total{service=\"order-service\"}[$__rate_interval]))", "legendFormat": "{{outcome}}" }],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+    },
+    {
+      "id": 3,
+      "title": "Duplicates and late events",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "rate(order_payment_outcome_duplicate_ignored_count_total{service=\"order-service\"}[$__rate_interval])", "legendFormat": "duplicate" },
+        { "refId": "B", "expr": "sum by (outcome) (rate(order_payment_outcome_late_ignored_count_total{service=\"order-service\"}[$__rate_interval]))", "legendFormat": "late {{outcome}}" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 }
+    },
+    {
+      "id": 4,
+      "title": "Retries and DLQ recoveries",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "rate(order_payment_outcome_retry_count_total{service=\"order-service\"}[$__rate_interval])", "legendFormat": "retries" },
+        { "refId": "B", "expr": "rate(order_payment_outcome_dlq_count_total{service=\"order-service\"}[$__rate_interval])", "legendFormat": "DLQ recovery attempts" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 }
+    },
+    {
+      "id": 5,
+      "title": "Payment outcome consumer lag",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (topic) (kafka_consumergroup_lag{consumergroup=\"order-service-payment-outcomes\",topic=~\"payment-success|payment-failed\"})", "legendFormat": "{{topic}}" }],
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 }
+    },
+    {
+      "id": 6,
+      "title": "Inventory release outbox activity",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (reason) (rate(order_inventory_release_queued_count_total{service=\"order-service\"}[$__rate_interval]))", "legendFormat": "queued {{reason}}" },
+        { "refId": "B", "expr": "sum by (reason) (rate(order_inventory_release_completed_count_total{service=\"order-service\"}[$__rate_interval]))", "legendFormat": "completed {{reason}}" },
+        { "refId": "C", "expr": "sum by (reason) (rate(order_inventory_release_failed_count_total{service=\"order-service\"}[$__rate_interval]))", "legendFormat": "failed {{reason}}" }
+      ],
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 }
+    }
+  ]
+}

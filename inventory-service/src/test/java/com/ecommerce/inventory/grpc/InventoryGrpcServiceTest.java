@@ -115,6 +115,29 @@ class InventoryGrpcServiceTest {
     }
 
     @Test
+    void shouldForwardReservationIdForReservationAwareReserve() {
+        UUID reservationId = UUID.randomUUID();
+
+        when(inventoryService.reserveStock(productId, 5, reservationId))
+                .thenReturn(InventoryResponse.builder()
+                        .productId(productId)
+                        .availableStock(95)
+                        .reservedStock(5)
+                        .build());
+
+        ReserveStockRequest request = ReserveStockRequest.newBuilder()
+                .setProductId(productId.toString())
+                .setQuantity(5)
+                .setReservationId(reservationId.toString())
+                .build();
+
+        inventoryGrpcService.reserveStock(request, responseObserver);
+
+        verify(inventoryService).reserveStock(productId, 5, reservationId);
+        verify(responseObserver).onCompleted();
+    }
+
+    @Test
     void shouldReleaseStock() {
 
         when(

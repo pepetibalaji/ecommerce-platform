@@ -15,6 +15,7 @@ topics="
 order-created:3
 payment-success:3
 payment-failed:3
+order-dlq:3
 "
 
 printf "%s\n" "$topics" | while IFS=: read -r topic partitions; do

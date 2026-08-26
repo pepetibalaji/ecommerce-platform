@@ -2,6 +2,8 @@ package com.ecommerce.order.service;
 
 import com.ecommerce.common.events.order.OrderCreatedEvent;
 import com.ecommerce.common.events.order.OrderItemEvent;
+import com.ecommerce.common.events.payment.PaymentFailedEvent;
+import com.ecommerce.common.events.payment.PaymentSuccessEvent;
 import com.ecommerce.common.exception.BadRequestException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.order.dto.CreateOrderItemRequest;
@@ -14,9 +16,14 @@ import com.ecommerce.order.dto.UpdateOrderStatusRequest;
 import com.ecommerce.order.entity.Order;
 import com.ecommerce.order.entity.OrderItem;
 import com.ecommerce.order.entity.OrderStatus;
+import com.ecommerce.order.entity.InventoryReleaseReason;
 import com.ecommerce.order.grpc.InventoryGrpcClient;
 import com.ecommerce.order.kafka.OrderEventPublisher;
+import com.ecommerce.order.repository.OrderProcessedEventRepository;
 import com.ecommerce.order.repository.OrderRepository;
+import com.ecommerce.order.entity.OrderProcessedEvent;
+import com.ecommerce.order.observability.PaymentOutcomeMetrics;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -24,17 +31,22 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 @Service
 @Transactional
+@Slf4j
 public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
     private final InventoryGrpcClient inventoryGrpcClient;
     private final OrderEventPublisher orderEventPublisher;
+    private final OrderProcessedEventRepository orderProcessedEventRepository;
+    private final PaymentOutcomeMetrics paymentOutcomeMetrics;
+    private final InventoryReleaseOutboxService inventoryReleaseOutboxService;
 
     @Value("${order.default-currency:INR}")
     private String defaultCurrency;
@@ -42,23 +54,26 @@ public class OrderServiceImpl implements OrderService {
     public OrderServiceImpl(
             OrderRepository orderRepository,
             InventoryGrpcClient inventoryGrpcClient,
-            OrderEventPublisher orderEventPublisher
+            OrderEventPublisher orderEventPublisher,
+            OrderProcessedEventRepository orderProcessedEventRepository,
+            PaymentOutcomeMetrics paymentOutcomeMetrics,
+            InventoryReleaseOutboxService inventoryReleaseOutboxService
     ) {
         this.orderRepository = orderRepository;
         this.inventoryGrpcClient = inventoryGrpcClient;
         this.orderEventPublisher = orderEventPublisher;
+        this.orderProcessedEventRepository = orderProcessedEventRepository;
+        this.paymentOutcomeMetrics = paymentOutcomeMetrics;
+        this.inventoryReleaseOutboxService = inventoryReleaseOutboxService;
     }
 
     @Override
     public OrderResponse createOrder(UUID userId, CreateOrderRequest request) {
         validateCreateOrderRequest(request);
 
-        List<CreateOrderItemRequest> reservedItems = new ArrayList<>();
+        List<OrderItem> reservedItems = new ArrayList<>();
 
         try {
-            validateStockAvailability(request);
-            reserveStock(request, reservedItems);
-
             Order order = new Order();
             order.setUserId(userId);
             order.setCurrency(resolveCurrency(request.getCurrency()));
@@ -76,6 +91,7 @@ public class OrderServiceImpl implements OrderService {
                 OrderItem item = new OrderItem();
                 item.setOrder(order);
                 item.setProductId(itemRequest.getProductId());
+                item.setInventoryReservationId(UUID.randomUUID());
                 item.setQuantity(itemRequest.getQuantity());
                 item.setPrice(itemRequest.getPrice());
 
@@ -86,6 +102,9 @@ public class OrderServiceImpl implements OrderService {
                                 .multiply(BigDecimal.valueOf(itemRequest.getQuantity()))
                 );
             }
+
+            validateStockAvailability(request);
+            reserveStock(order.getItems(), reservedItems);
 
             order.setTotalAmount(totalAmount);
 
@@ -129,7 +148,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public OrderResponse cancelOrder(UUID userId, UUID orderId) {
-        Order order = orderRepository.findById(orderId)
+        Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
 
         if (!order.getUserId().equals(userId)) {
@@ -138,7 +157,7 @@ public class OrderServiceImpl implements OrderService {
 
         validateStatusTransition(order.getStatus(), OrderStatus.CANCELLED);
 
-        releaseReservedStock(order);
+        inventoryReleaseOutboxService.enqueueFor(order, InventoryReleaseReason.CANCELLED);
 
         order.setStatus(OrderStatus.CANCELLED);
 
@@ -157,14 +176,96 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public OrderResponse updateOrderStatus(UUID orderId, UpdateOrderStatusRequest request) {
-        Order order = orderRepository.findById(orderId)
+        Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
 
         validateStatusTransition(order.getStatus(), request.getStatus());
 
+        if (request.getStatus() == OrderStatus.CANCELLED) {
+            inventoryReleaseOutboxService.enqueueFor(order, InventoryReleaseReason.CANCELLED);
+        }
+
         order.setStatus(request.getStatus());
 
         return toResponse(orderRepository.save(order));
+    }
+
+    @Override
+    public void handlePaymentSuccess(PaymentSuccessEvent event) {
+        validatePaymentEvent(event == null ? null : event.getEventId(),
+                event == null ? null : event.getOrderId(),
+                event == null ? null : event.getPaymentId());
+
+        Order order = orderRepository.findByIdForUpdate(event.getOrderId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Order not found for payment event: " + event.getOrderId()));
+
+        if (orderProcessedEventRepository.existsByEventId(event.getEventId())) {
+            log.info("Ignoring duplicate payment-success event. eventId={}, orderId={}, paymentId={}",
+                    event.getEventId(), event.getOrderId(), event.getPaymentId());
+            paymentOutcomeMetrics.duplicateIgnored();
+            return;
+        }
+
+        if (order.getStatus() == OrderStatus.PENDING) {
+            order.setStatus(OrderStatus.CONFIRMED);
+            order.setPaymentId(event.getPaymentId());
+            order.setPaymentConfirmedAt(LocalDateTime.now());
+            order.setPaymentFailedAt(null);
+            order.setPaymentFailureReason(null);
+            orderRepository.save(order);
+            paymentOutcomeMetrics.orderUpdated("success");
+        } else if (order.getStatus() != OrderStatus.CONFIRMED) {
+            log.warn("Ignoring late payment-success event. eventId={}, orderId={}, paymentId={}, orderStatus={}",
+                    event.getEventId(), event.getOrderId(), event.getPaymentId(), order.getStatus());
+            paymentOutcomeMetrics.lateEventIgnored("success");
+        }
+
+        recordProcessedEvent(event.getEventId(), event.getEventType(), event.getOrderId());
+    }
+
+    @Override
+    public void handlePaymentFailure(PaymentFailedEvent event) {
+        validatePaymentEvent(event == null ? null : event.getEventId(),
+                event == null ? null : event.getOrderId(),
+                event == null ? null : event.getPaymentId());
+
+        Order order = orderRepository.findByIdForUpdate(event.getOrderId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Order not found for payment event: " + event.getOrderId()));
+
+        if (orderProcessedEventRepository.existsByEventId(event.getEventId())) {
+            log.info("Ignoring duplicate payment-failed event. eventId={}, orderId={}, paymentId={}",
+                    event.getEventId(), event.getOrderId(), event.getPaymentId());
+            paymentOutcomeMetrics.duplicateIgnored();
+            return;
+        }
+
+        if (order.getStatus() == OrderStatus.PENDING) {
+            inventoryReleaseOutboxService.enqueueFor(order, InventoryReleaseReason.PAYMENT_FAILED);
+            order.setStatus(OrderStatus.PAYMENT_FAILED);
+            order.setPaymentId(event.getPaymentId());
+            order.setPaymentFailedAt(LocalDateTime.now());
+            order.setPaymentFailureReason(event.getFailureReason());
+            orderRepository.save(order);
+            paymentOutcomeMetrics.orderUpdated("failure");
+        } else if (order.getStatus() != OrderStatus.PAYMENT_FAILED) {
+            log.warn("Ignoring late payment-failed event. eventId={}, orderId={}, paymentId={}, orderStatus={}",
+                    event.getEventId(), event.getOrderId(), event.getPaymentId(), order.getStatus());
+            paymentOutcomeMetrics.lateEventIgnored("failure");
+        }
+
+        recordProcessedEvent(event.getEventId(), event.getEventType(), event.getOrderId());
+    }
+
+    private void validatePaymentEvent(UUID eventId, UUID orderId, UUID paymentId) {
+        if (eventId == null || orderId == null || paymentId == null) {
+            throw new BadRequestException("Payment outcome event must contain eventId, orderId, and paymentId");
+        }
+    }
+
+    private void recordProcessedEvent(UUID eventId, String eventType, UUID orderId) {
+        orderProcessedEventRepository.save(new OrderProcessedEvent(eventId, eventType, orderId));
     }
 
     private void validateCreateOrderRequest(CreateOrderRequest request) {
@@ -260,42 +361,30 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    private void reserveStock(
-            CreateOrderRequest request,
-            List<CreateOrderItemRequest> reservedItems
-    ) {
-        for (CreateOrderItemRequest itemRequest : request.getItems()) {
+    private void reserveStock(List<OrderItem> items, List<OrderItem> reservedItems) {
+        for (OrderItem item : items) {
+            // Add before the remote call: the Inventory service may commit while this client times
+            // out, and the catch block must still be able to compensate that reservation id.
+            reservedItems.add(item);
             inventoryGrpcClient.reserveStock(
-                    itemRequest.getProductId(),
-                    itemRequest.getQuantity()
+                    item.getProductId(),
+                    item.getQuantity(),
+                    item.getInventoryReservationId()
             );
-
-            reservedItems.add(itemRequest);
         }
     }
 
-    private void releaseReservedStock(List<CreateOrderItemRequest> reservedItems) {
-        for (CreateOrderItemRequest itemRequest : reservedItems) {
-            try {
-                inventoryGrpcClient.releaseStock(
-                        itemRequest.getProductId(),
-                        itemRequest.getQuantity()
-                );
-            } catch (Exception ignored) {
-                // best-effort rollback
-            }
-        }
-    }
-
-    private void releaseReservedStock(Order order) {
-        for (OrderItem item : order.getItems()) {
+    private void releaseReservedStock(List<OrderItem> reservedItems) {
+        for (OrderItem item : reservedItems) {
             try {
                 inventoryGrpcClient.releaseStock(
                         item.getProductId(),
-                        item.getQuantity()
+                        item.getQuantity(),
+                        item.getInventoryReservationId()
                 );
-            } catch (Exception ignored) {
-                // best-effort rollback
+            } catch (RuntimeException exception) {
+                log.error("Could not compensate inventory reservation after order creation failed. reservationId={}, productId={}",
+                        item.getInventoryReservationId(), item.getProductId(), exception);
             }
         }
     }
@@ -324,6 +413,9 @@ public class OrderServiceImpl implements OrderService {
                     );
                 }
             }
+            case PAYMENT_FAILED -> throw new BadRequestException(
+                    "Payment failed orders cannot change state"
+            );
             case CANCELLED -> throw new BadRequestException(
                     "Cancelled orders cannot change state"
             );
@@ -346,6 +438,10 @@ public class OrderServiceImpl implements OrderService {
                 order.getTotalAmount(),
                 order.getCurrency(),
                 order.getStatus(),
+                order.getPaymentId(),
+                order.getPaymentConfirmedAt(),
+                order.getPaymentFailedAt(),
+                order.getPaymentFailureReason(),
                 order.getCreatedAt(),
                 order.getUpdatedAt(),
                 toShippingAddressResponse(order),
