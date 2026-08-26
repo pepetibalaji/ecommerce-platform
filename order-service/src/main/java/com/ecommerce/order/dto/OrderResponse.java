@@ -25,6 +25,14 @@ public class OrderResponse {
 
     private OrderStatus status;
 
+    private UUID paymentId;
+
+    private LocalDateTime paymentConfirmedAt;
+
+    private LocalDateTime paymentFailedAt;
+
+    private String paymentFailureReason;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
@@ -32,4 +40,19 @@ public class OrderResponse {
     private ShippingAddressResponse shippingAddress;
 
     private List<OrderItemResponse> items;
+
+    public OrderResponse(
+            UUID id,
+            UUID userId,
+            BigDecimal totalAmount,
+            String currency,
+            OrderStatus status,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt,
+            ShippingAddressResponse shippingAddress,
+            List<OrderItemResponse> items
+    ) {
+        this(id, userId, totalAmount, currency, status, null, null, null, null,
+                createdAt, updatedAt, shippingAddress, items);
+    }
 }

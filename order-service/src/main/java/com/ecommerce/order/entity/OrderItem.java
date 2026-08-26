@@ -34,6 +34,9 @@ public class OrderItem {
     @Column(name = "product_id", nullable = false)
     private UUID productId;
 
+    @Column(name = "inventory_reservation_id")
+    private UUID inventoryReservationId;
+
     @Column(nullable = false)
     private Integer quantity;
 

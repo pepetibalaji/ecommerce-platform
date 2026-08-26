@@ -6,6 +6,8 @@ import com.ecommerce.order.dto.CreateOrderRequest;
 import com.ecommerce.order.dto.OrderResponse;
 import com.ecommerce.order.dto.UpdateOrderStatusRequest;
 import com.ecommerce.order.entity.OrderStatus;
+import com.ecommerce.common.events.payment.PaymentFailedEvent;
+import com.ecommerce.common.events.payment.PaymentSuccessEvent;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -22,4 +24,8 @@ public interface OrderService {
     Page<OrderResponse> getAdminOrders(Pageable pageable, OrderStatus status);
 
     OrderResponse updateOrderStatus(UUID orderId, UpdateOrderStatusRequest request);
+
+    void handlePaymentSuccess(PaymentSuccessEvent event);
+
+    void handlePaymentFailure(PaymentFailedEvent event);
 }

@@ -57,11 +57,49 @@ public class InventoryGrpcClientImpl implements InventoryGrpcClient {
     }
 
     @Override
+    public void reserveStock(UUID productId, int quantity, UUID reservationId) {
+        try {
+            ReserveStockRequest request = ReserveStockRequest.newBuilder()
+                    .setProductId(productId.toString())
+                    .setQuantity(quantity)
+                    .setReservationId(reservationId.toString())
+                    .build();
+
+            InventoryResponse response = inventoryStub().reserveStock(request);
+
+            if (!response.getSuccess()) {
+                throw new BadRequestException(response.getMessage());
+            }
+        } catch (StatusRuntimeException exception) {
+            throw GrpcExceptionMapper.map(CLIENT_NAME, exception);
+        }
+    }
+
+    @Override
     public void releaseStock(UUID productId, int quantity) {
         try {
             ReleaseStockRequest request = ReleaseStockRequest.newBuilder()
                     .setProductId(productId.toString())
                     .setQuantity(quantity)
+                    .build();
+
+            InventoryResponse response = inventoryStub().releaseStock(request);
+
+            if (!response.getSuccess()) {
+                throw new BadRequestException(response.getMessage());
+            }
+        } catch (StatusRuntimeException exception) {
+            throw GrpcExceptionMapper.map(CLIENT_NAME, exception);
+        }
+    }
+
+    @Override
+    public void releaseStock(UUID productId, int quantity, UUID reservationId) {
+        try {
+            ReleaseStockRequest request = ReleaseStockRequest.newBuilder()
+                    .setProductId(productId.toString())
+                    .setQuantity(quantity)
+                    .setReservationId(reservationId.toString())
                     .build();
 
             InventoryResponse response = inventoryStub().releaseStock(request);

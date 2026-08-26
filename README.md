@@ -18,7 +18,7 @@ This is not a simple CRUD demo. It is a distributed backend platform designed ar
 | Messaging                | Apache Kafka                                                         |
 | Internal Communication   | gRPC                                                                 |
 | Configuration            | Spring Cloud Config Server                                           |
-| Observability            | Actuator, Micrometer, Prometheus, Grafana, Zipkin                    |
+| Observability            | Actuator, Micrometer, Prometheus, Grafana, Tempo, Loki               |
 | API Documentation        | Swagger / OpenAPI                                                    |
 | Infrastructure           | Docker Compose                                                       |
 | Future Deployment Target | Kubernetes                                                           |
@@ -33,7 +33,7 @@ This project demonstrates backend engineering skills required in real distribute
 - Migrating from custom JWT filters to OAuth2 Resource Server security
 - Managing JWT identity propagation using stable claims
 - Building gRPC contracts for internal communication
-- Publishing Kafka domain events from transactional workflows
+- Building Kafka-based workflows with idempotent consumers and dead-letter recovery
 - Using Redis for user-scoped cart state
 - Managing schema evolution with Flyway
 - Centralizing runtime configuration through Config Server
@@ -72,13 +72,22 @@ Internal Sync Communication:
 Order Service ---> Inventory Service via gRPC
 
 Async Communication:
-Order Service ---> Kafka topic: order-created
+Order Service ---> Kafka topic: order-created ---> Payment Service
+Payment Service ---> Kafka topics: payment-success / payment-failed ---> Order Service
 
 Storage:
 Neon PostgreSQL ---> Auth, Product, Inventory, Order, Payment
 Redis      ---> Cart, token blacklist, cache
 Kafka      ---> Domain events
 ```
+
+For the implemented order, payment, and inventory lifecycle, including
+protocol, sequence, state, data, retry, and rollout diagrams, see
+[Order, Payment, and Inventory Saga Design](docs/order-payment-inventory-saga-design.md).
+
+For a current service-by-service guide covering responsibilities, APIs, data
+ownership, user flows, integrations, diagrams, and known limitations, see
+[Service Documentation](docs/services/README.md).
 
 ---
 
@@ -94,14 +103,14 @@ Kafka      ---> Domain events
 | Internal RPC       | gRPC, Protocol Buffers                                               |
 | Config             | Spring Cloud Config Server                                           |
 | API Docs           | Swagger / OpenAPI                                                    |
-| Observability      | Actuator, Micrometer, Prometheus, Grafana, Zipkin                    |
+| Observability      | Actuator, Micrometer, Prometheus, Grafana, Tempo, Loki               |
 | Build              | Maven Multi-Module                                                   |
 | Local Infra        | Docker Compose                                                       |
 | Future Deployment  | Kubernetes                                                           |
 
 ---
 
-## Repository Structure
+## Target Repository Structure
 
 ```text
 ecommerce-platform
@@ -129,6 +138,12 @@ ecommerce-platform
 └── common-logging               # Evolving
 ```
 
+The current checked-in layout is smaller than the target shown above. Shared
+modules live under `common/` (`common-events`, `common-exception`,
+`common-grpc`, `common-logging`, `common-proto`, `common-redis`,
+`common-security`, and `common-tracing`); planned services are tracked in the
+roadmap rather than present as directories.
+
 ---
 
 ## Current Implementation Status
@@ -140,11 +155,11 @@ ecommerce-platform
 | Product Service      |                   Completed | Product CRUD, filtering, pagination, admin APIs           |
 | Inventory Service    |                   Completed | Stock management, gRPC APIs                               |
 | Cart Service         |                   Completed | Redis-backed user cart                                    |
-| Order Service        | Completed current milestone | Order lifecycle, Inventory gRPC, Kafka `order-created`    |
-| Payment Service      |                   Completed | Payment processing and payment events                     |
+| Order Service        |                   Completed | Inventory reservation, payment outcomes, idempotent Kafka consumer, DLQ |
+| Payment Service      |                   Completed | Checkout, verified provider webhooks, payment outcome events |
 | Notification Service |                     Planned | Kafka-driven notifications                                |
 | Shipping Service     |                     Planned | Shipment assignment and tracking                          |
-| Gateway Service      |           Planned / Pending | Routing, JWT validation, rate limiting, trace propagation |
+| Gateway Service      |                   Completed | Routing, JWT validation, CORS, diagnostics, external route configuration |
 
 ---
 
@@ -301,6 +316,10 @@ Features:
 - Admin status update
 - Inventory gRPC integration
 - Kafka `order-created` event publishing
+- Kafka `payment-success` and `payment-failed` event consumption
+- Idempotent payment outcome processing with an inbox table
+- Retry and dead-letter handling for failed payment outcome processing
+- Per-item idempotent inventory reservations and a durable release outbox for payment failure/cancellation
 - JWT `userId` based order ownership
 - OAuth2 Resource Server security
 
@@ -340,11 +359,32 @@ Order is saved as PENDING
 Order Service publishes order-created event to Kafka
 ```
 
-Kafka topic:
+Payment outcome flow:
 
 ```text
-order-created
+Payment Service verifies a provider webhook
+        |
+        v
+Kafka publishes payment-success or payment-failed, keyed by orderId
+        |
+        v
+Order Service consumes the outcome transactionally
+        |
+        +--> PENDING -> CONFIRMED on payment-success
+        |
+        +--> PENDING -> PAYMENT_FAILED on payment-failed
+                     |
+                     v
+              Persist inventory-release outbox commands
+                     |
+                     v
+              Retry idempotent reservation releases in Inventory Service
 ```
+
+Duplicate deliveries are safely ignored through the `order_processed_events`
+inbox table. Late outcomes never overwrite a `CONFIRMED`, `PAYMENT_FAILED`, or
+`CANCELLED` order. Payment failure and cancellation release every item by its
+stable reservation ID, so a worker retry cannot return the same stock twice.
 
 ---
 
@@ -425,19 +465,20 @@ This fix was applied to user-owned flows such as Cart and Order.
 
 Kafka is used for asynchronous event-driven workflows.
 
-Current implemented topic:
+Locally bootstrapped topics:
 
 ```text
 order-created
+payment-success
+payment-failed
+order-dlq
 ```
 
-Planned topics:
+Additional shared event contracts:
 
 ```text
 inventory-reserved
 inventory-released
-payment-success
-payment-failed
 order-completed
 order-cancelled
 shipment-created
@@ -476,6 +517,30 @@ spring:
                 spring.json.add.type.headers: false
 ```
 
+Payment outcome consumer configuration lives in the sibling
+`ecommerce-config-repo`. Payment Service includes JSON type headers for outcome
+events, allowing Order Service to deserialize `PaymentSuccessEvent` and
+`PaymentFailedEvent`. The default consumer group is
+`order-service-payment-outcomes`; retryable failures are retried three times
+and exhausted failures are sent to `order-dlq`.
+
+### Payment Outcome Smoke Test
+
+1. Create an order and keep its order ID.
+2. Complete or fail checkout using the configured payment provider. A verified
+   provider webhook—not the browser redirect—is the source of truth.
+3. Inspect `payment-success` or `payment-failed`, then retrieve the order.
+   Success changes `PENDING` to `CONFIRMED`; failure changes it to
+   `PAYMENT_FAILED` and queues an inventory release. By default, the release
+   worker retries every five seconds until Inventory Service acknowledges it.
+
+```bash
+docker exec -it ecommerce-kafka kafka-console-consumer \
+  --bootstrap-server kafka:9092 \
+  --topic payment-success \
+  --from-beginning
+```
+
 ---
 
 ## gRPC Integration
@@ -500,7 +565,6 @@ GetInventory()
 Planned internal gRPC flows:
 
 ```text
-Order Service ---> Payment Service
 Order Service ---> Shipping Service
 ```
 
@@ -550,7 +614,13 @@ Table:
 
 ```text
 inventory
+inventory_reservations
 ```
+
+`inventory_reservations` records a stable per-order-item ID and its
+`RESERVED`, `RELEASED`, or `DEDUCTED` state. Reservation-aware release and
+deduct requests are idempotent and lock the product inventory row while
+updating stock.
 
 ### Order Service
 
@@ -565,7 +635,41 @@ Tables:
 ```text
 orders
 order_items
+order_processed_events
+order_inventory_release_outbox
 ```
+
+The `orders` table records the external payment ID, confirmation/failure
+timestamps, and an optional payment failure reason. The Order Service never
+uses a cross-service database foreign key to Payment Service.
+
+`order_inventory_release_outbox` is persisted atomically with a payment-failed
+or cancellation transition. Its retrying worker safely compensates inventory
+after a restart or a temporary Inventory Service outage.
+
+`CONFIRMED` means the payment has been verified. `order-completed` remains a
+future fulfilment/delivery event, rather than the payment-confirmed state.
+
+### Payment Service
+
+Database:
+
+```text
+payment_db
+```
+
+Tables:
+
+```text
+payments
+payment_attempts
+payment_refunds
+payment_webhook_events
+```
+
+Payment Service consumes `order-created`, creates checkout sessions, verifies
+provider webhooks, and publishes `payment-success` or `payment-failed` keyed by
+`orderId`. A transactional outbox for reliable outcome publication is planned.
 
 ### Cart Service
 
@@ -585,17 +689,20 @@ cart:{userId}
 
 ## Docker Compose Infrastructure
 
-Local infrastructure uses Neon Managed PostgreSQL and Upstash Redis by default.
-Docker Compose provides Kafka and observability services; its PostgreSQL and
-Redis containers are explicit local fallbacks.
+Docker Compose starts local PostgreSQL, Redis, Kafka, and observability
+components. Stage/prod connection settings are supplied through runtime
+configuration rather than assumed by this local Compose file.
 
 | Component               |  Port |
 | ----------------------- | ----: |
+| PostgreSQL              |  5433 |
 | Redis                   |  6379 |
-| Zookeeper               |  2181 |
 | Kafka internal listener |  9092 |
 | Kafka host listener     | 29092 |
-| Zipkin                  |  9411 |
+| Tempo HTTP API          |  3200 |
+| Loki                    |  3100 |
+| OpenTelemetry gRPC      |  4317 |
+| OpenTelemetry HTTP      |  4318 |
 | Prometheus              |  9090 |
 | Grafana                 |  3000 |
 
@@ -605,29 +712,16 @@ Start infrastructure:
 docker compose up -d
 ```
 
-To use local PostgreSQL and/or Redis fallbacks instead, start the matching
-profiles and update the runtime connection values in the environment file for
-that environment:
-
-```bash
-docker compose --profile local-postgres up -d
-```
-
-```bash
-docker compose --profile local-redis up -d
-```
-
-Create Kafka topic:
+Inspect Kafka topics:
 
 ```bash
 docker exec -it ecommerce-kafka kafka-topics \
   --bootstrap-server kafka:9092 \
-  --create \
-  --if-not-exists \
-  --topic order-created \
-  --partitions 3 \
-  --replication-factor 1
+  --list
 ```
+
+`docker compose up -d` runs `kafka-init`, which creates `order-created`,
+`payment-success`, `payment-failed`, and `order-dlq` automatically.
 
 Consume Kafka events:
 
@@ -672,6 +766,10 @@ order-service-dev.yml
 payment-service-dev.yml
 ```
 
+These environment-specific files are maintained in the sibling
+`ecommerce-config-repo`, which Config Server loads at runtime. This repository
+contains only the minimal bootstrap configuration for each service.
+
 ---
 
 ## Swagger URLs
@@ -683,6 +781,7 @@ payment-service-dev.yml
 | Inventory Service | `http://localhost:8084/swagger-ui.html` |
 | Cart Service      | `http://localhost:8085/swagger-ui.html` |
 | Order Service     | `http://localhost:8086/swagger-ui.html` |
+| Payment Service   | `http://localhost:8087/swagger-ui.html` |
 
 ---
 
@@ -696,12 +795,14 @@ payment-service-dev.yml
 | Inventory Service     |  8084 |
 | Cart Service          |  8085 |
 | Order Service         |  8086 |
+| Payment Service       |  8087 |
 | Inventory gRPC        |  9091 |
 | PostgreSQL            |  5433 |
 | Redis                 |  6379 |
 | Kafka Host Listener   | 29092 |
 | Kafka Docker Listener |  9092 |
-| Zipkin                |  9411 |
+| Tempo HTTP API        |  3200 |
+| Loki                  |  3100 |
 | Prometheus            |  9090 |
 | Grafana               |  3000 |
 
@@ -717,7 +818,9 @@ The platform is designed for production-style observability.
 | Micrometer           | Metrics instrumentation         |
 | Prometheus           | Metrics scraping                |
 | Grafana              | Metrics dashboards              |
-| Zipkin               | Distributed tracing             |
+| Tempo                | Distributed tracing             |
+| Loki                 | Centralized structured logs     |
+| Kafka Exporter       | Kafka consumer-group lag        |
 | Structured Logging   | Trace-aware debugging           |
 
 Common endpoints:
@@ -743,7 +846,7 @@ mvn clean test
 Run selected services from root:
 
 ```bash
-mvn -pl auth-service,product-service,inventory-service,cart-service,order-service -am clean test
+mvn -pl auth-service,product-service,inventory-service,cart-service,order-service,payment-service -am clean test
 ```
 
 Current test coverage:
@@ -752,9 +855,10 @@ Current test coverage:
 | ----------------- | ---------------------------------------------------------------------------------- |
 | Auth Service      | Register, login, refresh, logout, user profile, admin user flows                   |
 | Product Service   | Product create/read/delete, filtering, pagination                                  |
-| Inventory Service | Inventory create/update/get                                                        |
+| Inventory Service | Inventory create/update/get, reservation-aware idempotent reserve/release/deduct |
 | Cart Service      | Add/update/get/remove/clear cart                                                   |
-| Order Service     | Create order, reserve stock, insufficient stock, cancel order, admin status update |
+| Order Service     | Create order, reservation-aware stock reserve, durable cancellation/payment-failure release outbox, payment success/failure transitions, duplicate and late event handling, payment outcome metrics |
+| Payment Service   | Checkout, payment attempts, provider webhook handling, refunds, and payment outcome events |
 
 ---
 
@@ -824,21 +928,20 @@ Order Service uses stable page serialization to avoid unstable `PageImpl` JSON o
 
 | Priority | Service              | Purpose                                                     |
 | -------- | -------------------- | ----------------------------------------------------------- |
-| 1        | Payment Service      | Process payments and publish payment success/failure events |
-| 2        | Notification Service | Consume Kafka events and notify users                       |
-| 3        | Shipping Service     | Shipment assignment and tracking                            |
-| 4        | Address Service      | User address management                                     |
-| 5        | Pricing Service      | Coupons and discounts                                       |
-| 6        | Search Service       | Elasticsearch-powered product search                        |
+| 1        | Notification Service | Consume domain events and notify users                      |
+| 2        | Shipping Service     | Shipment assignment and tracking                            |
+| 3        | Address Service      | User address management                                     |
+| 4        | Pricing Service      | Coupons and discounts                                       |
+| 5        | Search Service       | Elasticsearch-powered product search                        |
 
 ### Platform Hardening
 
 - Persistent RSA/JWK key management
 - Refresh token hashing
 - Access-token blacklist enforcement strategy
-- API Gateway OAuth2 integration
-- Kafka retry and DLQ configuration
-- Outbox pattern for reliable event publishing
+- End-to-end OAuth/OIDC gateway routing and gateway security hardening
+- Kafka retry and DLQ configuration for remaining consumers
+- Transactional outbox for reliable Payment Service outcome publishing
 - gRPC timeouts and circuit breakers
 - Integration tests with Testcontainers
 - CI/CD quality gates

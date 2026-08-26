@@ -31,3 +31,40 @@ groups:
         annotations:
           summary: "{{ $labels.job }} p95 latency is high"
           description: "The HTTP p95 latency has been above one second for ten minutes."
+
+  - name: ecommerce-order-payment-outcomes
+    rules:
+      - alert: OrderPaymentOutcomeDlq
+        expr: sum(increase(order_payment_outcome_dlq_count_total{service="order-service"}[5m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "A payment outcome was sent to the order DLQ"
+          description: "Order Service exhausted retries while processing a payment outcome in the last five minutes."
+
+      - alert: OrderPaymentOutcomeRetrySpike
+        expr: sum(increase(order_payment_outcome_retry_count_total{service="order-service"}[10m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Order Service payment outcome retries are elevated"
+          description: "More than five payment outcome retries occurred in the last ten minutes."
+
+      - alert: OrderPaymentOutcomeConsumerLag
+        expr: sum(kafka_consumergroup_lag{consumergroup="order-service-payment-outcomes",topic=~"payment-success|payment-failed"}) > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Order Service payment outcome consumer lag is high"
+          description: "The payment outcome consumer group has more than 100 unprocessed records for ten minutes."
+
+      - alert: OrderInventoryReleaseRetrySpike
+        expr: sum(increase(order_inventory_release_failed_count_total{service="order-service"}[10m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Order Service inventory-release retries are elevated"
+          description: "More than five inventory-release command attempts failed in the last ten minutes; inspect the release outbox and Inventory Service."

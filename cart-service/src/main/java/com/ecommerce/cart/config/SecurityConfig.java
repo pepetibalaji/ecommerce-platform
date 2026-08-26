@@ -34,31 +34,22 @@ public class SecurityConfig {
     private final JwtAuthenticationConverter jwtAuthenticationConverter;
     @Bean
     public SecurityFilterChain cartSecurityFilterChain(HttpSecurity http)
-            throws Exception {
-
+        throws Exception {
         return http
                 .csrf(AbstractHttpConfigurer::disable)
-
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(SWAGGER_WHITELIST).permitAll()
                         .requestMatchers(ACTUATOR_WHITELIST).permitAll()
-
-                        .requestMatchers("/api/v1/cart/**")
-                        .authenticated()
-
-                        .anyRequest()
-                        .authenticated()
+                        .anyRequest().authenticated()
                 )
-
                 .oauth2ResourceServer(oauth2 ->
                         oauth2.jwt(jwt ->
                                 jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)
                         )
                 )
-
                 .build();
     }
 }

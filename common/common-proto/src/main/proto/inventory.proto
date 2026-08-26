@@ -35,6 +35,8 @@ message ReserveStockRequest {
   string productId = 1;
 
   int32 quantity = 2;
+
+  string reservationId = 3;
 }
 
 message ReleaseStockRequest {
@@ -42,6 +44,8 @@ message ReleaseStockRequest {
   string productId = 1;
 
   int32 quantity = 2;
+
+  string reservationId = 3;
 }
 
 message DeductStockRequest {
@@ -49,6 +53,8 @@ message DeductStockRequest {
   string productId = 1;
 
   int32 quantity = 2;
+
+  string reservationId = 3;
 }
 
 message GetInventoryRequest {

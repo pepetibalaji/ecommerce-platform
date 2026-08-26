@@ -86,6 +86,10 @@ Authorization: Bearer {{accessToken}}
 GET {{orderBaseUrl}}/api/v1/orders?status=CONFIRMED&page=0&size=10
 Authorization: Bearer {{accessToken}}
 
+### Get my orders by PAYMENT_FAILED status
+GET {{orderBaseUrl}}/api/v1/orders?status=PAYMENT_FAILED&page=0&size=10
+Authorization: Bearer {{accessToken}}
+
 ### Get my orders by CANCELLED status
 GET {{orderBaseUrl}}/api/v1/orders?status=CANCELLED&page=0&size=10
 Authorization: Bearer {{accessToken}}
@@ -128,23 +132,9 @@ Content-Type: application/json
   "status": "CONFIRMED"
 }
 
-### Admin update order status to COMPLETED
-PUT {{orderBaseUrl}}/api/v1/admin/orders/{{orderId}}/status
-Authorization: Bearer {{adminAccessToken}}
-Content-Type: application/json
-
-{
-  "status": "COMPLETED"
-}
-
-### Admin update order status to FAILED
-PUT {{orderBaseUrl}}/api/v1/admin/orders/{{orderId}}/status
-Authorization: Bearer {{adminAccessToken}}
-Content-Type: application/json
-
-{
-  "status": "FAILED"
-}
+### Payment outcome note
+# PAYMENT_FAILED is event-driven. It is set only when Order Service consumes a
+# payment-failed Kafka event; it is not an admin status-update action.
 
 # =========================================================
 # SECURITY CHECKS

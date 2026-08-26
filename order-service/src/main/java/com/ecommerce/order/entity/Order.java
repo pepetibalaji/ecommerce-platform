@@ -40,6 +40,18 @@ public class Order {
     @Column(nullable = false)
     private OrderStatus status;
 
+    @Column(name = "payment_id")
+    private UUID paymentId;
+
+    @Column(name = "payment_confirmed_at")
+    private LocalDateTime paymentConfirmedAt;
+
+    @Column(name = "payment_failed_at")
+    private LocalDateTime paymentFailedAt;
+
+    @Column(name = "payment_failure_reason", columnDefinition = "TEXT")
+    private String paymentFailureReason;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 

@@ -102,3 +102,33 @@ All application targets are intentionally addressed as `host.docker.internal`.
 That is appropriate for Docker Desktop when the Spring services run on the host.
 If the services are later added to Compose, replace those targets with the
 Compose service names and ports.
+
+## Payment outcome monitoring
+
+Order Service publishes low-cardinality payment outcome counters to Prometheus.
+The provisioned **Ecommerce / Order Payment Outcomes** Grafana dashboard shows:
+
+- listener deliveries and order updates by `success` or `failure`
+- duplicate and late events ignored by the idempotent consumer
+- retry attempts and DLQ recovery attempts
+- Kafka lag for consumer group `order-service-payment-outcomes`
+- durable inventory-release commands queued, completed, and retried by reason
+
+Kafka Exporter reads consumer-group offsets from the local Kafka cluster, and
+Prometheus scrapes it as `kafka-exporter`. The dashboard and alert rules focus
+on `payment-success` and `payment-failed` topics for the Order Service consumer
+group.
+
+The alert rules include a DLQ event alert, a retry-volume warning, a
+consumer-lag warning, and an inventory-release retry warning. Local Prometheus evaluates these rules; production alert
+delivery (email, Slack, PagerDuty, or Grafana Cloud alerting) must be configured
+with the environment-specific notification credentials.
+
+Verify the final metric names after starting Order Service:
+
+```text
+http://localhost:8086/actuator/prometheus
+```
+
+Search for `order_payment_outcome` and `order_inventory_release` and use the
+exposed names in any custom dashboard queries.

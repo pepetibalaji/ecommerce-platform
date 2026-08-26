@@ -10,5 +10,9 @@ public interface InventoryGrpcClient {
 
     void reserveStock(UUID productId, int quantity);
 
+    void reserveStock(UUID productId, int quantity, UUID reservationId);
+
     void releaseStock(UUID productId, int quantity);
+
+    void releaseStock(UUID productId, int quantity, UUID reservationId);
 }
