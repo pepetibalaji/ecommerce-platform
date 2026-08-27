@@ -49,6 +49,10 @@ public class PaymentOutcomeMetrics {
         increment("order.inventory_release.failed.count", "reason", reason);
     }
 
+    public void inventoryReleaseTerminalFailure(String reason) {
+        increment("order.inventory_release.terminal_failure.count", "reason", reason);
+    }
+
     private void increment(String name, String... tags) {
         Counter.builder(name).tags(tags).register(meterRegistry).increment();
     }
