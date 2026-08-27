@@ -2,9 +2,12 @@ package com.ecommerce.payment.kafka.producer;
 
 import com.ecommerce.common.events.payment.PaymentFailedEvent;
 import com.ecommerce.common.events.payment.PaymentSuccessEvent;
+import com.ecommerce.common.events.payment.PaymentRefundCompletedEvent;
 import com.ecommerce.common.events.topic.KafkaTopics;
 import com.ecommerce.payment.entity.Payment;
 import com.ecommerce.payment.entity.PaymentAttempt;
+import com.ecommerce.payment.entity.PaymentRefund;
+import java.math.BigDecimal;
 import com.ecommerce.payment.enums.PaymentAttemptStatus;
 import com.ecommerce.payment.repository.PaymentAttemptRepository;
 import lombok.RequiredArgsConstructor;
@@ -128,6 +131,23 @@ public class KafkaPaymentEventPublisher implements PaymentEventPublisher {
                     payment.getTraceId()
             );
         });
+    }
+
+    @Override
+    public void publishRefundCompleted(Payment payment, PaymentRefund refund, BigDecimal totalRefundedAmount) {
+        PaymentRefundCompletedEvent event = new PaymentRefundCompletedEvent(refund.getId(), payment.getId(),
+                payment.getOrderId(), refund.getAmount(), totalRefundedAmount, payment.getAmount(),
+                payment.getCurrency(), payment.getCorrelationId(), payment.getTraceId());
+        kafkaTemplate.send(KafkaTopics.PAYMENT_REFUND_COMPLETED, payment.getOrderId().toString(), event)
+                .whenComplete((result, exception) -> {
+                    if (exception != null) {
+                        log.error("Failed to publish provider-confirmed refund. refundId={}, paymentId={}, orderId={}",
+                                refund.getId(), payment.getId(), payment.getOrderId(), exception);
+                    } else {
+                        log.info("Published payment-refund-completed. eventId={}, refundId={}, orderId={}, fullRefund={}",
+                                event.getEventId(), refund.getId(), payment.getOrderId(), event.isFullRefund());
+                    }
+                });
     }
 
     private String resolveTransactionId(UUID paymentId) {

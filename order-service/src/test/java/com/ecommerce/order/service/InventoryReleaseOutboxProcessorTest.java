@@ -74,8 +74,8 @@ class InventoryReleaseOutboxProcessorTest {
     }
 
     @Test
-    void processPendingReleases_shouldRecordAndRetryFailedCommand() {
-        InventoryReleaseOutbox command = pendingCommand(InventoryReleaseReason.CANCELLED);
+    void processPendingReleases_shouldRetryFailedFullRefundRelease() {
+        InventoryReleaseOutbox command = pendingCommand(InventoryReleaseReason.FULL_REFUND);
         when(inventoryReleaseOutboxRepository.lockNextPending(25, LocalDateTime.of(2026, 8, 27, 10, 0)))
                 .thenReturn(List.of(command));
         when(retryPolicy.delayForAttempt(1)).thenReturn(Duration.ofSeconds(2));
@@ -85,7 +85,7 @@ class InventoryReleaseOutboxProcessorTest {
 
         inventoryReleaseOutboxProcessor.processPendingReleases();
 
-        verify(paymentOutcomeMetrics).inventoryReleaseFailed("cancelled");
+        verify(paymentOutcomeMetrics).inventoryReleaseFailed("full_refund");
         assertThat(command.getStatus()).isEqualTo(InventoryReleaseStatus.PENDING);
         assertThat(command.getAttemptCount()).isEqualTo(1);
         assertThat(command.getLastError()).isEqualTo("inventory unavailable");
@@ -108,6 +108,22 @@ class InventoryReleaseOutboxProcessorTest {
         assertThat(command.getStatus()).isEqualTo(InventoryReleaseStatus.FAILED);
         assertThat(command.getAttemptCount()).isEqualTo(1);
         verify(paymentOutcomeMetrics).inventoryReleaseTerminalFailure("cancelled");
+    }
+
+    @Test
+    void processPendingReleases_shouldRouteDeductedReservationToManualReviewWithoutRetry() {
+        InventoryReleaseOutbox command = pendingCommand(InventoryReleaseReason.FULL_REFUND);
+        when(inventoryReleaseOutboxRepository.lockNextPending(25, LocalDateTime.of(2026, 8, 27, 10, 0)))
+                .thenReturn(List.of(command));
+        doThrow(new RuntimeException("Deducted inventory reservations cannot be released"))
+                .when(inventoryGrpcClient)
+                .releaseStock(command.getProductId(), command.getQuantity(), command.getReservationId());
+
+        inventoryReleaseOutboxProcessor.processPendingReleases();
+
+        assertThat(command.getStatus()).isEqualTo(InventoryReleaseStatus.MANUAL_REVIEW);
+        assertThat(command.getAttemptCount()).isZero();
+        verify(paymentOutcomeMetrics, never()).inventoryReleaseFailed("full_refund");
     }
 
     @Test

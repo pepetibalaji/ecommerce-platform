@@ -3,6 +3,7 @@ package com.ecommerce.order.service;
 import com.ecommerce.common.events.order.OrderCreatedEvent;
 import com.ecommerce.common.events.payment.PaymentFailedEvent;
 import com.ecommerce.common.events.payment.PaymentSuccessEvent;
+import com.ecommerce.common.events.payment.PaymentRefundCompletedEvent;
 import com.ecommerce.common.exception.BadRequestException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.order.dto.CreateOrderItemRequest;
@@ -631,6 +632,57 @@ class OrderServiceTest {
         address.setCountry("IN");
 
         return address;
+    }
+
+    @Test
+    void fullRefund_shouldQueueOneReleaseAndMarkOrderRefunded() {
+        UUID orderId = UUID.randomUUID();
+        UUID paymentId = UUID.randomUUID();
+        Order order = existingOrder(orderId, OrderStatus.CONFIRMED);
+        order.getItems().add(existingOrderItem(order));
+        PaymentRefundCompletedEvent event = refundEvent(orderId, paymentId, true);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(orderProcessedEventRepository.existsByEventId(event.getEventId())).thenReturn(false);
+
+        orderService.handleRefundCompleted(event);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.REFUNDED);
+        verify(inventoryReleaseOutboxService).enqueueFor(order, InventoryReleaseReason.FULL_REFUND);
+        verify(orderProcessedEventRepository).save(any());
+    }
+
+    @Test
+    void duplicateFullRefund_shouldNotQueueAnotherRelease() {
+        UUID orderId = UUID.randomUUID();
+        PaymentRefundCompletedEvent event = refundEvent(orderId, UUID.randomUUID(), true);
+        Order order = existingOrder(orderId, OrderStatus.CONFIRMED);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(orderProcessedEventRepository.existsByEventId(event.getEventId())).thenReturn(true);
+
+        orderService.handleRefundCompleted(event);
+
+        verifyNoInteractions(inventoryReleaseOutboxService);
+        verify(orderProcessedEventRepository, never()).save(any());
+    }
+
+    @Test
+    void fullRefundForNonConfirmedOrder_shouldRouteToFulfilmentWithoutRelease() {
+        UUID orderId = UUID.randomUUID();
+        PaymentRefundCompletedEvent event = refundEvent(orderId, UUID.randomUUID(), true);
+        Order order = existingOrder(orderId, OrderStatus.CANCELLED);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(orderProcessedEventRepository.existsByEventId(event.getEventId())).thenReturn(false);
+
+        orderService.handleRefundCompleted(event);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.REFUND_REQUIRES_FULFILMENT_REVIEW);
+        verifyNoInteractions(inventoryReleaseOutboxService);
+    }
+
+    private PaymentRefundCompletedEvent refundEvent(UUID orderId, UUID paymentId, boolean fullRefund) {
+        BigDecimal total = fullRefund ? new BigDecimal("200.00") : new BigDecimal("50.00");
+        return new PaymentRefundCompletedEvent(UUID.randomUUID(), paymentId, orderId, total, total,
+                new BigDecimal("200.00"), "INR", null, null);
     }
 
     private Order existingOrder(

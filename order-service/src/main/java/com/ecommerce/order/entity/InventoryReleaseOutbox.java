@@ -104,6 +104,12 @@ public class InventoryReleaseOutbox {
         }
     }
 
+    public void markManualReview(String error, LocalDateTime now) {
+        status = InventoryReleaseStatus.MANUAL_REVIEW;
+        lastError = truncate(error);
+        updatedAt = now;
+    }
+
     private String truncate(String value) {
         if (value == null || value.isBlank()) {
             return "Inventory release failed without an error message";

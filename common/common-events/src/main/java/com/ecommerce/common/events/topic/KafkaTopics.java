@@ -12,6 +12,7 @@ public final class KafkaTopics {
     public static final String INVENTORY_RELEASED = "inventory-released";
     public static final String PAYMENT_SUCCESS = "payment-success";
     public static final String PAYMENT_FAILED = "payment-failed";
+    public static final String PAYMENT_REFUND_COMPLETED = "payment-refund-completed";
     public static final String ORDER_COMPLETED = "order-completed";
     public static final String ORDER_CANCELLED = "order-cancelled";
     public static final String SHIPMENT_CREATED = "shipment-created";
@@ -29,6 +30,7 @@ public final class KafkaTopics {
                 INVENTORY_RELEASED,
                 PAYMENT_SUCCESS,
                 PAYMENT_FAILED,
+                PAYMENT_REFUND_COMPLETED,
                 ORDER_COMPLETED,
                 ORDER_CANCELLED,
                 SHIPMENT_CREATED,

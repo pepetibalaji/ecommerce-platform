@@ -2,6 +2,7 @@ package com.ecommerce.order.kafka;
 
 import com.ecommerce.common.events.payment.PaymentFailedEvent;
 import com.ecommerce.common.events.payment.PaymentSuccessEvent;
+import com.ecommerce.common.events.payment.PaymentRefundCompletedEvent;
 import com.ecommerce.common.events.topic.KafkaTopics;
 import com.ecommerce.order.service.OrderService;
 import com.ecommerce.order.observability.PaymentOutcomeMetrics;
@@ -63,6 +64,17 @@ public class PaymentOutcomeConsumer {
         } finally {
             clearMdc();
         }
+    }
+
+    @KafkaListener(topics = KafkaTopics.PAYMENT_REFUND_COMPLETED,
+            groupId = "${order.payment-outcome-consumer-group:order-service-payment-outcomes}")
+    public void onRefundCompleted(PaymentRefundCompletedEvent event) {
+        populateMdc(event.getCorrelationId(), event.getTraceId(), event.getEventId(), event.getOrderId(), event.getPaymentId());
+        try {
+            log.info("Received payment-refund-completed event. eventId={}, orderId={}, refundId={}, fullRefund={}",
+                    event.getEventId(), event.getOrderId(), event.getRefundId(), event.isFullRefund());
+            orderService.handleRefundCompleted(event);
+        } finally { clearMdc(); }
     }
 
     private void populateMdc(

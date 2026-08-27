@@ -33,6 +33,7 @@ and availability sizing.
 | `OrderCreatedEvent` | A persisted `PENDING` order with user, amount, currency, and items is ready for payment preparation. | Create/reuse one payment identified by order ID. |
 | `PaymentSuccessEvent` | Provider-verified successful payment for an order. | If order is `PENDING`, change to `CONFIRMED`; ignore late/duplicate terminal outcomes. |
 | `PaymentFailedEvent` | Provider-verified failure or cancellation for an order. | If order is `PENDING`, change to `PAYMENT_FAILED` and insert one release command per reservation. |
+| `PaymentRefundCompletedEvent` | Provider-confirmed refund. The refund UUID is the event ID. | Partial refund records `PARTIALLY_REFUNDED`; full refund of an unfulfilled confirmed order records `REFUNDED` and queues reservation-aware release. |
 
 Consumers must validate event type/shape. Unknown order or infrastructure error
 retries three times in Order Service then enters `order-dlq`; malformed outcome

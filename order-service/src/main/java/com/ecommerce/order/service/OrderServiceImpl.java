@@ -4,6 +4,7 @@ import com.ecommerce.common.events.order.OrderCreatedEvent;
 import com.ecommerce.common.events.order.OrderItemEvent;
 import com.ecommerce.common.events.payment.PaymentFailedEvent;
 import com.ecommerce.common.events.payment.PaymentSuccessEvent;
+import com.ecommerce.common.events.payment.PaymentRefundCompletedEvent;
 import com.ecommerce.common.exception.BadRequestException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.order.dto.CreateOrderItemRequest;
@@ -258,6 +259,37 @@ public class OrderServiceImpl implements OrderService {
         recordProcessedEvent(event.getEventId(), event.getEventType(), event.getOrderId());
     }
 
+    @Override
+    public void handleRefundCompleted(PaymentRefundCompletedEvent event) {
+        validatePaymentEvent(event == null ? null : event.getEventId(), event == null ? null : event.getOrderId(),
+                event == null ? null : event.getPaymentId());
+        Order order = orderRepository.findByIdForUpdate(event.getOrderId()).orElseThrow(() ->
+                new ResourceNotFoundException("Order not found for refund event: " + event.getOrderId()));
+        if (orderProcessedEventRepository.existsByEventId(event.getEventId())) {
+            log.info("Ignoring duplicate payment-refund-completed event. eventId={}, orderId={}, refundId={}",
+                    event.getEventId(), event.getOrderId(), event.getRefundId());
+            paymentOutcomeMetrics.duplicateIgnored();
+            return;
+        }
+        if (!event.isFullRefund()) {
+            if (order.getStatus() == OrderStatus.CONFIRMED) {
+                order.setStatus(OrderStatus.PARTIALLY_REFUNDED);
+                orderRepository.save(order);
+            }
+        } else if (order.getStatus() == OrderStatus.CONFIRMED || order.getStatus() == OrderStatus.PARTIALLY_REFUNDED) {
+            inventoryReleaseOutboxService.enqueueFor(order, InventoryReleaseReason.FULL_REFUND);
+            order.setStatus(OrderStatus.REFUNDED);
+            orderRepository.save(order);
+        } else {
+            // A shipped/deducted order must be handled by fulfilment; it is never compensated here.
+            order.setStatus(OrderStatus.REFUND_REQUIRES_FULFILMENT_REVIEW);
+            orderRepository.save(order);
+            log.warn("Full refund requires fulfilment review; release not queued. orderId={}, orderStatus={}",
+                    order.getId(), order.getStatus());
+        }
+        recordProcessedEvent(event.getEventId(), event.getEventType(), event.getOrderId());
+    }
+
     private void validatePaymentEvent(UUID eventId, UUID orderId, UUID paymentId) {
         if (eventId == null || orderId == null || paymentId == null) {
             throw new BadRequestException("Payment outcome event must contain eventId, orderId, and paymentId");
@@ -413,6 +445,8 @@ public class OrderServiceImpl implements OrderService {
                     );
                 }
             }
+            case PARTIALLY_REFUNDED, REFUNDED, REFUND_REQUIRES_FULFILMENT_REVIEW -> throw new BadRequestException(
+                    "Refunded orders require fulfilment/manual reconciliation before state changes");
             case PAYMENT_FAILED -> throw new BadRequestException(
                     "Payment failed orders cannot change state"
             );
