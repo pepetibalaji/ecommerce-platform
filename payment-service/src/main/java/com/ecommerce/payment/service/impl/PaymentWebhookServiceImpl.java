@@ -29,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -185,6 +186,13 @@ public class PaymentWebhookServiceImpl implements PaymentWebhookService {
 
             paymentRefundRepository.save(refund);
             paymentRepository.save(payment);
+
+            if (refund.getStatus() == RefundStatus.REFUNDED) {
+                BigDecimal totalRefunded = paymentRefundRepository.findByPayment_IdOrderByCreatedAtDesc(payment.getId())
+                        .stream().filter(candidate -> candidate.getStatus() == RefundStatus.REFUNDED)
+                        .map(PaymentRefund::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+                paymentEventPublisher.publishRefundCompleted(payment, refund, totalRefunded);
+            }
 
             markWebhookEvent(savedWebhookEvent, WebhookProcessingStatus.PROCESSED);
 
@@ -410,7 +418,12 @@ public class PaymentWebhookServiceImpl implements PaymentWebhookService {
 
             case SUCCESS -> {
                 refund.setStatus(RefundStatus.REFUNDED);
-                payment.setStatus(PaymentStatus.REFUNDED);
+                BigDecimal priorRefunded = paymentRefundRepository.findByPayment_IdOrderByCreatedAtDesc(payment.getId())
+                        .stream().filter(candidate -> !candidate.getId().equals(refund.getId())
+                                && candidate.getStatus() == RefundStatus.REFUNDED)
+                        .map(PaymentRefund::getAmount).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+                payment.setStatus(priorRefunded.add(refund.getAmount()).compareTo(payment.getAmount()) == 0
+                        ? PaymentStatus.REFUNDED : PaymentStatus.SUCCESS);
                 payment.setFailureReason(null);
             }
 

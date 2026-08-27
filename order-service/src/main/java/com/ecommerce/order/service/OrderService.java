@@ -8,6 +8,7 @@ import com.ecommerce.order.dto.UpdateOrderStatusRequest;
 import com.ecommerce.order.entity.OrderStatus;
 import com.ecommerce.common.events.payment.PaymentFailedEvent;
 import com.ecommerce.common.events.payment.PaymentSuccessEvent;
+import com.ecommerce.common.events.payment.PaymentRefundCompletedEvent;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -28,4 +29,6 @@ public interface OrderService {
     void handlePaymentSuccess(PaymentSuccessEvent event);
 
     void handlePaymentFailure(PaymentFailedEvent event);
+
+    void handleRefundCompleted(PaymentRefundCompletedEvent event);
 }

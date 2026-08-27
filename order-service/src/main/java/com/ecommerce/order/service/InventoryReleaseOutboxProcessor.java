@@ -55,6 +55,13 @@ public class InventoryReleaseOutboxProcessor {
                 log.info("Completed inventory-release command. commandId={}, orderId={}, reservationId={}, reason={}",
                         command.getId(), command.getOrderId(), command.getReservationId(), command.getReason());
             } catch (RuntimeException exception) {
+                if (exception.getMessage() != null
+                        && exception.getMessage().contains("Deducted inventory reservations cannot be released")) {
+                    command.markManualReview(exception.getMessage(), now);
+                    log.error("Refund/cancellation release requires fulfilment review; reservation was already deducted. commandId={}, orderId={}, reservationId={}",
+                            command.getId(), command.getOrderId(), command.getReservationId());
+                    continue;
+                }
                 int nextAttempt = command.getAttemptCount() + 1;
                 LocalDateTime nextAttemptAt = now.plus(retryPolicy.delayForAttempt(nextAttempt));
                 command.recordFailure(exception.getMessage(), nextAttemptAt, Math.max(1, maxAttempts), now);

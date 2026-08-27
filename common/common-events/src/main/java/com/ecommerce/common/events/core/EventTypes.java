@@ -14,6 +14,7 @@ public final class EventTypes {
 
     public static final String PAYMENT_SUCCESS = "PAYMENT_SUCCESS";
     public static final String PAYMENT_FAILED = "PAYMENT_FAILED";
+    public static final String PAYMENT_REFUND_COMPLETED = "PAYMENT_REFUND_COMPLETED";
 
     public static final String SHIPMENT_CREATED = "SHIPMENT_CREATED";
 

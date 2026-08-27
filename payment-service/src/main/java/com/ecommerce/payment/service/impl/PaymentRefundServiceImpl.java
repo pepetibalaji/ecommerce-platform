@@ -22,6 +22,7 @@ import com.ecommerce.payment.repository.PaymentAttemptRepository;
 import com.ecommerce.payment.repository.PaymentRefundRepository;
 import com.ecommerce.payment.repository.PaymentRepository;
 import com.ecommerce.payment.service.PaymentRefundService;
+import com.ecommerce.payment.kafka.producer.PaymentEventPublisher;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,6 +48,7 @@ public class PaymentRefundServiceImpl implements PaymentRefundService {
     private final PaymentGatewayFactory paymentGatewayFactory;
     private final PaymentRefundMapper paymentRefundMapper;
     private final PaymentMetrics paymentMetrics;
+    private final PaymentEventPublisher paymentEventPublisher;
 
     @Override
     public PaymentRefundResponse createPaymentRefund(@Valid CreatePaymentRefundRequest request) {
@@ -219,6 +221,11 @@ public class PaymentRefundServiceImpl implements PaymentRefundService {
         PaymentRefund savedRefund = paymentRefundRepository.save(refund);
         paymentRepository.save(payment);
 
+        if (savedRefund.getStatus() == RefundStatus.REFUNDED) {
+            paymentEventPublisher.publishRefundCompleted(payment, savedRefund,
+                    totalSuccessfulRefunds(payment));
+        }
+
         log.info(
                 "Refund request processed. paymentId={}, refundId={}, orderId={}, refundStatus={}, paymentStatus={}, providerRefundId={}",
                 payment.getId(),
@@ -354,7 +361,7 @@ public class PaymentRefundServiceImpl implements PaymentRefundService {
     ) {
         if (isTerminalRefundSuccess(providerResponse.status())) {
             refund.setStatus(RefundStatus.REFUNDED);
-            payment.setStatus(PaymentStatus.REFUNDED);
+            payment.setStatus(isFullRefundAfter(refund, payment) ? PaymentStatus.REFUNDED : PaymentStatus.SUCCESS);
             payment.setFailureReason(null);
             return;
         }
@@ -362,6 +369,16 @@ public class PaymentRefundServiceImpl implements PaymentRefundService {
         refund.setStatus(RefundStatus.REFUND_PROCESSING);
         payment.setStatus(PaymentStatus.REFUND_PROCESSING);
         payment.setFailureReason(null);
+    }
+
+    private boolean isFullRefundAfter(PaymentRefund newRefund, Payment payment) {
+        return totalSuccessfulRefunds(payment).add(newRefund.getAmount()).compareTo(payment.getAmount()) == 0;
+    }
+
+    private BigDecimal totalSuccessfulRefunds(Payment payment) {
+        return paymentRefundRepository.findByPayment_IdOrderByCreatedAtDesc(payment.getId()).stream()
+                .filter(refund -> refund.getStatus() == RefundStatus.REFUNDED)
+                .map(PaymentRefund::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private boolean isTerminalRefundSuccess(String providerStatus) {

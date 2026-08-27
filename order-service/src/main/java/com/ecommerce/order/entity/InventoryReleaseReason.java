@@ -2,5 +2,6 @@ package com.ecommerce.order.entity;
 
 public enum InventoryReleaseReason {
     PAYMENT_FAILED,
-    CANCELLED
+    CANCELLED,
+    FULL_REFUND
 }

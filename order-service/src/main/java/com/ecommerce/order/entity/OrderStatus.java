@@ -6,6 +6,12 @@ public enum OrderStatus {
 
     CONFIRMED,
 
+    PARTIALLY_REFUNDED,
+
+    REFUNDED,
+
+    REFUND_REQUIRES_FULFILMENT_REVIEW,
+
     PAYMENT_FAILED,
 
     CANCELLED
