@@ -62,6 +62,7 @@ class ProductServiceTest {
                 .price(product.getPrice())
                 .category(product.getCategory())
                 .brand(product.getBrand())
+                .imageUrls(List.of("https://cdn.example.com/products/iphone-15.jpg"))
                 .build();
     }
 
@@ -72,7 +73,8 @@ class ProductServiceTest {
                 "Apple Phone",
                 BigDecimal.valueOf(999),
                 "Mobile",
-                "Apple"
+                "Apple",
+                List.of("https://cdn.example.com/products/iphone-15.jpg")
         );
 
         when(productRepository.save(any(Product.class))).thenReturn(product);
@@ -82,6 +84,8 @@ class ProductServiceTest {
 
         assertNotNull(result);
         assertEquals(product.getId(), result.getId());
+        assertEquals(List.of("https://cdn.example.com/products/iphone-15.jpg"),
+                result.getImageUrls());
         verify(productRepository).save(any(Product.class));
     }
 

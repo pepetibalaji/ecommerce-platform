@@ -6,6 +6,8 @@ import com.ecommerce.product.entity.Product;
 
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 @Component
 
 public class ProductMapper {
@@ -19,6 +21,7 @@ public class ProductMapper {
                 .price(product.getPrice())
                 .category(product.getCategory())
                 .brand(product.getBrand())
+                .imageUrls(product.getImageUrls() == null ? List.of() : product.getImageUrls())
                 .createdAt(product.getCreatedAt())
                 .updatedAt(product.getUpdatedAt())
                 .build();

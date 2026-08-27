@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 import java.util.UUID;
+import java.util.List;
 
 @Getter
 @Setter
@@ -27,6 +28,8 @@ public class ProductResponse {
     private String category;
 
     private String brand;
+
+    private List<String> imageUrls;
 
     private LocalDateTime createdAt;
 

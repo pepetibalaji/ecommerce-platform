@@ -14,7 +14,7 @@ The detailed order, payment, and inventory saga is documented separately in
 | [Config Server](config-server.md) | 8888 | Intended configuration authority backed by Git. | Runtime Git checkout/cache | HTTP Spring Cloud Config API |
 | [API Gateway](gateway-service.md) | 8080 | Public REST entry point, JWT validation, CORS, routing. | None; Redis capability is available | HTTP reverse proxy |
 | [Auth Service](auth-service.md) | 8081 | Accounts, token issuance, refresh, logout, and user administration. | PostgreSQL and Redis blacklist | REST, JWT/JWK, OAuth2/OIDC endpoints |
-| [Product Service](product-service.md) | 8082 | Product catalog and admin catalog management. | PostgreSQL `product_db` | REST only |
+| [Product Service](product-service.md) | 8082 | Product catalog and admin catalog management. | MongoDB `product_db` | REST only |
 | [Inventory Service](inventory-service.md) | 8084 REST, 9091 gRPC | Available/reserved stock and reservation ledger. | PostgreSQL `inventory_db` | REST and gRPC |
 | [Cart Service](cart-service.md) | 8085 | Customer-scoped temporary cart. | Redis | REST only |
 | [Order Service](order-service.md) | 8086 | Orders, inventory reservation, payment outcomes, compensation. | PostgreSQL `order_db` | REST, gRPC client, Kafka |
@@ -40,6 +40,7 @@ flowchart LR
     kafka[("Kafka")]
     redis[("Redis")]
     postgres[("Service-owned PostgreSQL databases")]
+    mongodb[("MongoDB product catalog")]
     provider["Payment provider"]
 
     customer -->|"HTTP REST locally and Bearer JWT"| gateway
@@ -52,7 +53,7 @@ flowchart LR
 
     auth --> postgres
     auth --> redis
-    product --> postgres
+    product --> mongodb
     inventory --> postgres
     cart --> redis
     order --> postgres
@@ -151,7 +152,8 @@ cart or Product Service prices during creation.
 
 | Component | Role | Current implementation note |
 | --- | --- | --- |
-| PostgreSQL | Durable data per transactional service | Auth, Product, Inventory, Order, and Payment own separate databases and Flyway migrations. |
+| PostgreSQL | Durable relational data | Auth, Inventory, Order, and Payment own separate databases and Flyway migrations. |
+| MongoDB | Product catalog documents | Product owns the `products` collection, including image URL references only. |
 | Redis | Ephemeral/session-oriented data | Cart uses customer carts; Auth uses a JWT blacklist. Gateway has rate-limit support but active routes do not currently use the filter. |
 | Kafka | Cross-service domain events | Local topics: `order-created`, `payment-success`, `payment-failed`, `order-dlq`. |
 | Prometheus and Grafana | Metrics and dashboards | Services expose Actuator Prometheus endpoints; an Order payment-outcome dashboard is provisioned. |

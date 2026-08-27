@@ -5,10 +5,13 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
+import org.hibernate.validator.constraints.URL;
 
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Getter
 @Setter
@@ -31,4 +34,8 @@ public class UpdateProductRequest {
     private String category;
     
     private String brand;
+
+    @Size(max = 10, message = "A product can have at most 10 image URLs")
+    private List<@URL(protocol = "https", message = "Image URLs must be valid HTTPS URLs")
+                 @Size(max = 2048, message = "Image URL must not exceed 2048 characters") String> imageUrls;
 }

@@ -58,7 +58,10 @@ Content-Type: application/json
   "description": "Apple smartphone",
   "price": 999.00,
   "category": "Mobile",
-  "brand": "Apple"
+  "brand": "Apple",
+  "imageUrls": [
+    "https://cdn.example.com/products/{{productId}}/image-1.jpg"
+  ]
 }
 
 ### Create products in bulk
@@ -72,14 +75,16 @@ Content-Type: application/json
     "description": "Apple smartphone",
     "price": 999.00,
     "category": "Mobile",
-    "brand": "Apple"
+    "brand": "Apple",
+    "imageUrls": ["https://cdn.example.com/products/iphone-15/image-1.jpg"]
   },
   {
     "name": "Samsung Galaxy S24",
     "description": "Samsung flagship smartphone",
     "price": 899.00,
     "category": "Mobile",
-    "brand": "Samsung"
+    "brand": "Samsung",
+    "imageUrls": []
   }
 ]
 
@@ -93,7 +98,8 @@ Content-Type: application/json
   "description": "Updated Apple smartphone",
   "price": 1199.00,
   "category": "Mobile",
-  "brand": "Apple"
+  "brand": "Apple",
+  "imageUrls": ["https://cdn.example.com/products/{{productId}}/image-1.jpg"]
 }
 
 ### Delete product

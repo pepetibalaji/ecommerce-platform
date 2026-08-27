@@ -6,6 +6,7 @@ networks:
 
 volumes:
     postgres-data:
+    mongodb-data:
     redis-data:
     kafka-data:
     tempo-data:
@@ -21,8 +22,7 @@ x-logging: &default-logging
 
 services:
     postgres:
-        # Default local DEV database. Stage uses Neon through the service
-        # environment variables supplied by the configuration repository.
+        # Default local DEV database for Auth, Inventory, Order, and Payment.
         image: postgres:16.14-alpine
         container_name: ecommerce-postgres
         restart: unless-stopped
@@ -39,6 +39,26 @@ services:
         healthcheck:
             test:
                 ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 20s
+        logging: *default-logging
+
+    mongodb:
+        # Default local DEV catalog database. Configure Product Service with
+        # PRODUCT_MONGODB_URI=mongodb://localhost:27017/product_db.
+        image: mongo:8.0
+        container_name: ecommerce-mongodb
+        restart: unless-stopped
+        ports:
+            - "${MONGODB_PORT:-27017}:27017"
+        volumes:
+            - mongodb-data:/data/db
+        networks:
+            - ecommerce-network
+        healthcheck:
+            test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand({ ping: 1 })"]
             interval: 10s
             timeout: 5s
             retries: 5

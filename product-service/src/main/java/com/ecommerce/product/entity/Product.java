@@ -1,17 +1,21 @@
 package com.ecommerce.product.entity;
 
-import jakarta.persistence.*;
-
 import lombok.*;
-
+import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.data.mongodb.core.mapping.FieldType;
+import org.springframework.data.mongodb.core.mapping.MongoId;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
 import java.math.BigDecimal;
 
 import java.time.LocalDateTime;
 
+import java.util.List;
 import java.util.UUID;
 
-@Entity
-@Table(name = "products")
+@Document(collection = "products")
+@CompoundIndex(name = "category_price_idx", def = "{'category': 1, 'price': 1}")
 
 @Getter
 @Setter
@@ -21,24 +25,27 @@ import java.util.UUID;
 
 public class Product {
 
-    @Id
+    // MongoDB's required _id index is unique; UUID values are stored as strings.
+    @MongoId(targetType = FieldType.STRING)
     private UUID id;
 
-    @Column(nullable = false)
     private String name;
 
     private String description;
 
-    @Column(nullable = false)
+    @Indexed(name = "price_idx")
+    @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal price;
 
+    @Indexed(name = "category_idx")
     private String category;
 
     private String brand;
 
-    @Column(name = "created_at")
+    @Builder.Default
+    private List<String> imageUrls = List.of();
+
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 }

@@ -49,7 +49,7 @@ not hand-publish a success event in production.
 
 ## 6. Backup, restore, and incident closeout
 
-Production requires tested PostgreSQL backups/point-in-time recovery, Redis
+Production requires tested PostgreSQL and MongoDB backups/point-in-time recovery, Redis
 recovery policy, Kafka retention/replication policy, and restore exercises.
 After recovery, validate migrations, service health, consumer lag, outbox/DLQ,
 and representative order/payment flows. Close incidents with impact, timeline,

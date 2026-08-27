@@ -115,6 +115,7 @@ Expected containers:
 
 ```text
 ecommerce-postgres
+ecommerce-mongodb
 ecommerce-redis
 ecommerce-kafka
 ecommerce-kafka-init
@@ -127,39 +128,42 @@ ecommerce-grafana
 
 ## 5. Database Setup
 
-Services own separate logical PostgreSQL databases:
+Auth, Inventory, Order, and Payment own separate logical PostgreSQL databases;
+Product Service owns a MongoDB database:
 
 | Service           | Database       |
 | ----------------- | -------------- |
 | Auth Service      | `auth_db`      |
-| Product Service   | `product_db`   |
+| Product Service   | MongoDB `product_db` |
 | Inventory Service | `inventory_db` |
 | Order Service     | `order_db`     |
 | Payment Service   | `payment_db`   |
 
-`docker compose up -d` starts PostgreSQL and Redis without a Compose profile.
+`docker compose up -d` starts PostgreSQL, MongoDB, and Redis without a Compose profile.
 To use those local stores from Maven/IDE services, point runtime configuration
-at `localhost:5433` and `localhost:6379`. For services running inside the
-Compose network, use `postgres:5432` and `redis:6379`.
+at `localhost:5433`, `localhost:27017`, and `localhost:6379`. For services
+running inside the Compose network, use `postgres:5432`, `mongodb:27017`, and
+`redis:6379`. Product Service uses
+`PRODUCT_MONGODB_URI=mongodb://localhost:27017/product_db` and
+`PRODUCT_MONGODB_DATABASE=product_db`.
 
 Create the logical service databases if required:
 
 ```bash
 docker exec -it ecommerce-postgres psql -U ecommerce_user -d ecommerce -c "CREATE DATABASE auth_db;"
-docker exec -it ecommerce-postgres psql -U ecommerce_user -d ecommerce -c "CREATE DATABASE product_db;"
 docker exec -it ecommerce-postgres psql -U ecommerce_user -d ecommerce -c "CREATE DATABASE inventory_db;"
 docker exec -it ecommerce-postgres psql -U ecommerce_user -d ecommerce -c "CREATE DATABASE order_db;"
 docker exec -it ecommerce-postgres psql -U ecommerce_user -d ecommerce -c "CREATE DATABASE payment_db;"
 ```
 
-Update the local datasource values in the runtime environment file
-before starting services; never add them to service `application.yml` files.
+Update the local PostgreSQL datasource and Product Service MongoDB values in
+the runtime environment file before starting services; never add them to
+service `application.yml` files.
 
 The equivalent SQL is:
 
 ```sql
 CREATE DATABASE auth_db;
-CREATE DATABASE product_db;
 CREATE DATABASE inventory_db;
 CREATE DATABASE order_db;
 CREATE DATABASE payment_db;
