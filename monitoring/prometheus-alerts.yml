@@ -68,3 +68,11 @@ groups:
         annotations:
           summary: "Order Service inventory-release retries are elevated"
           description: "More than five inventory-release command attempts failed in the last ten minutes; inspect the release outbox and Inventory Service."
+
+      - alert: OrderInventoryReleaseTerminalFailure
+        expr: sum(increase(order_inventory_release_terminal_failure_count_total{service="order-service"}[5m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "An inventory-release command exhausted retries"
+          description: "Order Service marked an inventory-release outbox command FAILED in the last five minutes; investigate the command and Inventory Service before manual recovery."

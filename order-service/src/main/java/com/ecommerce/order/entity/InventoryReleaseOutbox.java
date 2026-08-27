@@ -50,6 +50,9 @@ public class InventoryReleaseOutbox {
     @Column(name = "last_error", columnDefinition = "TEXT")
     private String lastError;
 
+    @Column(name = "next_attempt_at", nullable = false)
+    private LocalDateTime nextAttemptAt;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -77,21 +80,28 @@ public class InventoryReleaseOutbox {
         this.reason = reason;
         this.status = InventoryReleaseStatus.PENDING;
         this.attemptCount = 0;
+        this.nextAttemptAt = now;
         this.createdAt = now;
         this.updatedAt = now;
     }
 
-    public void markCompleted() {
+    public void markCompleted(LocalDateTime now) {
         status = InventoryReleaseStatus.COMPLETED;
         lastError = null;
-        completedAt = LocalDateTime.now();
-        updatedAt = completedAt;
+        completedAt = now;
+        updatedAt = now;
     }
 
-    public void recordFailure(String error) {
+    public void recordFailure(String error, LocalDateTime nextAttemptAt, int maxAttempts, LocalDateTime now) {
         attemptCount++;
         lastError = truncate(error);
-        updatedAt = LocalDateTime.now();
+        updatedAt = now;
+        if (attemptCount >= maxAttempts) {
+            status = InventoryReleaseStatus.FAILED;
+            this.nextAttemptAt = now;
+        } else {
+            this.nextAttemptAt = nextAttemptAt;
+        }
     }
 
     private String truncate(String value) {

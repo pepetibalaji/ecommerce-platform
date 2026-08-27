@@ -21,11 +21,14 @@ class PaymentOutcomeMetricsTest {
         metrics.inventoryReleaseQueued("payment_failed");
         metrics.inventoryReleaseSucceeded("payment_failed");
         metrics.inventoryReleaseFailed("payment_failed");
+        metrics.inventoryReleaseTerminalFailure("payment_failed");
 
         assertThat(registry.get("order.payment_outcome.consumed.count")
                 .tag("outcome", "success").counter().count()).isEqualTo(1);
         assertThat(registry.get("order.payment_outcome.dlq.count").counter().count()).isEqualTo(1);
         assertThat(registry.get("order.inventory_release.completed.count")
+                .tag("reason", "payment_failed").counter().count()).isEqualTo(1);
+        assertThat(registry.get("order.inventory_release.terminal_failure.count")
                 .tag("reason", "payment_failed").counter().count()).isEqualTo(1);
     }
 }
