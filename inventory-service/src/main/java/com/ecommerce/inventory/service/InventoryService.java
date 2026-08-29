@@ -25,6 +25,7 @@ public class InventoryService {
     private final InventoryRepository inventoryRepository;
     private final InventoryReservationRepository inventoryReservationRepository;
     private final InventoryMapper inventoryMapper;
+    private final ProductOwnershipVerifier productOwnershipVerifier;
 
     /**
      * Legacy, quantity-only reservation operation kept for clients that have not yet been deployed
@@ -201,6 +202,31 @@ public class InventoryService {
         inventory.setUpdatedAt(LocalDateTime.now());
 
         return inventoryMapper.toResponse(inventoryRepository.save(inventory));
+    }
+
+    @Transactional(readOnly = true)
+    public InventoryResponse getSellerInventory(UUID productId, UUID sellerId, boolean admin) {
+        assertSellerOwnsProduct(productId, sellerId, admin);
+        return getInventory(productId);
+    }
+
+    @Transactional
+    public InventoryResponse createSellerInventory(CreateInventoryRequest request, UUID sellerId, boolean admin) {
+        assertSellerOwnsProduct(request.getProductId(), sellerId, admin);
+        return createInventory(request);
+    }
+
+    @Transactional
+    public InventoryResponse updateSellerInventory(UUID productId, UpdateInventoryRequest request, UUID sellerId,
+            boolean admin) {
+        assertSellerOwnsProduct(productId, sellerId, admin);
+        return updateInventory(productId, request);
+    }
+
+    private void assertSellerOwnsProduct(UUID productId, UUID sellerId, boolean admin) {
+        if (!admin) {
+            productOwnershipVerifier.assertOwnedBy(productId, sellerId);
+        }
     }
 
     private Inventory getInventoryForUpdate(UUID productId) {

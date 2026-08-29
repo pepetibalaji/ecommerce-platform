@@ -29,6 +29,9 @@ public class Product {
     @MongoId(targetType = FieldType.STRING)
     private UUID id;
 
+    @Indexed(name = "seller_id_idx")
+    private UUID sellerId;
+
     private String name;
 
     private String description;

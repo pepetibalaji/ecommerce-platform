@@ -9,6 +9,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -26,9 +28,12 @@ public class ProductController {
     @PostMapping("/admin/products")
     @ResponseStatus(HttpStatus.CREATED)
     public ProductResponse createProduct(
-            @Valid @RequestBody CreateProductRequest request
+            @Valid @RequestBody CreateProductRequest request,
+            @RequestParam(required = false) UUID sellerId
     ) {
-        return productService.createProduct(request);
+        return sellerId == null
+                ? productService.createProduct(request)
+                : productService.createProduct(request, sellerId);
     }
 
     @PreAuthorize("hasRole('ADMIN')")
@@ -74,5 +79,43 @@ public class ProductController {
             @PathVariable("productId") UUID productId
     ) {
         productService.deleteProduct(productId);
+    }
+
+    @PreAuthorize("hasAnyRole('SELLER', 'ADMIN')")
+    @PostMapping("/seller/products")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ProductResponse createSellerProduct(@AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody CreateProductRequest request) {
+        return productService.createSellerProduct(request, currentUserId(jwt));
+    }
+
+    @PreAuthorize("hasAnyRole('SELLER', 'ADMIN')")
+    @GetMapping("/seller/products")
+    public Page<ProductResponse> getSellerProducts(@AuthenticationPrincipal Jwt jwt,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return productService.getSellerProducts(currentUserId(jwt), page, size);
+    }
+
+    @PreAuthorize("hasAnyRole('SELLER', 'ADMIN')")
+    @PutMapping("/seller/products/{productId}")
+    public ProductResponse updateSellerProduct(@AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID productId, @Valid @RequestBody UpdateProductRequest request) {
+        return productService.updateSellerProduct(productId, request, currentUserId(jwt), isAdmin(jwt));
+    }
+
+    @PreAuthorize("hasAnyRole('SELLER', 'ADMIN')")
+    @DeleteMapping("/seller/products/{productId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteSellerProduct(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID productId) {
+        productService.deleteSellerProduct(productId, currentUserId(jwt), isAdmin(jwt));
+    }
+
+    private UUID currentUserId(Jwt jwt) {
+        return UUID.fromString(jwt.getClaimAsString("userId"));
+    }
+
+    private boolean isAdmin(Jwt jwt) {
+        return "ADMIN".equals(jwt.getClaimAsString("role"));
     }
 }

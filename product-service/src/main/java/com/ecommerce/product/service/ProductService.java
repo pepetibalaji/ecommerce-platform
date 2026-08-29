@@ -44,8 +44,14 @@ public class ProductService {
             CreateProductRequest request
     ) {
 
+        return createProduct(request, null);
+    }
+
+    public ProductResponse createProduct(CreateProductRequest request, UUID sellerId) {
+
             Product product = Product.builder()
                             .id(UUID.randomUUID())
+                            .sellerId(sellerId)
                             .name(request.getName())
                             .description(request.getDescription())
                             .price(request.getPrice())
@@ -58,6 +64,22 @@ public class ProductService {
 
             Product savedProduct = productRepository.save(product);
             return productMapper.toResponse(savedProduct);
+    }
+
+    public ProductResponse createSellerProduct(CreateProductRequest request, UUID sellerId) {
+        Product product = Product.builder()
+                .id(UUID.randomUUID())
+                .sellerId(sellerId)
+                .name(request.getName())
+                .description(request.getDescription())
+                .price(request.getPrice())
+                .category(request.getCategory())
+                .brand(request.getBrand())
+                .imageUrls(imageUrlsOrEmpty(request.getImageUrls()))
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        return productMapper.toResponse(productRepository.save(product));
     }
     
         public List<ProductResponse> createProducts(
@@ -203,6 +225,38 @@ public class ProductService {
                                 )
                         );
         productRepository.delete(product);
+    }
+
+    public Page<ProductResponse> getSellerProducts(UUID sellerId, int page, int size) {
+        return productRepository.findBySellerId(sellerId, PageRequest.of(page, size))
+                .map(productMapper::toResponse);
+    }
+
+    public ProductResponse updateSellerProduct(UUID productId, UpdateProductRequest request, UUID sellerId,
+            boolean admin) {
+        Product product = getSellerOwnedProduct(productId, sellerId, admin);
+        product.setName(request.getName());
+        product.setDescription(request.getDescription());
+        product.setPrice(request.getPrice());
+        product.setCategory(request.getCategory());
+        product.setBrand(request.getBrand());
+        product.setImageUrls(imageUrlsOrEmpty(request.getImageUrls()));
+        product.setUpdatedAt(LocalDateTime.now());
+        return productMapper.toResponse(productRepository.save(product));
+    }
+
+    public void deleteSellerProduct(UUID productId, UUID sellerId, boolean admin) {
+        productRepository.delete(getSellerOwnedProduct(productId, sellerId, admin));
+    }
+
+    private Product getSellerOwnedProduct(UUID productId, UUID sellerId, boolean admin) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+        if (!admin && !sellerId.equals(product.getSellerId())) {
+            // Deliberately use not-found so seller IDs and product ownership are not enumerable.
+            throw new ResourceNotFoundException("Product not found");
+        }
+        return product;
     }
 
     private List<String> imageUrlsOrEmpty(List<String> imageUrls) {

@@ -16,6 +16,7 @@ import com.ecommerce.order.entity.OrderItem;
 import com.ecommerce.order.entity.OrderStatus;
 import com.ecommerce.order.entity.InventoryReleaseReason;
 import com.ecommerce.order.grpc.InventoryGrpcClient;
+import com.ecommerce.order.catalog.ProductSellerClient;
 import com.ecommerce.order.kafka.OrderEventPublisher;
 import com.ecommerce.order.repository.OrderRepository;
 import com.ecommerce.order.repository.OrderProcessedEventRepository;
@@ -50,6 +51,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest {
@@ -72,6 +74,9 @@ class OrderServiceTest {
     @Mock
     private InventoryReleaseOutboxService inventoryReleaseOutboxService;
 
+    @Mock
+    private ProductSellerClient productSellerClient;
+
     @InjectMocks
     private OrderServiceImpl orderService;
 
@@ -88,6 +93,9 @@ class OrderServiceTest {
          * This keeps resolveCurrency(null) working.
          */
         ReflectionTestUtils.setField(orderService, "defaultCurrency", "INR");
+        // Only order-creation tests invoke the catalog client; keep the shared fixture strict
+        // for every other collaborator while avoiding unrelated-test stubbing failures.
+        lenient().when(productSellerClient.getSellerId(productId)).thenReturn(UUID.randomUUID());
     }
 
     @Test

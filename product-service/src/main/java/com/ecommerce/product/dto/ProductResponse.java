@@ -19,6 +19,8 @@ public class ProductResponse {
 
     private UUID id;
 
+    private UUID sellerId;
+
     private String name;
 
     private String description;

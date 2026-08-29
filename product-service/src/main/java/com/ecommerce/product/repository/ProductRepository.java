@@ -20,6 +20,8 @@ public interface ProductRepository
             Pageable pageable
     );
 
+    Page<Product> findBySellerId(UUID sellerId, Pageable pageable);
+
     Page<Product> findByPriceBetween(
             BigDecimal minPrice,
             BigDecimal maxPrice,

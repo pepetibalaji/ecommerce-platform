@@ -20,6 +20,9 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
 
     Page<Order> findByStatus(OrderStatus status, Pageable pageable);
 
+    @Query("select distinct o from Order o join o.items i where i.sellerId = :sellerId")
+    Page<Order> findBySellerId(@Param("sellerId") UUID sellerId, Pageable pageable);
+
     @Query(value = "select * from orders where id = :id for update", nativeQuery = true)
     Optional<Order> findByIdForUpdate(@Param("id") UUID id);
 }
