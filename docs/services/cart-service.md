@@ -49,6 +49,21 @@ last item deletes the Redis key.
 | GET | `/api/v1/cart` | Bearer JWT | Return the current user's cart; creates/persists an empty cart if absent. |
 | DELETE | `/api/v1/cart/{itemId}` | Bearer JWT | Remove one item; deletes cart key when no items remain. |
 | DELETE | `/api/v1/cart` | Bearer JWT | Delete the entire current user's cart. |
+| POST | `/api/v1/cart/guest` | Public | Create an anonymous cart and set the HttpOnly guest cookie. |
+| GET | `/api/v1/cart/guest` | Public | Read the cookie-scoped guest cart. |
+| POST | `/api/v1/cart/guest/items` | Public | Add an item to the cookie-scoped guest cart. |
+| PUT | `/api/v1/cart/guest/items/{itemId}` | Public | Update a guest-cart item. |
+| DELETE | `/api/v1/cart/guest/items/{itemId}` | Public | Remove a guest-cart item. |
+| DELETE | `/api/v1/cart/guest` | Public | Clear the guest cart. |
+| POST | `/api/v1/cart/merge-guest` | Bearer JWT | Merge the cookie-scoped guest cart into the JWT owner's cart. |
+
+Guest cart IDs are server-generated UUIDs and are delivered in a HttpOnly,
+SameSite cookie. Browser clients must send guest-cart requests with
+`credentials: "include"`; after receiving a successful login or registration
+token, call `POST /api/v1/cart/merge-guest` with that token. The endpoint uses
+the JWT `userId` as the only destination owner and deletes the guest key only
+after saving the customer cart. Repeating a completed merge is safe because the
+guest key no longer exists.
 
 ## Cart data model and lifecycle
 
@@ -69,6 +84,21 @@ flowchart LR
 | `productId` | Request payload | Stored as a string; not validated against Product Service. |
 | `quantity` | Request payload | Managed in the cart object. |
 | `updatedAt` | Cart Service | Updated when cart is saved. |
+
+## TTL configuration
+
+Cart expiry is configured through the external Config Server repository and can
+also be supplied as environment variables for local or container deployments.
+The application has safe defaults if Config Server is unavailable.
+
+| Property | Environment variable | Default | Intended use |
+| --- | --- | --- | --- |
+| `cart.customer.ttl` | `CART_CUSTOMER_TTL` | `7d` | Authenticated cart expiry. |
+| `cart.guest.ttl` | `CART_GUEST_TTL` | `30d` | Anonymous-cart expiry, used when guest-cart endpoints are enabled. |
+
+Add the same property names to the relevant `cart-service-<profile>.yml` file
+in the separate Config Server repository to override these defaults per
+environment. Saving a cart refreshes its TTL; reading it does not.
 
 ## Security and operational behavior
 

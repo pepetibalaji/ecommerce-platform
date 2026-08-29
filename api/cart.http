@@ -60,6 +60,30 @@ DELETE {{cartBaseUrl}}/api/v1/cart
 Authorization: Bearer {{accessToken}}
 
 # =========================================================
+# GUEST CART APIs
+# The response sets an HttpOnly guestId cookie. Keep cookies enabled in the API client.
+# =========================================================
+
+### Create or retrieve a guest cart
+POST {{cartBaseUrl}}/api/v1/cart/guest
+
+### Add an item to the guest cart
+POST {{cartBaseUrl}}/api/v1/cart/guest/items
+Content-Type: application/json
+
+{
+  "productId": "{{productId}}",
+  "quantity": 2
+}
+
+### Merge the guest cart after login or registration
+POST {{cartBaseUrl}}/api/v1/cart/merge-guest
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{}
+
+# =========================================================
 # SECURITY CHECKS
 # =========================================================
 
