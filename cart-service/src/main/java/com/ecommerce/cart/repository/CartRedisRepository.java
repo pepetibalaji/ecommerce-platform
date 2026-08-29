@@ -1,7 +1,6 @@
 package com.ecommerce.cart.repository;
 
-import java.time.Duration;
-
+import com.ecommerce.cart.config.CartProperties;
 import com.ecommerce.cart.model.Cart;
 import com.ecommerce.common.redis.key.RedisKeys;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,26 +10,43 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class CartRedisRepository {
 
-    private static final Duration CART_TTL = Duration.ofDays(7);
-
     private final RedisTemplate<String, Object> redisTemplate;
     private final ObjectMapper objectMapper;
+    private final CartProperties cartProperties;
 
     public CartRedisRepository(
             RedisTemplate<String, Object> redisTemplate,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            CartProperties cartProperties
     ) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
+        this.cartProperties = cartProperties;
     }
 
     public void save(Cart cart) {
         String key = RedisKeys.cart(cart.getUserId());
-        redisTemplate.opsForValue().set(key, cart, CART_TTL);
+        redisTemplate.opsForValue().set(key, cart, cartProperties.getCustomer().getTtl());
     }
 
     public Cart findByUserId(String userId) {
-        Object value = redisTemplate.opsForValue().get(RedisKeys.cart(userId));
+        return find(RedisKeys.cart(userId));
+    }
+
+    public void saveGuestCart(String guestId, Cart cart) {
+        redisTemplate.opsForValue().set(RedisKeys.guestCart(guestId), cart, cartProperties.getGuest().getTtl());
+    }
+
+    public Cart findByGuestId(String guestId) {
+        return find(RedisKeys.guestCart(guestId));
+    }
+
+    public void deleteByGuestId(String guestId) {
+        redisTemplate.delete(RedisKeys.guestCart(guestId));
+    }
+
+    private Cart find(String key) {
+        Object value = redisTemplate.opsForValue().get(key);
 
         if (value == null) {
             return null;

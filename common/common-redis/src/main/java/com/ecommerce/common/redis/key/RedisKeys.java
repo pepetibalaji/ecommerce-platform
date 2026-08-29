@@ -31,6 +31,14 @@ public final class RedisKeys {
         return "cart:" + userId;
     }
 
+    public static String guestCart(String guestId) {
+        return "guest-cart:" + guestId;
+    }
+
+    public static String cartLock(String ownerType, String ownerId) {
+        return "cart-lock:" + ownerType + ":" + ownerId;
+    }
+
     // Future Auth Service
 
     public static String refreshToken(String userId) {

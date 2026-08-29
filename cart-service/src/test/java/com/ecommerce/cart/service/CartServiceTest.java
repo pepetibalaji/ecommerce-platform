@@ -7,6 +7,7 @@ import com.ecommerce.cart.model.Cart;
 import com.ecommerce.cart.model.CartItem;
 import com.ecommerce.cart.repository.CartRedisRepository;
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.common.redis.lock.DistributedLockService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,7 +17,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -27,6 +30,9 @@ class CartServiceTest {
     @Mock
     private CartRedisRepository cartRedisRepository;
 
+    @Mock
+    private DistributedLockService distributedLockService;
+
     @InjectMocks
     private CartService cartService;
 
@@ -35,7 +41,7 @@ class CartServiceTest {
 
     @BeforeEach
     void setUp() {
-        reset(cartRedisRepository);
+        reset(cartRedisRepository, distributedLockService);
     }
 
     @Test
@@ -143,5 +149,40 @@ class CartServiceTest {
         cartService.clearCart(userId);
 
         verify(cartRedisRepository).deleteByUserId(userId);
+    }
+
+    @Test
+    void mergeGuestCart_shouldAddQuantitiesSaveCustomerThenDeleteGuest() {
+        String guestId = "guest-123";
+        Cart guestCart = new Cart(guestId);
+        guestCart.getItems().add(new CartItem("guest-item", productId, 2));
+        Cart customerCart = new Cart(userId);
+        customerCart.getItems().add(new CartItem("customer-item", productId, 3));
+
+        when(distributedLockService.tryLock(anyString(), anyString(), any())).thenReturn(true);
+        when(cartRedisRepository.findByGuestId(guestId)).thenReturn(guestCart);
+        when(cartRedisRepository.findByUserId(userId)).thenReturn(customerCart);
+
+        CartResponse response = cartService.mergeGuestCart(userId, guestId);
+
+        assertThat(response.getItems()).singleElement().extracting("quantity").isEqualTo(5);
+        verify(cartRedisRepository).save(customerCart);
+        verify(cartRedisRepository).deleteByGuestId(guestId);
+    }
+
+    @Test
+    void mergeGuestCart_shouldBeIdempotentAfterGuestCartWasDeleted() {
+        String guestId = "guest-123";
+        Cart customerCart = new Cart(userId);
+        customerCart.getItems().add(new CartItem("customer-item", productId, 5));
+
+        when(distributedLockService.tryLock(anyString(), anyString(), any())).thenReturn(true);
+        when(cartRedisRepository.findByGuestId(guestId)).thenReturn(null);
+        when(cartRedisRepository.findByUserId(userId)).thenReturn(customerCart);
+
+        CartResponse response = cartService.mergeGuestCart(userId, guestId);
+
+        assertThat(response.getItems()).singleElement().extracting("quantity").isEqualTo(5);
+        verify(cartRedisRepository, never()).deleteByGuestId(guestId);
     }
 }

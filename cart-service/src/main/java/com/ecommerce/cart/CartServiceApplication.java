@@ -2,6 +2,8 @@ package com.ecommerce.cart;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import com.ecommerce.cart.config.CartProperties;
 
 @SpringBootApplication(scanBasePackages = {
         "com.ecommerce.cart",
@@ -9,6 +11,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
         "com.ecommerce.common.redis",
         "com.ecommerce.common.exception"
 })
+@EnableConfigurationProperties(CartProperties.class)
 public class CartServiceApplication {
 
     public static void main(String[] args) {

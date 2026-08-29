@@ -8,6 +8,18 @@ spring:
     config:
         import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
 
+# Config Server may override these defaults per environment. TTL is refreshed
+# whenever the corresponding cart is saved; reads do not extend it.
+cart:
+    customer:
+        ttl: ${CART_CUSTOMER_TTL:7d}
+    guest:
+        ttl: ${CART_GUEST_TTL:30d}
+        cookie:
+            name: ${CART_GUEST_COOKIE_NAME:guestId}
+            same-site: ${CART_GUEST_COOKIE_SAME_SITE:Lax}
+            secure: ${CART_GUEST_COOKIE_SECURE:false}
+
 logging:
     structured:
         format:
