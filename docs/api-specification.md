@@ -10,7 +10,8 @@
 - JSON request/response payloads; UUIDs identify resources; ISO-4217 currency
   values are uppercase three-letter strings.
 - Protected endpoints use `Authorization: Bearer <access-token>`.
-- JWT `userId` controls customer-owned resources; `ADMIN` controls admin APIs.
+- JWT `userId` controls customer-owned resources; `ADMIN` controls admin APIs;
+  `SELLER` controls seller-owned catalog, inventory, and fulfilment views.
 - List endpoints use zero-based `page` and `size`; responses use the service's
   Spring page representation.
 - Successful create operations return `201`; deletion normally returns `204`.
@@ -62,9 +63,14 @@ from a path/body field when a JWT is available.
 | POST | `/admin/products/bulk` | Admin | Bulk-create products. |
 | PUT | `/admin/products/{productId}` | Admin | Update product. |
 | DELETE | `/admin/products/{productId}` | Admin | Hard-delete product. |
+| POST | `/seller/products` | Seller/Admin | Create a product owned by the authenticated seller. |
+| GET | `/seller/products` | Seller/Admin | Paginated products owned by the authenticated seller. |
+| PUT/DELETE | `/seller/products/{productId}` | Seller/Admin | Seller may mutate only their own product; admin may mutate any product. |
 | POST | `/admin/inventory` | Admin | Create stock record for product UUID. |
 | PUT | `/admin/inventory/{productId}` | Admin | Update stock record. |
 | GET | `/admin/inventory/{productId}` | Admin | Available/reserved stock view. |
+| POST | `/seller/inventory` | Seller/Admin | Create stock only for a seller-owned product. |
+| GET/PUT | `/seller/inventory/{productId}` | Seller/Admin | Read/update stock only for a seller-owned product. |
 
 ## 5. Cart and order API
 
@@ -81,6 +87,7 @@ from a path/body field when a JWT is available.
 | PUT | `/orders/{id}/cancel` | JWT | Cancel permitted order and queue stock compensation. |
 | GET | `/admin/orders?status=&page=&size=` | Admin | Paginated all-order view. |
 | PUT | `/admin/orders/{id}/status` | Admin | Administrative status transition. |
+| GET | `/seller/orders?page=&size=` | Seller/Admin | Seller-only order items and fulfilment address; no customer or payment data. |
 
 Order create input includes shipping address, item product IDs, quantities,
 prices, and currency. Current implementation validates request shape and stock;

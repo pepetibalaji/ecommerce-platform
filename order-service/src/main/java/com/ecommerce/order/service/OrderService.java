@@ -5,6 +5,7 @@ import java.util.UUID;
 import com.ecommerce.order.dto.CreateOrderRequest;
 import com.ecommerce.order.dto.OrderResponse;
 import com.ecommerce.order.dto.UpdateOrderStatusRequest;
+import com.ecommerce.order.dto.SellerOrderResponse;
 import com.ecommerce.order.entity.OrderStatus;
 import com.ecommerce.common.events.payment.PaymentFailedEvent;
 import com.ecommerce.common.events.payment.PaymentSuccessEvent;
@@ -25,6 +26,8 @@ public interface OrderService {
     Page<OrderResponse> getAdminOrders(Pageable pageable, OrderStatus status);
 
     OrderResponse updateOrderStatus(UUID orderId, UpdateOrderStatusRequest request);
+
+    Page<SellerOrderResponse> getSellerOrders(UUID sellerId, Pageable pageable);
 
     void handlePaymentSuccess(PaymentSuccessEvent event);
 

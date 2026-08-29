@@ -24,6 +24,8 @@ import com.ecommerce.order.repository.OrderProcessedEventRepository;
 import com.ecommerce.order.repository.OrderRepository;
 import com.ecommerce.order.entity.OrderProcessedEvent;
 import com.ecommerce.order.observability.PaymentOutcomeMetrics;
+import com.ecommerce.order.catalog.ProductSellerClient;
+import com.ecommerce.order.dto.SellerOrderResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
@@ -48,6 +50,7 @@ public class OrderServiceImpl implements OrderService {
     private final OrderProcessedEventRepository orderProcessedEventRepository;
     private final PaymentOutcomeMetrics paymentOutcomeMetrics;
     private final InventoryReleaseOutboxService inventoryReleaseOutboxService;
+    private final ProductSellerClient productSellerClient;
 
     @Value("${order.default-currency:INR}")
     private String defaultCurrency;
@@ -58,7 +61,8 @@ public class OrderServiceImpl implements OrderService {
             OrderEventPublisher orderEventPublisher,
             OrderProcessedEventRepository orderProcessedEventRepository,
             PaymentOutcomeMetrics paymentOutcomeMetrics,
-            InventoryReleaseOutboxService inventoryReleaseOutboxService
+            InventoryReleaseOutboxService inventoryReleaseOutboxService,
+            ProductSellerClient productSellerClient
     ) {
         this.orderRepository = orderRepository;
         this.inventoryGrpcClient = inventoryGrpcClient;
@@ -66,6 +70,7 @@ public class OrderServiceImpl implements OrderService {
         this.orderProcessedEventRepository = orderProcessedEventRepository;
         this.paymentOutcomeMetrics = paymentOutcomeMetrics;
         this.inventoryReleaseOutboxService = inventoryReleaseOutboxService;
+        this.productSellerClient = productSellerClient;
     }
 
     @Override
@@ -92,6 +97,7 @@ public class OrderServiceImpl implements OrderService {
                 OrderItem item = new OrderItem();
                 item.setOrder(order);
                 item.setProductId(itemRequest.getProductId());
+                item.setSellerId(productSellerClient.getSellerId(itemRequest.getProductId()));
                 item.setInventoryReservationId(UUID.randomUUID());
                 item.setQuantity(itemRequest.getQuantity());
                 item.setPrice(itemRequest.getPrice());
@@ -189,6 +195,13 @@ public class OrderServiceImpl implements OrderService {
         order.setStatus(request.getStatus());
 
         return toResponse(orderRepository.save(order));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<SellerOrderResponse> getSellerOrders(UUID sellerId, Pageable pageable) {
+        return orderRepository.findBySellerId(sellerId, pageable)
+                .map(order -> toSellerResponse(order, sellerId));
     }
 
     @Override
@@ -495,5 +508,17 @@ public class OrderServiceImpl implements OrderService {
                 order.getShippingPostalCode(),
                 order.getShippingCountry()
         );
+    }
+
+    private SellerOrderResponse toSellerResponse(Order order, UUID sellerId) {
+        List<OrderItemResponse> items = order.getItems().stream()
+                .filter(item -> sellerId.equals(item.getSellerId()))
+                .map(item -> new OrderItemResponse(item.getId(), item.getProductId(), item.getQuantity(), item.getPrice()))
+                .toList();
+        BigDecimal sellerTotal = items.stream()
+                .map(item -> item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new SellerOrderResponse(order.getId(), order.getStatus(), order.getCreatedAt(),
+                toShippingAddressResponse(order), sellerTotal, items);
     }
 }

@@ -56,6 +56,7 @@ public class SecurityConfig {
                         ).permitAll()
                         .pathMatchers("/mcp/**", "/api/v1/ai/**").hasRole("ADMIN")
                         .pathMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        .pathMatchers("/api/v1/seller/**").hasAnyRole("SELLER", "ADMIN")
                         .anyExchange().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2
