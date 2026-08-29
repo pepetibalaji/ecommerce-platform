@@ -23,7 +23,7 @@
 | Service | Store | Schema/tables |
 | --- | --- | --- |
 | Auth | PostgreSQL `auth_db` | `users`, `refresh_tokens` |
-| Product | PostgreSQL `product_db` | `products` |
+| Product | MongoDB `product_db` | `products` collection |
 | Inventory | PostgreSQL `inventory_db` | `inventory`, `inventory_reservations` |
 | Order | PostgreSQL `order_db` | `orders`, `order_items`, `order_processed_events`, `order_inventory_release_outbox` |
 | Payment | PostgreSQL `payment_db` | `payments`, `payment_attempts`, `payment_refunds`, `payment_webhook_events` |
@@ -73,21 +73,23 @@ The ERD shows ownership relationships only. `orders.user_id`,
 | `token` | TEXT | Required refresh-token value. Planned hardening: store a hash only. |
 | `expiry` | TIMESTAMP | Required expiration. |
 
-## 5. Product schema (`product_db`)
+## 5. Product document (`product_db.products`)
 
 ### `products`
 
-| Column | Type | Rules / purpose |
+| Field | Type | Rules / purpose |
 | --- | --- | --- |
-| `id` | UUID | Primary key. |
-| `name` | VARCHAR(255) | Required product name. |
-| `description` | TEXT | Optional product description. |
-| `price` | DECIMAL(10,2) | Required current display price. |
-| `category`, `brand` | VARCHAR(255) | Optional browse/filter metadata. |
-| `created_at`, `updated_at` | TIMESTAMP | Product audit fields. |
+| `_id` / `id` | UUID string | Unique Product Service identity. |
+| `name` | String | Required product name. |
+| `description` | String | Optional product description. |
+| `price` | Decimal128 | Required current display price. |
+| `category`, `brand` | String | Optional browse/filter metadata. |
+| `imageUrls` | String array | Optional HTTPS object-storage/CDN URLs only; no image bytes. |
+| `createdAt`, `updatedAt` | Date | Product audit fields. |
 
-Current physical schema has no image, currency, active/deleted state, version,
-price history, or product lifecycle-event tables.
+Indexes are `_id` (unique), `category`, `price`, and `category + price`.
+Current document design has no currency, active/deleted state, version, price
+history, or product lifecycle events.
 
 ## 6. Inventory schema (`inventory_db`)
 
@@ -260,7 +262,7 @@ users. Cart reads do not refresh TTL; only writes do.
 | Pricing | `coupons`, `coupon_rules`, `promotions`, `promotion_redemptions`, `price_adjustments`. |
 | Search | Elasticsearch product index plus an indexing outbox/checkpoint table. |
 | Reviews | `reviews(id, product_id, user_id, order_item_id, rating, content, moderation_status, timestamps)`. |
-| Product lifecycle | `product_images`, `product_prices`, `product_status_history`, optional `product_version`. |
+| Product lifecycle | Product image URL history, product prices, product status history, optional product version. |
 
 ## 11. Integrity and retention rules
 

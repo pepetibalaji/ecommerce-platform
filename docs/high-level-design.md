@@ -38,7 +38,7 @@ flowchart TB
     kafka -->|outcomes| order
     payment --> provider[Payment Provider]
     auth --> authdb[(auth_db)]
-    product --> productdb[(product_db)]
+    product --> productdb[(MongoDB product_db)]
     inventory --> inventorydb[(inventory_db)]
     order --> orderdb[(order_db)]
     payment --> paymentdb[(payment_db)]
@@ -55,7 +55,7 @@ flowchart TB
 | Gateway | None | External entry point, JWT validation, CORS, routing, diagnostics. |
 | Config Server | Git checkout/cache | Environment configuration service. |
 | Auth | PostgreSQL users/refresh tokens; Redis blacklist | Identity, JWT lifecycle, profile, and user administration. |
-| Product | PostgreSQL catalog | Public catalog and administrator mutations. |
+| Product | MongoDB catalog | Public catalog and administrator mutations. |
 | Cart | Redis cart records | Temporary customer cart. |
 | Inventory | PostgreSQL inventory/reservations | Stock administration and idempotent reservation lifecycle. |
 | Order | PostgreSQL orders, inbox, release outbox | Order lifecycle and inventory compensation. |

@@ -33,7 +33,7 @@ inventory, orders, and refunds.
 | --- | --- | --- |
 | API Gateway / Config Server | Route and runtime configuration | External routing, CORS, JWT validation, diagnostics, centralized config. |
 | Auth Service | PostgreSQL users/refresh tokens; Redis blacklist | Identity, JWT, profile, and user administration. |
-| Product Service | PostgreSQL catalog | Public catalog and admin catalog changes. |
+| Product Service | MongoDB catalog | Public catalog and admin catalog changes. |
 | Cart Service | Redis cart records | Temporary customer carts. |
 | Inventory Service | PostgreSQL inventory/reservations | Stock administration and idempotent reservations. |
 | Order Service | PostgreSQL orders, inbox, release outbox | Order lifecycle and inventory compensation. |

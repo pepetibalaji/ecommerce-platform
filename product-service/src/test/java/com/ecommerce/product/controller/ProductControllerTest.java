@@ -27,6 +27,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 @WebMvcTest(ProductController.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -53,6 +54,7 @@ class ProductControllerTest {
                 .price(BigDecimal.valueOf(999))
                 .category("Mobile")
                 .brand("Apple")
+                .imageUrls(List.of("https://cdn.example.com/products/iphone-15.jpg"))
                 .build();
 
         when(productService.createProduct(any(CreateProductRequest.class)))
@@ -63,13 +65,45 @@ class ProductControllerTest {
                 "Apple Phone",
                 BigDecimal.valueOf(999),
                 "Mobile",
-                "Apple"
+                "Apple",
+                List.of("https://cdn.example.com/products/iphone-15.jpg")
         );
 
         mockMvc.perform(post("/api/v1/admin/products")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isCreated());
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.imageUrls[0]").value("https://cdn.example.com/products/iphone-15.jpg"));
+    }
+
+    @Test
+    void shouldRejectInvalidImageUrl() throws Exception {
+        String request = """
+                {"name":"iPhone 15","price":999,"imageUrls":["not-a-url"]}
+                """;
+
+        mockMvc.perform(post("/api/v1/admin/products")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void shouldRejectMoreThanTenImageUrls() throws Exception {
+        String request = """
+                {"name":"iPhone 15","price":999,"imageUrls":[
+                "https://cdn.example.com/1.jpg","https://cdn.example.com/2.jpg",
+                "https://cdn.example.com/3.jpg","https://cdn.example.com/4.jpg",
+                "https://cdn.example.com/5.jpg","https://cdn.example.com/6.jpg",
+                "https://cdn.example.com/7.jpg","https://cdn.example.com/8.jpg",
+                "https://cdn.example.com/9.jpg","https://cdn.example.com/10.jpg",
+                "https://cdn.example.com/11.jpg"]}
+                """;
+
+        mockMvc.perform(post("/api/v1/admin/products")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

@@ -1,6 +1,6 @@
 # Event-Driven E-Commerce Microservices Platform
 
-Production-grade, cloud-native e-commerce backend built with **Java 21**, **Spring Boot 3**, **OAuth2**, **PostgreSQL**, **Redis**, **Kafka**, **gRPC**, **Docker**, **Spring Cloud Config**, and observability-first engineering.
+Production-grade, cloud-native e-commerce backend built with **Java 21**, **Spring Boot 3**, **OAuth2**, **PostgreSQL**, **MongoDB**, **Redis**, **Kafka**, **gRPC**, **Docker**, **Spring Cloud Config**, and observability-first engineering.
 
 This is not a simple CRUD demo. It is a distributed backend platform designed around real microservice architecture patterns: centralized configuration, OAuth2 security, service-to-service gRPC, event-driven Kafka workflows, Redis-backed cart storage, PostgreSQL-backed transactional services, shared platform modules, and production-readiness practices.
 
@@ -76,7 +76,8 @@ Order Service ---> Kafka topic: order-created ---> Payment Service
 Payment Service ---> Kafka topics: payment-success / payment-failed ---> Order Service
 
 Storage:
-Neon PostgreSQL ---> Auth, Product, Inventory, Order, Payment
+Neon PostgreSQL ---> Auth, Inventory, Order, Payment
+MongoDB    ---> Product catalog
 Redis      ---> Cart, token blacklist, cache
 Kafka      ---> Domain events
 ```
@@ -589,17 +590,16 @@ refresh_tokens
 
 ### Product Service
 
-Database:
+Collection:
 
 ```text
 product_db
 ```
 
-Tables:
+Document collection:
 
 ```text
 products
-product_images
 ```
 
 ### Inventory Service
@@ -1018,5 +1018,5 @@ The project is structured to evolve into a Kubernetes-deployed, event-driven, cl
 ## GitHub Description
 
 ```text
-Production-grade event-driven e-commerce microservices platform with Spring Boot 3, OAuth2, PostgreSQL, Redis, Kafka, gRPC, Docker, Config Server, and observability.
+Production-grade event-driven e-commerce microservices platform with Spring Boot 3, OAuth2, PostgreSQL, MongoDB, Redis, Kafka, gRPC, Docker, Config Server, and observability.
 ```

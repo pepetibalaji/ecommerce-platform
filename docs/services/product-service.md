@@ -10,8 +10,8 @@ Kafka, gRPC, cache, Inventory, or Order integration.
 | Concern | Current behavior |
 | --- | --- |
 | Local port | 8082 |
-| Store | PostgreSQL `product_db` |
-| Main table | `products` |
+| Store | MongoDB product database |
+| Main collection | `products` |
 | API style | REST JSON and OpenAPI |
 | Security | Public catalog reads; `ADMIN` for mutations |
 | Async messaging | None |
@@ -26,7 +26,7 @@ sequenceDiagram
     actor Admin
     participant Gateway as API Gateway
     participant Product as Product Service
-    participant Database as product_db
+    participant Database as MongoDB
 
     Customer->>Gateway: GET product list or detail
     Gateway->>Product: Forward REST request
@@ -64,13 +64,17 @@ erDiagram
         decimal price
         string category
         string brand
+        string[] imageUrls
         timestamp createdAt
         timestamp updatedAt
     }
 ```
 
-The service owns catalog identity and basic display/price fields. It does not
-own stock, product images, customer carts, orders, or payment data.
+The service owns catalog identity and basic display/price fields. It stores
+optional image URLs only, never image bytes; object storage/CDN owns the image
+files. Missing image URLs are returned as an empty array. MongoDB preserves the
+existing UUID in its unique `_id` field and the service ensures category, price,
+and category-plus-price indexes.
 
 ## Request behavior and security
 
@@ -81,6 +85,7 @@ own stock, product images, customer carts, orders, or payment data.
 | Authorization | `/api/v1/admin/**` requires `ROLE_ADMIN`; catalog reads are public. |
 | Identity | JWT `role` is converted to Spring roles by the shared security module. |
 | Diagnostics | Health, info, Prometheus, and OpenAPI are permitted by service security. |
+| Images | Optional HTTPS CDN/object-storage URLs, maximum 10 per product and 2,048 characters per URL. |
 
 ## Current limitations
 
@@ -89,7 +94,7 @@ own stock, product images, customer carts, orders, or payment data.
   exist for a UUID that is not a product.
 - Order Service accepts client-supplied item prices and does not currently
   request Product Service for authoritative price validation.
-- No product lifecycle event, cache, soft deletion, images, currency field,
+- No product lifecycle event, cache, soft deletion, currency field,
   optimistic version, stock view, or price history is implemented.
 - Supplying only `minPrice` or only `maxPrice` ignores that price bound. A
   supplied category filter still applies.
@@ -100,6 +105,5 @@ own stock, product images, customer carts, orders, or payment data.
 | --- | --- |
 | REST controller | `product-service/src/main/java/com/ecommerce/product/controller/ProductController.java` |
 | Domain service | `product-service/src/main/java/com/ecommerce/product/service/ProductService.java` |
-| Entity and repository | `product-service/src/main/java/com/ecommerce/product/entity/Product.java`, `repository/ProductRepository.java` |
+| MongoDB document and repository | `product-service/src/main/java/com/ecommerce/product/entity/Product.java`, `repository/ProductRepository.java` |
 | Security | `product-service/src/main/java/com/ecommerce/product/config/SecurityConfig.java` |
-| Schema | `product-service/src/main/resources/db/migration/V1__create_products_table.sql` |

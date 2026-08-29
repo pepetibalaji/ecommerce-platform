@@ -18,7 +18,6 @@ import lombok.RequiredArgsConstructor;
 
 import org.springframework.stereotype.Service;
 
-import org.springframework.transaction.annotation.Transactional;
 
 import org.springframework.data.domain.Page;
 
@@ -41,7 +40,6 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final ProductMapper productMapper;
 
-    @Transactional
     public ProductResponse createProduct(
             CreateProductRequest request
     ) {
@@ -53,6 +51,7 @@ public class ProductService {
                             .price(request.getPrice())
                             .category(request.getCategory())
                             .brand(request.getBrand())
+                            .imageUrls(imageUrlsOrEmpty(request.getImageUrls()))
                             .createdAt(LocalDateTime.now())
                             .updatedAt(LocalDateTime.now())
                             .build();
@@ -61,7 +60,6 @@ public class ProductService {
             return productMapper.toResponse(savedProduct);
     }
     
-        @Transactional
         public List<ProductResponse> createProducts(
                 List<CreateProductRequest> requests
         ) {
@@ -81,6 +79,8 @@ public class ProductService {
                         .category(request.getCategory())
 
                         .brand(request.getBrand())
+
+                        .imageUrls(imageUrlsOrEmpty(request.getImageUrls()))
 
                         .createdAt(LocalDateTime.now())
 
@@ -171,7 +171,6 @@ public class ProductService {
         return products.map(productMapper::toResponse);
     }
 
-    @Transactional
     public ProductResponse updateProduct(
             UUID productId,
             UpdateProductRequest request
@@ -188,13 +187,13 @@ public class ProductService {
         product.setPrice(request.getPrice());
         product.setCategory(request.getCategory());
         product.setBrand(request.getBrand());
+        product.setImageUrls(imageUrlsOrEmpty(request.getImageUrls()));
         product.setUpdatedAt(LocalDateTime.now());
         Product updatedProduct =
                 productRepository.save(product);
         return productMapper.toResponse(updatedProduct);
     }
 
-    @Transactional
     public void deleteProduct(UUID productId) {
         Product product =
                 productRepository.findById(productId)
@@ -204,5 +203,9 @@ public class ProductService {
                                 )
                         );
         productRepository.delete(product);
+    }
+
+    private List<String> imageUrlsOrEmpty(List<String> imageUrls) {
+        return imageUrls == null ? List.of() : List.copyOf(imageUrls);
     }
 }
