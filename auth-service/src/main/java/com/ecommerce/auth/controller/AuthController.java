@@ -6,8 +6,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -16,33 +16,31 @@ import org.springframework.web.bind.annotation.*;
 @Tag(name = "Auth", description = "Authentication APIs")
 public class AuthController {
 
-    private final AuthService authService;
+  private final AuthService authService;
 
-    @PostMapping("/register")
-    @Operation(summary = "Register a new user")
-    public AuthResponse register(@Valid @RequestBody RegisterRequest request) {
-        return authService.register(request);
-    }
+  @PostMapping("/register")
+  @Operation(summary = "Register a new user")
+  public AuthResponse register(@Valid @RequestBody RegisterRequest request) {
+    return authService.register(request);
+  }
 
-    @PostMapping("/login")
-    @Operation(summary = "Login and issue tokens")
-    public AuthResponse login(@Valid @RequestBody LoginRequest request) {
-        return authService.login(request);
-    }
+  @PostMapping("/login")
+  @Operation(summary = "Login and issue tokens")
+  public AuthResponse login(@Valid @RequestBody LoginRequest request) {
+    return authService.login(request);
+  }
 
-    @PostMapping("/refresh")
-    @Operation(summary = "Refresh access token")
-    public AuthResponse refresh(@Valid @RequestBody RefreshRequest request) {
-        return authService.refresh(request);
-    }
+  @PostMapping("/refresh")
+  @Operation(summary = "Refresh access token")
+  public AuthResponse refresh(@Valid @RequestBody RefreshRequest request) {
+    return authService.refresh(request);
+  }
 
-    @PostMapping("/logout")
-    @Operation(summary = "Logout current session")
-    public void logout(
-            @AuthenticationPrincipal Jwt jwt,
-            @RequestBody(required = false) LogoutRequest request
-    ) {
-        String refreshToken = request != null ? request.getRefreshToken() : null;
-        authService.logout(jwt, refreshToken);
-    }
+  @PostMapping("/logout")
+  @Operation(summary = "Logout current session")
+  public void logout(
+      @AuthenticationPrincipal Jwt jwt, @RequestBody(required = false) LogoutRequest request) {
+    String refreshToken = request != null ? request.getRefreshToken() : null;
+    authService.logout(jwt, refreshToken);
+  }
 }

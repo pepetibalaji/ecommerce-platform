@@ -19,6 +19,7 @@ The detailed order, payment, and inventory saga is documented separately in
 | [Cart Service](cart-service.md) | 8085 | Customer-scoped temporary cart. | Redis | REST only |
 | [Order Service](order-service.md) | 8086 | Orders, inventory reservation, payment outcomes, compensation. | PostgreSQL `order_db` | REST, gRPC client, Kafka |
 | [Payment Service](payment-service.md) | 8087 REST, 9092 gRPC | Checkout, provider webhooks, payment attempts, refunds. | PostgreSQL `payment_db` | REST, gRPC server, Kafka |
+| [Notification Service](notification-service.md) | Configured externally | Durable transactional email intents and retrying provider delivery. | PostgreSQL `notification_db` | Kafka consumer, email provider |
 
 All business-service port, database, broker, JWT issuer, and gateway-route
 settings are loaded from the external configuration repository at runtime.
@@ -172,6 +173,7 @@ cart or Product Service prices during creation.
 | [Cart Service](cart-service.md) | Redis cart behavior and lifecycle. |
 | [Order Service](order-service.md) | Order lifecycle and the contract with inventory, Kafka, and payment. |
 | [Payment Service](payment-service.md) | Checkout, webhook processing, provider support, and refunds. |
+| [Notification Service](notification-service.md) | Events, delivery retries, required config, and failure runbook. |
 | [Saga design](../order-payment-inventory-saga-design.md) | The full payment outcome and inventory-compensation design. |
 
 ## Shared modules

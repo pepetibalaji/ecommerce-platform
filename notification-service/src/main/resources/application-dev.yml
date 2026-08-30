@@ -1,0 +1,6 @@
+# Local-only convenience: VS Code/IDE Java launchers do not automatically load
+# the sibling configuration repository's ignored .env file. Deployments supply
+# these values through their secret manager instead.
+spring:
+  config:
+    import: optional:file:${NOTIFICATION_LOCAL_ENV_FILE:../../ecommerce-config-repo/dev/.env}[.properties]

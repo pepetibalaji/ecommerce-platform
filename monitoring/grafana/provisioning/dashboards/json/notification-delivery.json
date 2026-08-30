@@ -1,0 +1,22 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Exhausted notification deliveries (24h)",
+      "targets": [{ "expr": "sum(increase(notification_delivery_exhausted_total{service=\"notification-service\"}[24h]))", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Notification consumer lag",
+      "targets": [{ "expr": "sum by (topic) (kafka_consumergroup_lag{consumergroup=\"notification-service\"})", "legendFormat": "{{topic}}", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["notifications"],
+  "title": "Notification Delivery",
+  "uid": "notification-delivery"
+}

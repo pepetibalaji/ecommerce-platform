@@ -80,3 +80,10 @@ scrape_configs:
           - targets: ["host.docker.internal:8087"]
             labels:
                 service: payment-service
+
+    - job_name: "notification-service"
+      metrics_path: /actuator/prometheus
+      static_configs:
+          - targets: ["host.docker.internal:8088"]
+            labels:
+                service: notification-service

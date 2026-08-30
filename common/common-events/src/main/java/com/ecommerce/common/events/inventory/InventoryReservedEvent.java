@@ -7,69 +7,58 @@ import java.util.UUID;
 
 public class InventoryReservedEvent extends AbstractDomainEvent {
 
-    private UUID reservationId;
-    private UUID orderId;
-    private UUID productId;
-    private int quantity;
+  private UUID reservationId;
+  private UUID orderId;
+  private UUID productId;
+  private int quantity;
 
-    public InventoryReservedEvent() {
-        super(
-                EventTypes.INVENTORY_RESERVED,
-                EventSources.INVENTORY_SERVICE,
-                null,
-                null
-        );
-    }
+  public InventoryReservedEvent() {
+    super(EventTypes.INVENTORY_RESERVED, EventSources.INVENTORY_SERVICE, null, null);
+  }
 
-    public InventoryReservedEvent(
-            UUID reservationId,
-            UUID orderId,
-            UUID productId,
-            int quantity,
-            String correlationId,
-            String traceId
-    ) {
-        super(
-                EventTypes.INVENTORY_RESERVED,
-                EventSources.INVENTORY_SERVICE,
-                correlationId,
-                traceId
-        );
-        this.reservationId = reservationId;
-        this.orderId = orderId;
-        this.productId = productId;
-        this.quantity = quantity;
-    }
+  public InventoryReservedEvent(
+      UUID reservationId,
+      UUID orderId,
+      UUID productId,
+      int quantity,
+      String correlationId,
+      String traceId) {
+    super(EventTypes.INVENTORY_RESERVED, EventSources.INVENTORY_SERVICE, correlationId, traceId);
+    this.reservationId = reservationId;
+    this.orderId = orderId;
+    this.productId = productId;
+    this.quantity = quantity;
+  }
 
-    public UUID getReservationId() {
-        return reservationId;
-    }
+  public UUID getReservationId() {
+    return reservationId;
+  }
 
-    public void setReservationId(UUID reservationId) {
-        this.reservationId = reservationId;
-    }
+  public void setReservationId(UUID reservationId) {
+    this.reservationId = reservationId;
+  }
 
-    public UUID getOrderId() {
-        return orderId;
-    }
+  public UUID getOrderId() {
+    return orderId;
+  }
 
-    public void setOrderId(UUID orderId) {
-        this.orderId = orderId;
-    }
+  public void setOrderId(UUID orderId) {
+    this.orderId = orderId;
+  }
 
-    public UUID getProductId() {
-        return productId;
-    }
+  public UUID getProductId() {
+    return productId;
+  }
 
-    public void setProductId(UUID productId) {
-        this.productId = productId;
-    }
+  public void setProductId(UUID productId) {
+    this.productId = productId;
+  }
 
-    public int getQuantity() {
-        return quantity;
-    }
+  public int getQuantity() {
+    return quantity;
+  }
 
-    public void setQuantity(int quantity) {
-        this.quantity = quantity;
-    }
+  public void setQuantity(int quantity) {
+    this.quantity = quantity;
+  }
 }

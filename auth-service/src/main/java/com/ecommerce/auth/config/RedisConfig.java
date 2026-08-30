@@ -1,7 +1,6 @@
 package com.ecommerce.auth.config;
 
 import java.nio.charset.StandardCharsets;
-
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -11,19 +10,19 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 @Configuration
 public class RedisConfig {
 
-    @Bean
-    public RedisTemplate<String, String> redisTemplate(RedisConnectionFactory connectionFactory) {
-        RedisTemplate<String, String> template = new RedisTemplate<>();
-        template.setConnectionFactory(connectionFactory);
+  @Bean
+  public RedisTemplate<String, String> redisTemplate(RedisConnectionFactory connectionFactory) {
+    RedisTemplate<String, String> template = new RedisTemplate<>();
+    template.setConnectionFactory(connectionFactory);
 
-        StringRedisSerializer serializer = new StringRedisSerializer(StandardCharsets.UTF_8);
+    StringRedisSerializer serializer = new StringRedisSerializer(StandardCharsets.UTF_8);
 
-        template.setKeySerializer(serializer);
-        template.setValueSerializer(serializer);
-        template.setHashKeySerializer(serializer);
-        template.setHashValueSerializer(serializer);
+    template.setKeySerializer(serializer);
+    template.setValueSerializer(serializer);
+    template.setHashKeySerializer(serializer);
+    template.setHashValueSerializer(serializer);
 
-        template.afterPropertiesSet();
-        return template;
-    }
+    template.afterPropertiesSet();
+    return template;
+  }
 }

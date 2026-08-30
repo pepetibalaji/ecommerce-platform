@@ -7,11 +7,10 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.*;
-
 import java.util.UUID;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/users")
@@ -19,34 +18,32 @@ import java.util.UUID;
 @SecurityRequirement(name = "bearerAuth")
 public class UserController {
 
-    private final UserService userService;
+  private final UserService userService;
 
-    public UserController(UserService userService) {
-        this.userService = userService;
-    }
+  public UserController(UserService userService) {
+    this.userService = userService;
+  }
 
-    @GetMapping("/me")
-    @Operation(summary = "Get my profile")
-    public UserProfileResponse getMe(@AuthenticationPrincipal Jwt jwt) {
-        return userService.getMe(currentUserId(jwt));
-    }
+  @GetMapping("/me")
+  @Operation(summary = "Get my profile")
+  public UserProfileResponse getMe(@AuthenticationPrincipal Jwt jwt) {
+    return userService.getMe(currentUserId(jwt));
+  }
 
-    @PutMapping("/me")
-    @Operation(summary = "Update my profile")
-    public UserProfileResponse updateMe(
-            @AuthenticationPrincipal Jwt jwt,
-            @Valid @RequestBody UpdateMeRequest request
-    ) {
-        return userService.updateMe(currentUserId(jwt), request);
-    }
+  @PutMapping("/me")
+  @Operation(summary = "Update my profile")
+  public UserProfileResponse updateMe(
+      @AuthenticationPrincipal Jwt jwt, @Valid @RequestBody UpdateMeRequest request) {
+    return userService.updateMe(currentUserId(jwt), request);
+  }
 
-    @DeleteMapping("/me")
-    @Operation(summary = "Delete my profile")
-    public void deleteMe(@AuthenticationPrincipal Jwt jwt) {
-        userService.deleteMe(currentUserId(jwt));
-    }
+  @DeleteMapping("/me")
+  @Operation(summary = "Delete my profile")
+  public void deleteMe(@AuthenticationPrincipal Jwt jwt) {
+    userService.deleteMe(currentUserId(jwt));
+  }
 
-    private UUID currentUserId(Jwt jwt) {
-        return UUID.fromString(jwt.getClaimAsString("userId"));
-    }
+  private UUID currentUserId(Jwt jwt) {
+    return UUID.fromString(jwt.getClaimAsString("userId"));
+  }
 }

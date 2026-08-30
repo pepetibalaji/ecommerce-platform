@@ -7,58 +7,43 @@ import java.util.UUID;
 
 public class OrderCancelledEvent extends AbstractDomainEvent {
 
-    private UUID orderId;
-    private UUID userId;
-    private String reason;
+  private UUID orderId;
+  private UUID userId;
+  private String reason;
 
-    public OrderCancelledEvent() {
-        super(
-                EventTypes.ORDER_CANCELLED,
-                EventSources.ORDER_SERVICE,
-                null,
-                null
-        );
-    }
+  public OrderCancelledEvent() {
+    super(EventTypes.ORDER_CANCELLED, EventSources.ORDER_SERVICE, null, null);
+  }
 
-    public OrderCancelledEvent(
-            UUID orderId,
-            UUID userId,
-            String reason,
-            String correlationId,
-            String traceId
-    ) {
-        super(
-                EventTypes.ORDER_CANCELLED,
-                EventSources.ORDER_SERVICE,
-                correlationId,
-                traceId
-        );
-        this.orderId = orderId;
-        this.userId = userId;
-        this.reason = reason;
-    }
+  public OrderCancelledEvent(
+      UUID orderId, UUID userId, String reason, String correlationId, String traceId) {
+    super(EventTypes.ORDER_CANCELLED, EventSources.ORDER_SERVICE, correlationId, traceId);
+    this.orderId = orderId;
+    this.userId = userId;
+    this.reason = reason;
+  }
 
-    public UUID getOrderId() {
-        return orderId;
-    }
+  public UUID getOrderId() {
+    return orderId;
+  }
 
-    public void setOrderId(UUID orderId) {
-        this.orderId = orderId;
-    }
+  public void setOrderId(UUID orderId) {
+    this.orderId = orderId;
+  }
 
-    public UUID getUserId() {
-        return userId;
-    }
+  public UUID getUserId() {
+    return userId;
+  }
 
-    public void setUserId(UUID userId) {
-        this.userId = userId;
-    }
+  public void setUserId(UUID userId) {
+    this.userId = userId;
+  }
 
-    public String getReason() {
-        return reason;
-    }
+  public String getReason() {
+    return reason;
+  }
 
-    public void setReason(String reason) {
-        this.reason = reason;
-    }
+  public void setReason(String reason) {
+    this.reason = reason;
+  }
 }

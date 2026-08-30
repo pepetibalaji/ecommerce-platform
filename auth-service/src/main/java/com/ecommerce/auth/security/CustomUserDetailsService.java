@@ -12,21 +12,22 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class CustomUserDetailsService implements UserDetailsService {
 
-    private final UserRepository userRepository;
+  private final UserRepository userRepository;
 
-    @Override
-    public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + email));
+  @Override
+  public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
+    User user =
+        userRepository
+            .findByEmail(email)
+            .orElseThrow(() -> new UsernameNotFoundException("User not found: " + email));
 
-        return org.springframework.security.core.userdetails.User
-                .withUsername(user.getEmail())
-                .password(user.getPassword())
-                .authorities("ROLE_" + user.getRole().name())
-                .accountExpired(false)
-                .accountLocked(user.getStatus() != com.ecommerce.auth.entity.enums.UserStatus.ACTIVE)
-                .credentialsExpired(false)
-                .disabled(user.getStatus() != com.ecommerce.auth.entity.enums.UserStatus.ACTIVE)
-                .build();
-    }
+    return org.springframework.security.core.userdetails.User.withUsername(user.getEmail())
+        .password(user.getPassword())
+        .authorities("ROLE_" + user.getRole().name())
+        .accountExpired(false)
+        .accountLocked(user.getStatus() != com.ecommerce.auth.entity.enums.UserStatus.ACTIVE)
+        .credentialsExpired(false)
+        .disabled(user.getStatus() != com.ecommerce.auth.entity.enums.UserStatus.ACTIVE)
+        .build();
+  }
 }
