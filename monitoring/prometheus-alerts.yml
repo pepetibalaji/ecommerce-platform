@@ -12,9 +12,9 @@ groups:
 
       - alert: HighHttpServerErrorRate
         expr: |
-          sum by (job) (rate(http_server_requests_seconds_count{job=~"gateway-service|auth-service|product-service|inventory-service|cart-service|order-service|payment-service",status=~"5.."}[5m]))
+          sum by (job) (rate(http_server_requests_seconds_count{job=~"gateway-service|auth-service|product-service|inventory-service|cart-service|order-service|payment-service|notification-service",status=~"5.."}[5m]))
           /
-          sum by (job) (rate(http_server_requests_seconds_count{job=~"gateway-service|auth-service|product-service|inventory-service|cart-service|order-service|payment-service"}[5m])) > 0.05
+          sum by (job) (rate(http_server_requests_seconds_count{job=~"gateway-service|auth-service|product-service|inventory-service|cart-service|order-service|payment-service|notification-service"}[5m])) > 0.05
         for: 5m
         labels:
           severity: warning
@@ -24,7 +24,7 @@ groups:
 
       - alert: HighHttpP95Latency
         expr: |
-          histogram_quantile(0.95, sum by (le, job) (rate(http_server_requests_seconds_bucket{job=~"gateway-service|auth-service|product-service|inventory-service|cart-service|order-service|payment-service"}[5m]))) > 1
+          histogram_quantile(0.95, sum by (le, job) (rate(http_server_requests_seconds_bucket{job=~"gateway-service|auth-service|product-service|inventory-service|cart-service|order-service|payment-service|notification-service"}[5m]))) > 1
         for: 10m
         labels:
           severity: warning
@@ -88,7 +88,7 @@ groups:
           description: "Notification Service has permanently failed at least one delivery in the last five minutes. Inspect failed notifications and provider health."
 
       - alert: NotificationConsumerLag
-        expr: sum(kafka_consumergroup_lag{consumergroup="notification-service",topic=~"order-created|payment-success|payment-failed|order-cancelled|payment-refund-completed|order-shipped|order-delivered|low-inventory|seller-order-paid"}) > 100
+        expr: sum(kafka_consumergroup_lag{consumergroup="notification-service",topic=~"order-created|payment-success|payment-failed|order-cancelled|payment-refund-completed|order-shipped|order-delivered|low-inventory|seller-order-paid|user-contact-updated"}) > 100
         for: 10m
         labels:
           severity: warning

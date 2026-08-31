@@ -16,6 +16,7 @@ on:
             - "cart-service/**"
             - "order-service/**"
             - "payment-service/**"
+            - "notification-service/**"
             - "docker-compose.yml"
             - "scripts/create-kafka-topics.sh"
             - "monitoring/**"
@@ -36,6 +37,7 @@ on:
             - "cart-service/**"
             - "order-service/**"
             - "payment-service/**"
+            - "notification-service/**"
             - "docker-compose.yml"
             - "scripts/create-kafka-topics.sh"
             - "monitoring/**"
@@ -54,7 +56,7 @@ jobs:
         runs-on: ubuntu-latest
 
         env:
-            MAVEN_MODULES: config-server,gateway-service,auth-service,product-service,inventory-service,cart-service,order-service,payment-service
+            MAVEN_MODULES: config-server,gateway-service,auth-service,product-service,inventory-service,cart-service,order-service,payment-service,notification-service
             KAFKA_IMAGE: apache/kafka:4.3.0
 
         services:
@@ -159,6 +161,13 @@ jobs:
                   SPRING_DATASOURCE_USERNAME: postgres
                   SPRING_DATASOURCE_PASSWORD: postgres
 
+                  NOTIFICATION_DB_URL: jdbc:postgresql://localhost:5432/ecommerce
+                  NOTIFICATION_DB_USERNAME: postgres
+                  NOTIFICATION_DB_PASSWORD: postgres
+                  MAILTRAP_SMTP_HOST: localhost
+                  MAILTRAP_SMTP_USERNAME: test
+                  MAILTRAP_SMTP_PASSWORD: test
+
                   SPRING_DATA_MONGODB_URI: mongodb://localhost:27017/product_db
                   SPRING_DATA_MONGODB_DATABASE: product_db
 
@@ -180,7 +189,7 @@ jobs:
         needs: build
 
         env:
-            MAVEN_MODULES: config-server,gateway-service,auth-service,product-service,inventory-service,cart-service,order-service,payment-service
+            MAVEN_MODULES: config-server,gateway-service,auth-service,product-service,inventory-service,cart-service,order-service,payment-service,notification-service
 
         steps:
             - name: Checkout Repository
@@ -219,3 +228,6 @@ jobs:
 
             - name: Build Payment Image
               run: docker build -t payment-service ./payment-service
+
+            - name: Build Notification Image
+              run: docker build -t notification-service ./notification-service

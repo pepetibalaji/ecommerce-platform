@@ -30,6 +30,7 @@ prometheus.scrape "spring_boot" {
     { "__address__" = "host.docker.internal:8085", "service" = "cart-service" },
     { "__address__" = "host.docker.internal:8086", "service" = "order-service" },
     { "__address__" = "host.docker.internal:8087", "service" = "payment-service" },
+    { "__address__" = "host.docker.internal:8088", "service" = "notification-service" },
   ]
 
   metrics_path    = "/actuator/prometheus"
@@ -47,6 +48,7 @@ local.file_match "application_logs" {
     { "__path__" = "/var/log/ecommerce/cart-service.json", "service" = "cart-service" },
     { "__path__" = "/var/log/ecommerce/order-service.json", "service" = "order-service" },
     { "__path__" = "/var/log/ecommerce/payment-service.json", "service" = "payment-service" },
+    { "__path__" = "/var/log/ecommerce/notification-service.json", "service" = "notification-service" },
   ]
 }
 
