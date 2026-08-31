@@ -20,6 +20,7 @@
 # - Admin status update
 # - Reserve/release stock through Inventory gRPC
 # - Publish order-created event to Kafka
+# - Derive each item price from Product Service (never send a client price)
 # =========================================================
 
 @orderBaseUrl = http://localhost:8086
@@ -48,8 +49,7 @@ Content-Type: application/json
   "items": [
     {
       "productId": "{{productId}}",
-      "quantity": 2,
-      "price": 100.00
+      "quantity": 2
     }
   ]
 }
@@ -63,13 +63,11 @@ Content-Type: application/json
   "items": [
     {
       "productId": "{{productId}}",
-      "quantity": 1,
-      "price": 100.00
+      "quantity": 1
     },
     {
       "productId": "{{productId}}",
-      "quantity": 2,
-      "price": 150.00
+      "quantity": 2
     }
   ]
 }
@@ -148,8 +146,7 @@ Content-Type: application/json
   "items": [
     {
       "productId": "{{productId}}",
-      "quantity": 1,
-      "price": 100.00
+      "quantity": 1
     }
   ]
 }
@@ -157,6 +154,10 @@ Content-Type: application/json
 ### Admin get orders with customer token - expected 403
 GET {{orderBaseUrl}}/api/v1/admin/orders?page=0&size=10
 Authorization: Bearer {{accessToken}}
+
+### Seller get only orders containing the seller's products
+GET {{orderBaseUrl}}/api/v1/seller/orders?page=0&size=10
+Authorization: Bearer {{sellerAccessToken}}
 
 # =========================================================
 # SWAGGER / ACTUATOR

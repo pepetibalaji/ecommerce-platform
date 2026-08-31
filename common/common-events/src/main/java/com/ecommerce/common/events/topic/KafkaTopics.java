@@ -21,11 +21,13 @@ public final class KafkaTopics {
   public static final String SELLER_ORDER_PAID = "seller-order-paid";
   public static final String USER_CONTACT_UPDATED = "user-contact-updated";
   public static final String NOTIFICATION_REQUESTED = "notification-requested";
+  public static final String PRODUCT_CREATED = "product-created";
 
   public static final String ORDER_DLQ = "order-dlq";
   public static final String INVENTORY_DLQ = "inventory-dlq";
   public static final String PAYMENT_DLQ = "payment-dlq";
   public static final String NOTIFICATION_DLQ = "notification-dlq";
+  public static final String PRODUCT_CREATED_DLQ = "product-created-dlt";
 
   public static List<String> businessTopics() {
     return List.of(
@@ -43,10 +45,11 @@ public final class KafkaTopics {
         LOW_INVENTORY,
         SELLER_ORDER_PAID,
         USER_CONTACT_UPDATED,
-        NOTIFICATION_REQUESTED);
+        NOTIFICATION_REQUESTED,
+        PRODUCT_CREATED);
   }
 
   public static List<String> deadLetterTopics() {
-    return List.of(ORDER_DLQ, INVENTORY_DLQ, PAYMENT_DLQ, NOTIFICATION_DLQ);
+    return List.of(ORDER_DLQ, INVENTORY_DLQ, PAYMENT_DLQ, NOTIFICATION_DLQ, PRODUCT_CREATED_DLQ);
   }
 }

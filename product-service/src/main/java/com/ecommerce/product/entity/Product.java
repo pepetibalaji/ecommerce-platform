@@ -32,6 +32,14 @@ public class Product {
     @Indexed(name = "seller_id_idx")
     private UUID sellerId;
 
+    @Builder.Default
+    private Boolean active = true;
+
+    /** Catalog rows created before the active flag was introduced remain purchasable by default. */
+    public boolean isActive() {
+        return !Boolean.FALSE.equals(active);
+    }
+
     private String name;
 
     private String description;

@@ -272,7 +272,6 @@ class OrderControllerTest {
 
         item.setProductId(PRODUCT_ID);
         item.setQuantity(2);
-        item.setPrice(new BigDecimal("100.00"));
 
         CreateOrderRequest request =
                 new CreateOrderRequest();

@@ -35,6 +35,9 @@ public class UpdateProductRequest {
     
     private String brand;
 
+    /** Sellers may temporarily make their own catalog item unavailable for purchase. */
+    private Boolean active;
+
     @Size(max = 10, message = "A product can have at most 10 image URLs")
     private List<@URL(protocol = "https", message = "Image URLs must be valid HTTPS URLs")
                  @Size(max = 2048, message = "Image URL must not exceed 2048 characters") String> imageUrls;

@@ -23,6 +23,8 @@ low-inventory:3
 seller-order-paid:3
 user-contact-updated:3
 notification-dlq:3
+product-created:3
+product-created-dlt:3
 order-dlq:3
 "
 

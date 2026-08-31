@@ -20,6 +20,8 @@
 
 # Replace after Auth login with ADMIN token
 @adminAccessToken = paste_admin_access_token_here
+@sellerAccessToken = paste_seller_access_token_here
+@sellerId = paste_seller_user_id_here
 
 # Replace after creating/fetching product
 @productId = paste_product_id_here
@@ -49,7 +51,7 @@ GET {{productBaseUrl}}/api/v1/products?category=Mobile&minPrice=100&maxPrice=100
 # =========================================================
 
 ### Create product
-POST {{productBaseUrl}}/api/v1/admin/products
+POST {{productBaseUrl}}/api/v1/admin/products?sellerId={{sellerId}}
 Authorization: Bearer {{adminAccessToken}}
 Content-Type: application/json
 
@@ -65,7 +67,7 @@ Content-Type: application/json
 }
 
 ### Create products in bulk
-POST {{productBaseUrl}}/api/v1/admin/products/bulk
+POST {{productBaseUrl}}/api/v1/admin/products/bulk?sellerId={{sellerId}}
 Authorization: Bearer {{adminAccessToken}}
 Content-Type: application/json
 
@@ -105,6 +107,21 @@ Content-Type: application/json
 ### Delete product
 DELETE {{productBaseUrl}}/api/v1/admin/products/{{productId}}
 Authorization: Bearer {{adminAccessToken}}
+
+# =========================================================
+# SELLER PRODUCT APIs (seller ownership is derived from JWT userId)
+# =========================================================
+
+### Seller create a product
+POST {{productBaseUrl}}/api/v1/seller/products
+Authorization: Bearer {{sellerAccessToken}}
+Content-Type: application/json
+
+{"name":"Seller product","price":99.00,"category":"Test","imageUrls":[]}
+
+### Seller list only owned products
+GET {{productBaseUrl}}/api/v1/seller/products?page=0&size=10
+Authorization: Bearer {{sellerAccessToken}}
 
 # =========================================================
 # SECURITY CHECKS

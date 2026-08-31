@@ -23,6 +23,9 @@ public class Inventory {
     @Column(name = "product_id", nullable = false, unique = true)
     private UUID productId;
 
+    @Column(name = "seller_id")
+    private UUID sellerId;
+
     @Column(name = "available_stock", nullable = false)
     private Integer availableStock;
 

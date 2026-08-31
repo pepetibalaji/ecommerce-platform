@@ -21,6 +21,8 @@ public class ProductResponse {
 
     private UUID sellerId;
 
+    private boolean active;
+
     private String name;
 
     private String description;

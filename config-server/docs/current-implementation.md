@@ -1,0 +1,3 @@
+# Current Implementation
+
+Config Server is a Spring Cloud Config Server application. Other services use `spring.config.import=optional:configserver:${CONFIG_SERVER_URL}` and can boot locally when it is unavailable. It owns no domain API, database schema, Kafka topic, or business event. Its responsibility is serving external configuration by application/profile/label through Spring Cloud Config’s standard endpoints. Production operation requires a secured configuration backend, authenticated access, separation of secrets from source-controlled configuration, availability monitoring, and a tested recovery path because all services depend on its configuration at startup.
