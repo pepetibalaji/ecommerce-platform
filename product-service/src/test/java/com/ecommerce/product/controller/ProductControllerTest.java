@@ -57,7 +57,8 @@ class ProductControllerTest {
                 .imageUrls(List.of("https://cdn.example.com/products/iphone-15.jpg"))
                 .build();
 
-        when(productService.createProduct(any(CreateProductRequest.class)))
+        UUID sellerId = UUID.randomUUID();
+        when(productService.createProduct(any(CreateProductRequest.class), org.mockito.ArgumentMatchers.eq(sellerId)))
                 .thenReturn(response);
 
         CreateProductRequest request = new CreateProductRequest(
@@ -70,6 +71,7 @@ class ProductControllerTest {
         );
 
         mockMvc.perform(post("/api/v1/admin/products")
+                        .param("sellerId", sellerId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -83,6 +85,7 @@ class ProductControllerTest {
                 """;
 
         mockMvc.perform(post("/api/v1/admin/products")
+                        .param("sellerId", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
                 .andExpect(status().isBadRequest());
@@ -101,6 +104,7 @@ class ProductControllerTest {
                 """;
 
         mockMvc.perform(post("/api/v1/admin/products")
+                        .param("sellerId", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
                 .andExpect(status().isBadRequest());
