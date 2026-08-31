@@ -31,6 +31,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import java.util.UUID;
+import com.ecommerce.product.kafka.ProductEventPublisher;
 
 @Service
 @RequiredArgsConstructor
@@ -39,6 +40,7 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final ProductMapper productMapper;
+    private final ProductEventPublisher productEventPublisher;
 
     public ProductResponse createProduct(
             CreateProductRequest request
@@ -63,6 +65,7 @@ public class ProductService {
                             .build();
 
             Product savedProduct = productRepository.save(product);
+            productEventPublisher.publishProductCreated(savedProduct);
             return productMapper.toResponse(savedProduct);
     }
 
@@ -79,18 +82,20 @@ public class ProductService {
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
-        return productMapper.toResponse(productRepository.save(product));
+        Product saved = productRepository.save(product);
+        productEventPublisher.publishProductCreated(saved);
+        return productMapper.toResponse(saved);
     }
     
-        public List<ProductResponse> createProducts(
-                List<CreateProductRequest> requests
-        ) {
+    public List<ProductResponse> createProducts(List<CreateProductRequest> requests, UUID sellerId) {
 
         List<Product> products = requests.stream()
 
                 .map(request -> Product.builder()
 
                         .id(UUID.randomUUID())
+
+                        .sellerId(sellerId)
 
                         .name(request.getName())
 
@@ -114,6 +119,8 @@ public class ProductService {
 
         List<Product> savedProducts =
                 productRepository.saveAll(products);
+
+        savedProducts.forEach(productEventPublisher::publishProductCreated);
 
         return savedProducts.stream()
 
@@ -209,6 +216,9 @@ public class ProductService {
         product.setPrice(request.getPrice());
         product.setCategory(request.getCategory());
         product.setBrand(request.getBrand());
+        if (request.getActive() != null) {
+            product.setActive(request.getActive());
+        }
         product.setImageUrls(imageUrlsOrEmpty(request.getImageUrls()));
         product.setUpdatedAt(LocalDateTime.now());
         Product updatedProduct =
@@ -240,6 +250,9 @@ public class ProductService {
         product.setPrice(request.getPrice());
         product.setCategory(request.getCategory());
         product.setBrand(request.getBrand());
+        if (request.getActive() != null) {
+            product.setActive(request.getActive());
+        }
         product.setImageUrls(imageUrlsOrEmpty(request.getImageUrls()));
         product.setUpdatedAt(LocalDateTime.now());
         return productMapper.toResponse(productRepository.save(product));

@@ -5,6 +5,7 @@ on:
         branches:
             - develop
             - "feature/**"
+            - "feat/**"
         paths:
             - "pom.xml"
             - "common/**"
@@ -20,6 +21,7 @@ on:
             - "docker-compose.yml"
             - "scripts/create-kafka-topics.sh"
             - "monitoring/**"
+            - "docs/**"
             - ".github/workflows/ci.yml"
 
     pull_request:
@@ -41,6 +43,7 @@ on:
             - "docker-compose.yml"
             - "scripts/create-kafka-topics.sh"
             - "monitoring/**"
+            - "docs/**"
             - ".github/workflows/ci.yml"
 
 permissions:

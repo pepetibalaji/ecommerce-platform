@@ -18,6 +18,7 @@ public final class EventTypes {
   public static final String SHIPMENT_CREATED = "SHIPMENT_CREATED";
 
   public static final String NOTIFICATION_REQUESTED = "NOTIFICATION_REQUESTED";
+  public static final String PRODUCT_CREATED = "PRODUCT_CREATED";
 
   public static final String DEAD_LETTER = "DEAD_LETTER";
 }

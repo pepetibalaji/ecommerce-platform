@@ -186,12 +186,23 @@ public class InventoryService {
         Inventory inventory = Inventory.builder()
                 .id(UUID.randomUUID())
                 .productId(request.getProductId())
+                .sellerId(null)
                 .availableStock(request.getAvailableStock())
                 .reservedStock(0)
                 .updatedAt(LocalDateTime.now())
                 .build();
 
         return inventoryMapper.toResponse(inventoryRepository.save(inventory));
+    }
+
+    /** At-least-once product-created events are idempotent by the unique product_id key. */
+    @Transactional
+    public InventoryResponse createInitialInventory(UUID productId, UUID sellerId) {
+        return inventoryRepository.findByProductId(productId)
+                .map(inventoryMapper::toResponse)
+                .orElseGet(() -> inventoryMapper.toResponse(inventoryRepository.save(Inventory.builder()
+                        .id(UUID.randomUUID()).productId(productId).sellerId(sellerId)
+                        .availableStock(0).reservedStock(0).updatedAt(LocalDateTime.now()).build())));
     }
 
     @Transactional

@@ -19,6 +19,7 @@
 
 # Replace after Auth login with ADMIN token
 @adminAccessToken = paste_admin_access_token_here
+@sellerAccessToken = paste_seller_access_token_here
 
 # Use an existing product ID from Product Service
 @productId = paste_product_id_here
@@ -97,3 +98,14 @@ GET {{inventoryBaseUrl}}/actuator/prometheus
 # Current REST APIs are admin-oriented.
 # Runtime order creation validates stock through gRPC.
 # =========================================================
+
+### Seller get inventory for an owned product
+GET {{inventoryBaseUrl}}/api/v1/seller/inventory/{{productId}}
+Authorization: Bearer {{sellerAccessToken}}
+
+### Seller update inventory for an owned product
+PUT {{inventoryBaseUrl}}/api/v1/seller/inventory/{{productId}}
+Authorization: Bearer {{sellerAccessToken}}
+Content-Type: application/json
+
+{"availableStock": 200}

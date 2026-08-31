@@ -94,18 +94,21 @@ public class OrderServiceImpl implements OrderService {
             BigDecimal totalAmount = BigDecimal.ZERO;
 
             for (CreateOrderItemRequest itemRequest : request.getItems()) {
+                ProductSellerClient.OrderableProduct catalogProduct = productSellerClient
+                        .getOrderableProduct(itemRequest.getProductId());
                 OrderItem item = new OrderItem();
                 item.setOrder(order);
                 item.setProductId(itemRequest.getProductId());
-                item.setSellerId(productSellerClient.getSellerId(itemRequest.getProductId()));
+                item.setSellerId(catalogProduct.sellerId());
+                item.setProductName(catalogProduct.name());
                 item.setInventoryReservationId(UUID.randomUUID());
                 item.setQuantity(itemRequest.getQuantity());
-                item.setPrice(itemRequest.getPrice());
+                item.setPrice(catalogProduct.price());
 
                 order.getItems().add(item);
 
                 totalAmount = totalAmount.add(
-                        itemRequest.getPrice()
+                        catalogProduct.price()
                                 .multiply(BigDecimal.valueOf(itemRequest.getQuantity()))
                 );
             }
@@ -335,9 +338,6 @@ public class OrderServiceImpl implements OrderService {
                 throw new BadRequestException("Quantity must be greater than zero");
             }
 
-            if (item.getPrice() == null || item.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
-                throw new BadRequestException("Price must be greater than zero");
-            }
         }
     }
 

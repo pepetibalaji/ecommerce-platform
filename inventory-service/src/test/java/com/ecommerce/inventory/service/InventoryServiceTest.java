@@ -7,6 +7,7 @@ import com.ecommerce.inventory.entity.InventoryReservationStatus;
 import com.ecommerce.inventory.mapper.InventoryMapper;
 import com.ecommerce.inventory.repository.InventoryRepository;
 import com.ecommerce.inventory.repository.InventoryReservationRepository;
+import com.ecommerce.common.exception.ResourceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,6 +26,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
 
 @ExtendWith(MockitoExtension.class)
 class InventoryServiceTest {
@@ -37,6 +39,9 @@ class InventoryServiceTest {
 
     @Mock
     private InventoryMapper inventoryMapper;
+
+    @Mock
+    private ProductOwnershipVerifier productOwnershipVerifier;
 
     @InjectMocks
     private InventoryService inventoryService;
@@ -66,6 +71,30 @@ class InventoryServiceTest {
         InventoryResponse result = inventoryService.getInventory(productId);
 
         assertEquals(productId, result.getProductId());
+    }
+
+    @Test
+    void createInitialInventory_shouldBeIdempotentForDuplicateProductCreatedEvents() {
+        UUID sellerId = UUID.randomUUID();
+        InventoryResponse response = response(0, 0);
+        when(inventoryRepository.findByProductId(productId)).thenReturn(Optional.of(inventory));
+        when(inventoryMapper.toResponse(inventory)).thenReturn(response);
+
+        InventoryResponse result = inventoryService.createInitialInventory(productId, sellerId);
+
+        assertEquals(productId, result.getProductId());
+        verify(inventoryRepository, never()).save(any(Inventory.class));
+    }
+
+    @Test
+    void sellerCannotReadAnotherSellersInventory() {
+        UUID sellerId = UUID.randomUUID();
+        doThrow(new ResourceNotFoundException("Product not found"))
+                .when(productOwnershipVerifier).assertOwnedBy(productId, sellerId);
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> inventoryService.getSellerInventory(productId, sellerId, false));
+        verify(inventoryRepository, never()).findByProductId(productId);
     }
 
     @Test

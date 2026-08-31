@@ -2,9 +2,11 @@ package com.ecommerce.product.service;
 
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.product.dto.CreateProductRequest;
+import com.ecommerce.product.dto.UpdateProductRequest;
 import com.ecommerce.product.dto.ProductResponse;
 import com.ecommerce.product.entity.Product;
 import com.ecommerce.product.mapper.ProductMapper;
+import com.ecommerce.product.kafka.ProductEventPublisher;
 import com.ecommerce.product.repository.ProductRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,6 +37,9 @@ class ProductServiceTest {
 
     @Mock
     private ProductMapper productMapper;
+
+    @Mock
+    private ProductEventPublisher productEventPublisher;
 
     @InjectMocks
     private ProductService productService;
@@ -98,6 +103,17 @@ class ProductServiceTest {
 
         assertNotNull(result);
         assertEquals(product.getId(), result.getId());
+    }
+
+    @Test
+    void sellerCannotUpdateAnotherSellersProduct() {
+        product.setSellerId(UUID.randomUUID());
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        UpdateProductRequest request = UpdateProductRequest.builder()
+                .name("Changed").price(BigDecimal.TEN).build();
+
+        assertThrows(ResourceNotFoundException.class, () -> productService.updateSellerProduct(
+                product.getId(), request, UUID.randomUUID(), false));
     }
 
     @Test

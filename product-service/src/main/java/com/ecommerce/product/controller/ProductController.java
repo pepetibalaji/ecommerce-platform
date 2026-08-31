@@ -29,20 +29,19 @@ public class ProductController {
     @ResponseStatus(HttpStatus.CREATED)
     public ProductResponse createProduct(
             @Valid @RequestBody CreateProductRequest request,
-            @RequestParam(required = false) UUID sellerId
+            @RequestParam UUID sellerId
     ) {
-        return sellerId == null
-                ? productService.createProduct(request)
-                : productService.createProduct(request, sellerId);
+        return productService.createProduct(request, sellerId);
     }
 
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/admin/products/bulk")
     @ResponseStatus(HttpStatus.CREATED)
     public List<ProductResponse> createProducts(
-            @Valid @RequestBody List<CreateProductRequest> requests
+            @Valid @RequestBody List<CreateProductRequest> requests,
+            @RequestParam UUID sellerId
     ) {
-        return productService.createProducts(requests);
+        return productService.createProducts(requests, sellerId);
     }
 
     @GetMapping("/products/{productId}")

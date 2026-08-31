@@ -95,7 +95,8 @@ class OrderServiceTest {
         ReflectionTestUtils.setField(orderService, "defaultCurrency", "INR");
         // Only order-creation tests invoke the catalog client; keep the shared fixture strict
         // for every other collaborator while avoiding unrelated-test stubbing failures.
-        lenient().when(productSellerClient.getSellerId(productId)).thenReturn(UUID.randomUUID());
+        lenient().when(productSellerClient.getOrderableProduct(productId))
+                .thenReturn(new ProductSellerClient.OrderableProduct(productId, UUID.randomUUID(), "Catalog product", new BigDecimal("100.00")));
     }
 
     @Test
@@ -212,6 +213,32 @@ class OrderServiceTest {
 
         assertThat(event.getItems())
                 .hasSize(1);
+    }
+
+    @Test
+    void createOrder_shouldUseCatalogPriceInsteadOfAnyClientValue() {
+        CreateOrderRequest request = createOrderRequest(2, new BigDecimal("1.00"), "INR");
+        BigDecimal catalogPrice = new BigDecimal("499.50");
+        UUID sellerId = UUID.randomUUID();
+        when(productSellerClient.getOrderableProduct(productId))
+                .thenReturn(new ProductSellerClient.OrderableProduct(productId, sellerId, "Authoritative catalog name", catalogPrice));
+        when(inventoryGrpcClient.getInventory(productId)).thenReturn(InventoryDetails.newBuilder()
+                .setProductId(productId.toString()).setAvailableStock(10).build());
+        doNothing().when(inventoryGrpcClient).reserveStock(eq(productId), eq(2), any(UUID.class));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
+            Order saved = invocation.getArgument(0);
+            saved.setId(UUID.randomUUID());
+            return saved;
+        });
+
+        OrderResponse response = orderService.createOrder(userId, request);
+
+        assertThat(response.getTotalAmount()).isEqualByComparingTo("999.00");
+        assertThat(response.getItems().getFirst().getPrice()).isEqualByComparingTo(catalogPrice);
+        ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).save(orderCaptor.capture());
+        assertThat(orderCaptor.getValue().getItems().getFirst().getProductName())
+                .isEqualTo("Authoritative catalog name");
     }
 
     @Test
@@ -621,8 +648,6 @@ class OrderServiceTest {
 
         item.setProductId(productId);
         item.setQuantity(quantity);
-        item.setPrice(price);
-
         return item;
     }
 

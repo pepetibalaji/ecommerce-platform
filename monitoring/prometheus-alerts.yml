@@ -69,6 +69,34 @@ groups:
           summary: "Order Service inventory-release retries are elevated"
           description: "More than five inventory-release command attempts failed in the last ten minutes; inspect the release outbox and Inventory Service."
 
+  - name: ecommerce-product-inventory-provisioning
+    rules:
+      - alert: ProductCreatedEventPublishFailure
+        expr: sum(increase(product_created_event_publish_failures_total[5m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Product-created event publish failed"
+          description: "A product may be missing its zero-stock inventory record; reconcile by replaying product-created."
+
+      - alert: ProductInventoryProvisionerLag
+        expr: sum(kafka_consumergroup_lag{consumergroup="inventory-product-provisioner",topic="product-created"}) > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Product inventory provisioner lag is high"
+          description: "More than 100 product-created records are waiting for Inventory Service."
+
+      - alert: ProductInventoryProvisioningDlq
+        expr: sum(kafka_topic_partition_current_offset{topic="product-created-dlt"}) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Product inventory provisioning has DLQ records"
+          description: "Inspect product-created-dlt and reconcile affected product inventory records."
+
       - alert: OrderInventoryReleaseTerminalFailure
         expr: sum(increase(order_inventory_release_terminal_failure_count_total{service="order-service"}[5m])) > 0
         labels:
