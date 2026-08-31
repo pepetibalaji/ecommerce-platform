@@ -14,6 +14,7 @@ import com.ecommerce.auth.dto.UserProfileResponse;
 import com.ecommerce.auth.entity.User;
 import com.ecommerce.auth.entity.enums.Role;
 import com.ecommerce.auth.entity.enums.UserStatus;
+import com.ecommerce.auth.kafka.UserContactEventPublisher;
 import com.ecommerce.auth.repository.UserRepository;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import java.time.LocalDateTime;
@@ -38,6 +39,8 @@ class UserServiceImplTest {
   @Mock private UserRepository userRepository;
 
   @Mock private RefreshTokenService refreshTokenService;
+
+  @Mock private UserContactEventPublisher userContactEventPublisher;
 
   @InjectMocks private UserServiceImpl userService;
 

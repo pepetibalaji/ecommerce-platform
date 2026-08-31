@@ -56,7 +56,8 @@ public class AuthService {
             .tokenVersion(0L)
             .build();
 
-    user = userRepository.save(user);
+        user = userRepository.save(user);
+        userContactEventPublisher.publish(user);
         return issueTokens(user);
   }
 
@@ -79,7 +80,6 @@ public class AuthService {
       throw new UnauthorizedException("User account is not active");
     }
 
-    userContactEventPublisher.publish(user);
     return issueTokens(user);
   }
 

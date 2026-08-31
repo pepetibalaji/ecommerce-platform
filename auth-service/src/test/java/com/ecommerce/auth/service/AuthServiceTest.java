@@ -17,6 +17,7 @@ import com.ecommerce.auth.entity.RefreshToken;
 import com.ecommerce.auth.entity.User;
 import com.ecommerce.auth.entity.enums.Role;
 import com.ecommerce.auth.entity.enums.UserStatus;
+import com.ecommerce.auth.kafka.UserContactEventPublisher;
 import com.ecommerce.auth.repository.UserRepository;
 import com.ecommerce.common.exception.ResourceAlreadyExistsException;
 import com.ecommerce.common.exception.UnauthorizedException;
@@ -59,6 +60,8 @@ class AuthServiceTest {
   @Mock private RefreshTokenService refreshTokenService;
 
   @Mock private TokenBlacklistService tokenBlacklistService;
+
+  @Mock private UserContactEventPublisher userContactEventPublisher;
 
   @InjectMocks private AuthService authService;
 
@@ -105,6 +108,8 @@ class AuthServiceTest {
     assertThat(result).isNotNull();
 
     assertThat(result.getAccessToken()).isEqualTo("access-token");
+
+    verify(userContactEventPublisher).publish(user);
 
     assertThat(result.getRefreshToken()).isNotBlank();
 
