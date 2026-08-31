@@ -16,33 +16,36 @@ import org.springframework.security.oauth2.server.authorization.token.OAuth2Toke
 @RequiredArgsConstructor
 public class TokenCustomizerConfig {
 
-    private final UserRepository userRepository;
+  private final UserRepository userRepository;
 
-    @Bean
-    public OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer() {
-        return context -> {
-            if (!OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
-                return;
-            }
+  @Bean
+  public OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer() {
+    return context -> {
+      if (!OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
+        return;
+      }
 
-            String email = context.getPrincipal().getName();
-            User user = userRepository.findByEmail(email)
-                    .orElseThrow(() -> new OAuth2AuthenticationException(
-                            new OAuth2Error("invalid_grant", "User not found: " + email, null)
-                    ));
+      String email = context.getPrincipal().getName();
+      User user =
+          userRepository
+              .findByEmail(email)
+              .orElseThrow(
+                  () ->
+                      new OAuth2AuthenticationException(
+                          new OAuth2Error("invalid_grant", "User not found: " + email, null)));
 
-            if (user.getStatus() != UserStatus.ACTIVE) {
-                throw new OAuth2AuthenticationException(
-                        new OAuth2Error("invalid_grant", "User account is not active", null)
-                );
-            }
+      if (user.getStatus() != UserStatus.ACTIVE) {
+        throw new OAuth2AuthenticationException(
+            new OAuth2Error("invalid_grant", "User account is not active", null));
+      }
 
-            context.getClaims()
-                    .subject(user.getEmail())
-                    .claim("userId", user.getId().toString())
-                    .claim("role", user.getRole().name())
-                    .claim("status", user.getStatus().name())
-                    .claim("tokenVersion", user.getTokenVersion() == null ? 0L : user.getTokenVersion());
-        };
-    }
+      context
+          .getClaims()
+          .subject(user.getEmail())
+          .claim("userId", user.getId().toString())
+          .claim("role", user.getRole().name())
+          .claim("status", user.getStatus().name())
+          .claim("tokenVersion", user.getTokenVersion() == null ? 0L : user.getTokenVersion());
+    };
+  }
 }

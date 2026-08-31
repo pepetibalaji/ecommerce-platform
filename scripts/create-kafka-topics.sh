@@ -15,6 +15,14 @@ topics="
 order-created:3
 payment-success:3
 payment-failed:3
+payment-refund-completed:3
+order-cancelled:3
+order-shipped:3
+order-delivered:3
+low-inventory:3
+seller-order-paid:3
+user-contact-updated:3
+notification-dlq:3
 order-dlq:3
 "
 

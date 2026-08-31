@@ -2,7 +2,7 @@ groups:
   - name: ecommerce-service-health
     rules:
       - alert: EcommerceServiceDown
-        expr: up{job=~"config-server|gateway-service|auth-service|product-service|inventory-service|cart-service|order-service|payment-service"} == 0
+        expr: up{job=~"config-server|gateway-service|auth-service|product-service|inventory-service|cart-service|order-service|payment-service|notification-service"} == 0
         for: 2m
         labels:
           severity: critical
@@ -12,9 +12,9 @@ groups:
 
       - alert: HighHttpServerErrorRate
         expr: |
-          sum by (job) (rate(http_server_requests_seconds_count{job=~"gateway-service|auth-service|product-service|inventory-service|cart-service|order-service|payment-service",status=~"5.."}[5m]))
+          sum by (job) (rate(http_server_requests_seconds_count{job=~"gateway-service|auth-service|product-service|inventory-service|cart-service|order-service|payment-service|notification-service",status=~"5.."}[5m]))
           /
-          sum by (job) (rate(http_server_requests_seconds_count{job=~"gateway-service|auth-service|product-service|inventory-service|cart-service|order-service|payment-service"}[5m])) > 0.05
+          sum by (job) (rate(http_server_requests_seconds_count{job=~"gateway-service|auth-service|product-service|inventory-service|cart-service|order-service|payment-service|notification-service"}[5m])) > 0.05
         for: 5m
         labels:
           severity: warning
@@ -24,7 +24,7 @@ groups:
 
       - alert: HighHttpP95Latency
         expr: |
-          histogram_quantile(0.95, sum by (le, job) (rate(http_server_requests_seconds_bucket{job=~"gateway-service|auth-service|product-service|inventory-service|cart-service|order-service|payment-service"}[5m]))) > 1
+          histogram_quantile(0.95, sum by (le, job) (rate(http_server_requests_seconds_bucket{job=~"gateway-service|auth-service|product-service|inventory-service|cart-service|order-service|payment-service|notification-service"}[5m]))) > 1
         for: 10m
         labels:
           severity: warning
@@ -76,3 +76,22 @@ groups:
         annotations:
           summary: "An inventory-release command exhausted retries"
           description: "Order Service marked an inventory-release outbox command FAILED in the last five minutes; investigate the command and Inventory Service before manual recovery."
+
+  - name: ecommerce-notifications
+    rules:
+      - alert: NotificationDeliveryExhausted
+        expr: sum(increase(notification_delivery_exhausted_total{service="notification-service"}[5m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "A notification delivery exhausted all retries"
+          description: "Notification Service has permanently failed at least one delivery in the last five minutes. Inspect failed notifications and provider health."
+
+      - alert: NotificationConsumerLag
+        expr: sum(kafka_consumergroup_lag{consumergroup="notification-service",topic=~"order-created|payment-success|payment-failed|order-cancelled|payment-refund-completed|order-shipped|order-delivered|low-inventory|seller-order-paid|user-contact-updated"}) > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Notification Service consumer lag is high"
+          description: "Notification Service has more than 100 unprocessed notification events for ten minutes."

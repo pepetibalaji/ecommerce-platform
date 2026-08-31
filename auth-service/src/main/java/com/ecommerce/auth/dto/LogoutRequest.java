@@ -6,6 +6,6 @@ import lombok.Data;
 @Data
 public class LogoutRequest {
 
-    @Size(max = 2048, message = "Refresh token is too long")
-    private String refreshToken;
+  @Size(max = 2048, message = "Refresh token is too long")
+  private String refreshToken;
 }

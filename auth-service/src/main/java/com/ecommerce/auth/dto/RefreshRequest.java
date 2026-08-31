@@ -7,7 +7,7 @@ import lombok.Data;
 @Data
 public class RefreshRequest {
 
-    @NotBlank(message = "Refresh token is required")
-    @Size(max = 2048, message = "Refresh token is too long")
-    private String refreshToken;
+  @NotBlank(message = "Refresh token is required")
+  @Size(max = 2048, message = "Refresh token is too long")
+  private String refreshToken;
 }

@@ -1,5 +1,12 @@
 package com.ecommerce.auth.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import com.ecommerce.auth.dto.AdminUserResponse;
 import com.ecommerce.auth.dto.ChangeRoleRequest;
 import com.ecommerce.auth.dto.UpdateMeRequest;
@@ -7,340 +14,252 @@ import com.ecommerce.auth.dto.UserProfileResponse;
 import com.ecommerce.auth.entity.User;
 import com.ecommerce.auth.entity.enums.Role;
 import com.ecommerce.auth.entity.enums.UserStatus;
+import com.ecommerce.auth.kafka.UserContactEventPublisher;
 import com.ecommerce.auth.repository.UserRepository;
 import com.ecommerce.common.exception.ResourceNotFoundException;
-
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-
-import static org.assertj.core.api.Assertions.assertThat;
-
-import static org.junit.jupiter.api.Assertions.assertThrows;
-
-import static org.mockito.ArgumentMatchers.any;
-
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 @ExtendWith(MockitoExtension.class)
 class UserServiceImplTest {
 
-    private static final UUID USER_ID =
-            UUID.fromString("11111111-1111-1111-1111-111111111111");
+  private static final UUID USER_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
 
-    @Mock
-    private UserRepository userRepository;
+  @Mock private UserRepository userRepository;
 
-    @Mock
-    private RefreshTokenService refreshTokenService;
+  @Mock private RefreshTokenService refreshTokenService;
 
-    @InjectMocks
-    private UserServiceImpl userService;
+  @Mock private UserContactEventPublisher userContactEventPublisher;
 
-    private User user;
+  @InjectMocks private UserServiceImpl userService;
 
-    @BeforeEach
-    void setUp() {
+  private User user;
 
-        user = User.builder()
-                .id(USER_ID)
-                .name("Test User")
-                .email("test@example.com")
-                .password("encoded-password")
-                .role(Role.CUSTOMER)
-                .status(UserStatus.ACTIVE)
-                .tokenVersion(0L)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
-    }
+  @BeforeEach
+  void setUp() {
 
-    @Test
-    void shouldGetMe() {
+    user =
+        User.builder()
+            .id(USER_ID)
+            .name("Test User")
+            .email("test@example.com")
+            .password("encoded-password")
+            .role(Role.CUSTOMER)
+            .status(UserStatus.ACTIVE)
+            .tokenVersion(0L)
+            .createdAt(LocalDateTime.now())
+            .updatedAt(LocalDateTime.now())
+            .build();
+  }
 
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.of(user));
+  @Test
+  void shouldGetMe() {
 
-        UserProfileResponse result =
-                userService.getMe(USER_ID);
+    when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
 
-        assertThat(result.getId())
-                .isEqualTo(USER_ID);
+    UserProfileResponse result = userService.getMe(USER_ID);
 
-        assertThat(result.getName())
-                .isEqualTo("Test User");
+    assertThat(result.getId()).isEqualTo(USER_ID);
 
-        assertThat(result.getEmail())
-                .isEqualTo("test@example.com");
+    assertThat(result.getName()).isEqualTo("Test User");
 
-        assertThat(result.getRole())
-                .isEqualTo(Role.CUSTOMER);
+    assertThat(result.getEmail()).isEqualTo("test@example.com");
 
-        assertThat(result.getStatus())
-                .isEqualTo(UserStatus.ACTIVE);
-    }
+    assertThat(result.getRole()).isEqualTo(Role.CUSTOMER);
 
-    @Test
-    void shouldThrowWhenGetMeUserNotFound() {
+    assertThat(result.getStatus()).isEqualTo(UserStatus.ACTIVE);
+  }
 
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.empty());
+  @Test
+  void shouldThrowWhenGetMeUserNotFound() {
 
-        assertThrows(
-                ResourceNotFoundException.class,
-                () -> userService.getMe(USER_ID)
-        );
-    }
+    when(userRepository.findById(USER_ID)).thenReturn(Optional.empty());
 
-    @Test
-    void shouldThrowWhenGetMeUserNotActive() {
+    assertThrows(ResourceNotFoundException.class, () -> userService.getMe(USER_ID));
+  }
 
-        user.setStatus(UserStatus.DELETED);
+  @Test
+  void shouldThrowWhenGetMeUserNotActive() {
 
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.of(user));
+    user.setStatus(UserStatus.DELETED);
 
-        assertThrows(
-                ResourceNotFoundException.class,
-                () -> userService.getMe(USER_ID)
-        );
-    }
+    when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
 
-    @Test
-    void shouldUpdateMe() {
+    assertThrows(ResourceNotFoundException.class, () -> userService.getMe(USER_ID));
+  }
 
-        UpdateMeRequest request =
-                new UpdateMeRequest();
+  @Test
+  void shouldUpdateMe() {
 
-        request.setName(" Updated User ");
+    UpdateMeRequest request = new UpdateMeRequest();
 
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.of(user));
+    request.setName(" Updated User ");
 
-        when(userRepository.save(user))
-                .thenReturn(user);
+    when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
 
-        UserProfileResponse result =
-                userService.updateMe(USER_ID, request);
+    when(userRepository.save(user)).thenReturn(user);
 
-        assertThat(user.getName())
-                .isEqualTo("Updated User");
+    UserProfileResponse result = userService.updateMe(USER_ID, request);
 
-        assertThat(result.getName())
-                .isEqualTo("Updated User");
+    assertThat(user.getName()).isEqualTo("Updated User");
 
-        verify(userRepository)
-                .save(user);
-    }
+    assertThat(result.getName()).isEqualTo("Updated User");
 
-    @Test
-    void shouldDeleteMeAndInvalidateSessions() {
+    verify(userRepository).save(user);
+  }
 
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.of(user));
+  @Test
+  void shouldDeleteMeAndInvalidateSessions() {
 
-        when(userRepository.save(user))
-                .thenReturn(user);
+    when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
 
-        userService.deleteMe(USER_ID);
+    when(userRepository.save(user)).thenReturn(user);
 
-        assertThat(user.getStatus())
-                .isEqualTo(UserStatus.DELETED);
+    userService.deleteMe(USER_ID);
 
-        assertThat(user.getTokenVersion())
-                .isEqualTo(1L);
+    assertThat(user.getStatus()).isEqualTo(UserStatus.DELETED);
 
-        verify(userRepository)
-                .save(user);
+    assertThat(user.getTokenVersion()).isEqualTo(1L);
 
-        verify(refreshTokenService)
-                .revokeAllForUser(USER_ID);
-    }
+    verify(userRepository).save(user);
 
-    @Test
-    void shouldGetAllUsers() {
+    verify(refreshTokenService).revokeAllForUser(USER_ID);
+  }
 
-        PageRequest pageable =
-                PageRequest.of(0, 20);
+  @Test
+  void shouldGetAllUsers() {
 
-        Page<User> page =
-                new PageImpl<>(List.of(user));
+    PageRequest pageable = PageRequest.of(0, 20);
 
-        when(userRepository.findAll(pageable))
-                .thenReturn(page);
+    Page<User> page = new PageImpl<>(List.of(user));
 
-        Page<AdminUserResponse> result =
-                userService.getAllUsers(pageable);
+    when(userRepository.findAll(pageable)).thenReturn(page);
 
-        assertThat(result.getTotalElements())
-                .isEqualTo(1);
+    Page<AdminUserResponse> result = userService.getAllUsers(pageable);
 
-        assertThat(result.getContent().get(0).getId())
-                .isEqualTo(USER_ID);
+    assertThat(result.getTotalElements()).isEqualTo(1);
 
-        assertThat(result.getContent().get(0).getEmail())
-                .isEqualTo("test@example.com");
-    }
+    assertThat(result.getContent().get(0).getId()).isEqualTo(USER_ID);
 
-    @Test
-    void shouldGetUserById() {
+    assertThat(result.getContent().get(0).getEmail()).isEqualTo("test@example.com");
+  }
 
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.of(user));
+  @Test
+  void shouldGetUserById() {
 
-        AdminUserResponse result =
-                userService.getUserById(USER_ID);
+    when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
 
-        assertThat(result.getId())
-                .isEqualTo(USER_ID);
+    AdminUserResponse result = userService.getUserById(USER_ID);
 
-        assertThat(result.getEmail())
-                .isEqualTo("test@example.com");
+    assertThat(result.getId()).isEqualTo(USER_ID);
 
-        assertThat(result.getRole())
-                .isEqualTo(Role.CUSTOMER);
-    }
+    assertThat(result.getEmail()).isEqualTo("test@example.com");
 
-    @Test
-    void shouldThrowWhenAdminUserNotFound() {
+    assertThat(result.getRole()).isEqualTo(Role.CUSTOMER);
+  }
 
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.empty());
+  @Test
+  void shouldThrowWhenAdminUserNotFound() {
 
-        assertThrows(
-                ResourceNotFoundException.class,
-                () -> userService.getUserById(USER_ID)
-        );
-    }
+    when(userRepository.findById(USER_ID)).thenReturn(Optional.empty());
 
-    @Test
-    void shouldDeleteUserAndInvalidateSessions() {
+    assertThrows(ResourceNotFoundException.class, () -> userService.getUserById(USER_ID));
+  }
 
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.of(user));
+  @Test
+  void shouldDeleteUserAndInvalidateSessions() {
 
-        when(userRepository.save(user))
-                .thenReturn(user);
+    when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
 
-        userService.deleteUser(USER_ID);
+    when(userRepository.save(user)).thenReturn(user);
 
-        assertThat(user.getStatus())
-                .isEqualTo(UserStatus.DELETED);
+    userService.deleteUser(USER_ID);
 
-        assertThat(user.getTokenVersion())
-                .isEqualTo(1L);
+    assertThat(user.getStatus()).isEqualTo(UserStatus.DELETED);
 
-        verify(userRepository)
-                .save(user);
+    assertThat(user.getTokenVersion()).isEqualTo(1L);
 
-        verify(refreshTokenService)
-                .revokeAllForUser(USER_ID);
-    }
+    verify(userRepository).save(user);
 
-    @Test
-    void shouldChangeRoleAndInvalidateSessions() {
+    verify(refreshTokenService).revokeAllForUser(USER_ID);
+  }
 
-        ChangeRoleRequest request =
-                new ChangeRoleRequest();
+  @Test
+  void shouldChangeRoleAndInvalidateSessions() {
 
-        request.setRole(Role.ADMIN);
+    ChangeRoleRequest request = new ChangeRoleRequest();
 
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.of(user));
+    request.setRole(Role.ADMIN);
 
-        when(userRepository.save(user))
-                .thenReturn(user);
+    when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
 
-        AdminUserResponse result =
-                userService.changeRole(USER_ID, request);
+    when(userRepository.save(user)).thenReturn(user);
 
-        assertThat(user.getRole())
-                .isEqualTo(Role.ADMIN);
+    AdminUserResponse result = userService.changeRole(USER_ID, request);
 
-        assertThat(user.getTokenVersion())
-                .isEqualTo(1L);
+    assertThat(user.getRole()).isEqualTo(Role.ADMIN);
 
-        assertThat(result.getRole())
-                .isEqualTo(Role.ADMIN);
+    assertThat(user.getTokenVersion()).isEqualTo(1L);
 
-        verify(userRepository)
-                .save(user);
+    assertThat(result.getRole()).isEqualTo(Role.ADMIN);
 
-        verify(refreshTokenService)
-                .revokeAllForUser(USER_ID);
-    }
+    verify(userRepository).save(user);
 
-    @Test
-    void shouldForceLogoutUser() {
+    verify(refreshTokenService).revokeAllForUser(USER_ID);
+  }
 
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.of(user));
+  @Test
+  void shouldForceLogoutUser() {
 
-        when(userRepository.save(user))
-                .thenReturn(user);
+    when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
 
-        userService.forceLogout(USER_ID);
+    when(userRepository.save(user)).thenReturn(user);
 
-        assertThat(user.getTokenVersion())
-                .isEqualTo(1L);
+    userService.forceLogout(USER_ID);
 
-        verify(userRepository)
-                .save(user);
+    assertThat(user.getTokenVersion()).isEqualTo(1L);
 
-        verify(refreshTokenService)
-                .revokeAllForUser(USER_ID);
-    }
+    verify(userRepository).save(user);
 
-    @Test
-    void shouldSetTokenVersionToOneWhenCurrentVersionIsNull() {
+    verify(refreshTokenService).revokeAllForUser(USER_ID);
+  }
 
-        user.setTokenVersion(null);
+  @Test
+  void shouldSetTokenVersionToOneWhenCurrentVersionIsNull() {
 
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.of(user));
+    user.setTokenVersion(null);
 
-        when(userRepository.save(user))
-                .thenReturn(user);
+    when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
 
-        userService.forceLogout(USER_ID);
+    when(userRepository.save(user)).thenReturn(user);
 
-        assertThat(user.getTokenVersion())
-                .isEqualTo(1L);
+    userService.forceLogout(USER_ID);
 
-        verify(refreshTokenService)
-                .revokeAllForUser(USER_ID);
-    }
+    assertThat(user.getTokenVersion()).isEqualTo(1L);
 
-    @Test
-    void shouldNotInvalidateSessionsWhenUserNotFound() {
+    verify(refreshTokenService).revokeAllForUser(USER_ID);
+  }
 
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.empty());
+  @Test
+  void shouldNotInvalidateSessionsWhenUserNotFound() {
 
-        assertThrows(
-                ResourceNotFoundException.class,
-                () -> userService.forceLogout(USER_ID)
-        );
+    when(userRepository.findById(USER_ID)).thenReturn(Optional.empty());
 
-        verify(userRepository, never())
-                .save(any(User.class));
+    assertThrows(ResourceNotFoundException.class, () -> userService.forceLogout(USER_ID));
 
-        verify(refreshTokenService, never())
-                .revokeAllForUser(USER_ID);
-    }
+    verify(userRepository, never()).save(any(User.class));
+
+    verify(refreshTokenService, never()).revokeAllForUser(USER_ID);
+  }
 }

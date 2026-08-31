@@ -1,0 +1,6 @@
+create table notifications (id uuid primary key, event_id uuid not null, recipient_user_id uuid not null, channel varchar(16) not null, type varchar(80) not null, payload text not null, status varchar(16) not null, created_at timestamptz not null, updated_at timestamptz not null, sent_at timestamptz, constraint uk_notification_event_recipient_channel unique (event_id, recipient_user_id, channel));
+create index ix_notifications_status_created on notifications(status, created_at);
+create table notification_deliveries (id uuid primary key, notification_id uuid not null references notifications(id), attempt_count integer not null, provider varchar(50) not null, provider_message_id varchar(255), status varchar(16) not null, last_error text, next_attempt_at timestamptz, created_at timestamptz not null);
+create index ix_notification_deliveries_notification on notification_deliveries(notification_id, attempt_count desc);
+create table notification_preferences (id uuid primary key, user_id uuid not null, channel varchar(16) not null, notification_type varchar(80) not null, enabled boolean not null default true, constraint uk_notification_preference unique(user_id, channel, notification_type));
+create table notification_processed_events (event_id uuid primary key, processed_at timestamptz not null);

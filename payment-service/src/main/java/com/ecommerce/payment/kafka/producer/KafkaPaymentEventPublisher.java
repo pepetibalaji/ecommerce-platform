@@ -136,7 +136,7 @@ public class KafkaPaymentEventPublisher implements PaymentEventPublisher {
     @Override
     public void publishRefundCompleted(Payment payment, PaymentRefund refund, BigDecimal totalRefundedAmount) {
         PaymentRefundCompletedEvent event = new PaymentRefundCompletedEvent(refund.getId(), payment.getId(),
-                payment.getOrderId(), refund.getAmount(), totalRefundedAmount, payment.getAmount(),
+                payment.getOrderId(), payment.getUserId(), refund.getAmount(), totalRefundedAmount, payment.getAmount(),
                 payment.getCurrency(), payment.getCorrelationId(), payment.getTraceId());
         kafkaTemplate.send(KafkaTopics.PAYMENT_REFUND_COMPLETED, payment.getOrderId().toString(), event)
                 .whenComplete((result, exception) -> {

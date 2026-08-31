@@ -29,7 +29,7 @@
       "title": "Service availability",
       "type": "stat",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "refId": "A", "expr": "up{job=~\"config-server|gateway-service|auth-service|product-service|inventory-service|cart-service|order-service|payment-service\"}", "legendFormat": "{{job}}" }],
+      "targets": [{ "refId": "A", "expr": "up{job=~\"config-server|gateway-service|auth-service|product-service|inventory-service|cart-service|order-service|payment-service|notification-service\"}", "legendFormat": "{{job}}" }],
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 }
     }
   ]

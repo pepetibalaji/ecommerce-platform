@@ -689,7 +689,7 @@ class OrderServiceTest {
 
     private PaymentRefundCompletedEvent refundEvent(UUID orderId, UUID paymentId, boolean fullRefund) {
         BigDecimal total = fullRefund ? new BigDecimal("200.00") : new BigDecimal("50.00");
-        return new PaymentRefundCompletedEvent(UUID.randomUUID(), paymentId, orderId, total, total,
+        return new PaymentRefundCompletedEvent(UUID.randomUUID(), paymentId, orderId, UUID.randomUUID(), total, total,
                 new BigDecimal("200.00"), "INR", null, null);
     }
 

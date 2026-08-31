@@ -12,6 +12,9 @@ spring:
                     uri: https://github.com/pepetibalaji/ecommerce-config-repo
                     default-label: main
                     clone-on-start: true
+                    # The config repository stores profile-specific service files
+                    # under dev/, stage/, and prod/.
+                    search-paths: '{profile}'
 
 management:
     endpoints:

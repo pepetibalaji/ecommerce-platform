@@ -1,9 +1,11 @@
 package com.ecommerce.order.catalog;
 
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.util.UUID;
 
@@ -16,10 +18,19 @@ public class ProductSellerClient {
     }
 
     public UUID getSellerId(UUID productId) {
-        ProductOwner product = restClient.get().uri("/api/v1/products/{productId}", productId)
-                .retrieve().body(ProductOwner.class);
+        ProductOwner product;
+        try {
+            product = restClient.get().uri("/api/v1/products/{productId}", productId)
+                    .retrieve().body(ProductOwner.class);
+        } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode() == HttpStatus.NOT_FOUND) {
+                throw new ResourceNotFoundException("Product not found: " + productId);
+            }
+            throw exception;
+        }
+
         if (product == null || product.sellerId() == null) {
-            throw new ResourceNotFoundException("Product not found");
+            throw new ResourceNotFoundException("Product not found: " + productId);
         }
         return product.sellerId();
     }
