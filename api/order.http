@@ -55,6 +55,7 @@ Content-Type: application/json
 }
 
 ### Create order with multiple items
+# Duplicate product IDs are combined by Order Service before catalog, stock, and quantity checks.
 POST {{orderBaseUrl}}/api/v1/orders
 Authorization: Bearer {{accessToken}}
 Content-Type: application/json

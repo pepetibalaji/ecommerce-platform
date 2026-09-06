@@ -2,6 +2,8 @@ package com.ecommerce.order;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import com.ecommerce.order.config.CheckoutProperties;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication(scanBasePackages = {
@@ -12,6 +14,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         "com.ecommerce.common.grpc"
 })
 @EnableScheduling
+@EnableConfigurationProperties(CheckoutProperties.class)
 public class OrderServiceApplication {
 
     public static void main(String[] args) {

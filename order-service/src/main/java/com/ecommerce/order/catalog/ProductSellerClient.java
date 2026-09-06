@@ -36,17 +36,17 @@ public class ProductSellerClient {
                     .retrieve().body(ProductDetails.class);
         } catch (RestClientResponseException exception) {
             if (exception.getStatusCode() == HttpStatus.NOT_FOUND) {
-                throw new ResourceNotFoundException("Product not found: " + productId);
+                throw new ResourceNotFoundException("CHECKOUT_ITEM_PRODUCT_NOT_FOUND productId=" + productId);
             }
-            throw new BadRequestException("Product catalog is temporarily unavailable; please retry your order");
+            throw new BadRequestException("CHECKOUT_CATALOG_UNAVAILABLE productId=" + productId + " retry=true");
         } catch (RestClientException exception) {
             // Deliberately fail closed: no order is created or stock reserved while catalog is unavailable.
-            throw new BadRequestException("Product catalog is temporarily unavailable; please retry your order");
+            throw new BadRequestException("CHECKOUT_CATALOG_UNAVAILABLE productId=" + productId + " retry=true");
         }
 
-        if (product == null || product.sellerId() == null || product.price() == null
-                || product.name() == null || product.name().isBlank() || !product.active()) {
-            throw new BadRequestException("Product is unavailable: " + productId);
+        if (product == null || !productId.equals(product.id()) || product.sellerId() == null || product.price() == null
+                || product.price().signum() < 0 || product.name() == null || product.name().isBlank() || !product.active()) {
+            throw new BadRequestException("CHECKOUT_ITEM_PRODUCT_UNAVAILABLE productId=" + productId);
         }
         return new OrderableProduct(product.id(), product.sellerId(), product.name(), product.price());
     }

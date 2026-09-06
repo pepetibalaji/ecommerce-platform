@@ -17,6 +17,7 @@ import com.ecommerce.order.entity.OrderStatus;
 import com.ecommerce.order.entity.InventoryReleaseReason;
 import com.ecommerce.order.grpc.InventoryGrpcClient;
 import com.ecommerce.order.catalog.ProductSellerClient;
+import com.ecommerce.order.config.CheckoutProperties;
 import com.ecommerce.order.kafka.OrderEventPublisher;
 import com.ecommerce.order.repository.OrderRepository;
 import com.ecommerce.order.repository.OrderProcessedEventRepository;
@@ -77,6 +78,9 @@ class OrderServiceTest {
     @Mock
     private ProductSellerClient productSellerClient;
 
+    @Mock
+    private CheckoutProperties checkoutProperties;
+
     @InjectMocks
     private OrderServiceImpl orderService;
 
@@ -97,6 +101,8 @@ class OrderServiceTest {
         // for every other collaborator while avoiding unrelated-test stubbing failures.
         lenient().when(productSellerClient.getOrderableProduct(productId))
                 .thenReturn(new ProductSellerClient.OrderableProduct(productId, UUID.randomUUID(), "Catalog product", new BigDecimal("100.00")));
+        lenient().when(checkoutProperties.getMaxTotalQuantity()).thenReturn(500);
+        lenient().when(checkoutProperties.maximumQuantityFor(productId)).thenReturn(100);
     }
 
     @Test
@@ -239,6 +245,43 @@ class OrderServiceTest {
         verify(orderRepository).save(orderCaptor.capture());
         assertThat(orderCaptor.getValue().getItems().getFirst().getProductName())
                 .isEqualTo("Authoritative catalog name");
+    }
+
+    @Test
+    void createOrder_shouldAggregateDuplicateProductsBeforeCatalogStockAndReservation() {
+        CreateOrderRequest request = createOrderRequest(2, new BigDecimal("1.00"), "INR");
+        CreateOrderItemRequest duplicate = createOrderItemRequest(3, new BigDecimal("999.00"));
+        request.setItems(List.of(request.getItems().getFirst(), duplicate));
+        when(inventoryGrpcClient.getInventory(productId)).thenReturn(InventoryDetails.newBuilder()
+                .setProductId(productId.toString()).setAvailableStock(5).build());
+        doNothing().when(inventoryGrpcClient).reserveStock(eq(productId), eq(5), any(UUID.class));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
+            Order saved = invocation.getArgument(0);
+            saved.setId(UUID.randomUUID());
+            return saved;
+        });
+
+        OrderResponse response = orderService.createOrder(userId, request);
+
+        assertThat(response.getItems()).hasSize(1);
+        assertThat(response.getItems().getFirst().getQuantity()).isEqualTo(5);
+        verify(productSellerClient, times(1)).getOrderableProduct(productId);
+        verify(inventoryGrpcClient, times(1)).getInventory(productId);
+        verify(inventoryGrpcClient).reserveStock(eq(productId), eq(5), any(UUID.class));
+    }
+
+    @Test
+    void createOrder_shouldRejectAggregateQuantityOverProductLimitBeforeExternalCalls() {
+        CreateOrderRequest request = createOrderRequest(2, new BigDecimal("100.00"), "INR");
+        request.setItems(List.of(request.getItems().getFirst(), createOrderItemRequest(2, new BigDecimal("100.00"))));
+        when(checkoutProperties.maximumQuantityFor(productId)).thenReturn(3);
+
+        BadRequestException exception = assertThrows(BadRequestException.class,
+                () -> orderService.createOrder(userId, request));
+
+        assertThat(exception.getMessage()).contains("CHECKOUT_ITEM_QUANTITY_LIMIT", productId.toString());
+        verifyNoInteractions(inventoryGrpcClient);
+        verify(orderRepository, never()).save(any());
     }
 
     @Test
@@ -648,6 +691,7 @@ class OrderServiceTest {
 
         item.setProductId(productId);
         item.setQuantity(quantity);
+        item.setPrice(price);
         return item;
     }
 
