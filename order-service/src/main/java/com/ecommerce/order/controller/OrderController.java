@@ -42,9 +42,21 @@ public class OrderController {
                 @Valid
                 @RequestBody CreateOrderRequest request
         ) {
+                return createOrder(jwt, request, null);
+        }
+
+        @PostMapping(headers = "Idempotency-Key")
+        @ResponseStatus(HttpStatus.CREATED)
+        @Operation(summary = "Create an idempotent order")
+        public OrderResponse createOrder(
+                @Parameter(hidden = true) @AuthenticationPrincipal Jwt jwt,
+                @Valid @RequestBody CreateOrderRequest request,
+                @RequestHeader("Idempotency-Key") String idempotencyKey
+        ) {
                 return orderService.createOrder(
                         currentUserId(jwt),
-                        request
+                        request,
+                        idempotencyKey
                 );
         }
 

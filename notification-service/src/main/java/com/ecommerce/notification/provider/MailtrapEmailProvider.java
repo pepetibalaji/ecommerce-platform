@@ -3,7 +3,6 @@ package com.ecommerce.notification.provider;
 import com.ecommerce.notification.config.NotificationProperties;
 import com.ecommerce.notification.domain.Notification;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -19,11 +18,11 @@ public class MailtrapEmailProvider implements EmailProvider {
   private static final String SEND_URL = "https://send.api.mailtrap.io/api/send";
   private final RestClient client = RestClient.create();
   private final NotificationProperties properties;
-  private final ObjectMapper mapper;
+  private final NotificationEmailContent content;
 
-  public MailtrapEmailProvider(NotificationProperties properties, ObjectMapper mapper) {
+  public MailtrapEmailProvider(NotificationProperties properties, NotificationEmailContent content) {
     this.properties = properties;
-    this.mapper = mapper;
+    this.content = content;
   }
 
   @Override
@@ -44,9 +43,9 @@ public class MailtrapEmailProvider implements EmailProvider {
                     "to",
                     List.of(Map.of("email", email)),
                     "subject",
-                    subject(notification),
+                    content.subject(notification),
                     "text",
-                    body(notification)))
+                    content.body(notification)))
             .retrieve()
             .body(JsonNode.class);
     JsonNode ids = response == null ? null : response.get("message_ids");
@@ -55,22 +54,4 @@ public class MailtrapEmailProvider implements EmailProvider {
     return ids.get(0).asText();
   }
 
-  private String subject(Notification n) {
-    return switch (n.getType()) {
-      case "ORDER_RECEIVED" -> "We received your order";
-      case "PAYMENT_SUCCESSFUL" -> "Your payment was successful";
-      case "PAYMENT_FAILED" -> "Your payment failed";
-      case "ORDER_CANCELLED" -> "Your order was cancelled";
-      case "REFUND_PROCESSED" -> "Your refund was processed";
-      case "ORDER_SHIPPED" -> "Your order has shipped";
-      case "ORDER_DELIVERED" -> "Your order was delivered";
-      default -> "Ecommerce Platform notification";
-    };
-  }
-
-  private String body(Notification n) throws Exception {
-    JsonNode payload = mapper.readTree(n.getPayload());
-    String orderId = payload.path("orderId").asText("");
-    return orderId.isBlank() ? subject(n) : subject(n) + ". Order: " + orderId;
-  }
 }

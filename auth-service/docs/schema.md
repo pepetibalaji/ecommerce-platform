@@ -32,7 +32,7 @@ user_roles(user_id FK, role_id FK, assigned_at, assigned_by FK NULL, PK(user_id,
 role_permissions(role_id FK, permission_id FK, granted_at, PK(role_id, permission_id))
 ```
 
-Seed system roles: `CUSTOMER`, `SELLER`, `ADMIN`. Example permission codes: `PRODUCT:WRITE`, `USER:SUSPEND`, `ORDER:READ_ALL`.
+Seed system roles: `CUSTOMER`, `SELLER`, `ADMIN`. The initial administrative permission codes are `USER:READ`, `USER:STATUS_WRITE`, `USER:ROLE_WRITE`, and `USER:SESSION_REVOKE`.
 
 ## Credentials and account actions
 
@@ -76,6 +76,16 @@ Allowed actions: `EMAIL_VERIFICATION`, `PASSWORD_RESET`, `EMAIL_CHANGE`. Index a
 
 ## Reliability and audit
 
+### OAuth Authorization Server persistence
+
+```text
+oauth2_registered_client(id PK, client_id UNIQUE, client_secret, client settings, token settings, ...)
+oauth2_authorization(id PK, registered_client_id, principal_name, grant/token values and metadata, ...)
+oauth2_authorization_consent(registered_client_id, principal_name, authorities, PK(registered_client_id, principal_name))
+```
+
+Spring Authorization Server owns these tables. Bootstrap configuration inserts a client only when its `client_id` does not already exist; clients, authorizations, and consents survive Auth restarts.
+
 ### `auth_outbox_events`
 
 ```text
@@ -112,9 +122,5 @@ Use outcomes `SUCCESS`, `FAILURE`, and `DENIED`. Do not write raw tokens, passwo
 
 ## Migration order
 
-1. Users and RBAC tables.
-2. Action tokens and refresh sessions.
-3. Outbox and audit tables.
-4. OAuth persistence tables when Spring Authorization Server is enabled with database-backed clients and authorizations.
-5. Backfill legacy user UUIDs, normalized emails, roles, and active verification state before cutover.
+This is a greenfield service. Flyway `V1__create_auth_schema.sql` creates users/RBAC, action-token and refresh-session tables, outbox/audit tables, and Spring Authorization Server persistence tables in one fresh schema migration. No legacy-user backfill is part of this design.
 

@@ -2,7 +2,7 @@
 
 ## What this service is
 
-Payment Service owns payment state and provider integration. It runs on REST port `8087` and gRPC port `9092`. It prepares payments from order events, creates checkout sessions, processes signed provider webhooks, issues refunds, and publishes payment events.
+Payment Service owns payment state and provider integration. It runs on REST port `8087` and gRPC port `9092`. It prepares idempotent payments from order events, creates checkout sessions, processes verified provider webhooks, issues refunds, and publishes payment outcomes.
 
 ## Technology
 
@@ -45,6 +45,12 @@ mvn spring-boot:run
 
 Requires PostgreSQL, Kafka, Config Server, Auth issuer/JWK configuration, and provider credentials for non-sandbox modes.
 
-## Current and next work
+## Documentation
 
-Current: payment preparation, checkout, webhook processing, refund support, event publishing. Next: transactional outbox, complete retry/cancellation policy, and stage provider/webhook validation.
+Detailed integration and design documentation is in [`docs/`](docs/README.md):
+
+- [API and contracts](docs/api.md)
+- [High-level design](docs/hld.md)
+- [Low-level design](docs/lld.md)
+- [Data model](docs/schema.md)
+- [Events and operations](docs/events-and-operations.md)

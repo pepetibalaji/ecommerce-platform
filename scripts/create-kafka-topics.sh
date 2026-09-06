@@ -22,6 +22,11 @@ order-delivered:3
 low-inventory:3
 seller-order-paid:3
 user-contact-updated:3
+auth.user-verification-requested.v1:3
+auth.user-email-verified.v1:3
+auth.password-reset-requested.v1:3
+auth.email-change-requested.v1:3
+auth.user-email-changed.v1:3
 notification-dlq:3
 product-created:3
 product-created-dlt:3

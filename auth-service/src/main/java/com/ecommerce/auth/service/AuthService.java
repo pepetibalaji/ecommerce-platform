@@ -3,157 +3,197 @@ package com.ecommerce.auth.service;
 import com.ecommerce.auth.dto.AuthResponse;
 import com.ecommerce.auth.dto.LoginRequest;
 import com.ecommerce.auth.dto.RefreshRequest;
-import com.ecommerce.auth.dto.RegisterRequest;
 import com.ecommerce.auth.dto.UserResponse;
-import com.ecommerce.auth.entity.RefreshToken;
+import com.ecommerce.auth.entity.RefreshSession;
 import com.ecommerce.auth.entity.User;
-import com.ecommerce.auth.entity.enums.Role;
-import com.ecommerce.auth.entity.enums.UserStatus;
-import com.ecommerce.auth.kafka.UserContactEventPublisher;
+import com.ecommerce.auth.entity.enums.AuthAuditOutcome;
+import com.ecommerce.auth.repository.RefreshSessionRepository;
 import com.ecommerce.auth.repository.UserRepository;
-import com.ecommerce.common.exception.ResourceAlreadyExistsException;
 import com.ecommerce.common.exception.UnauthorizedException;
-import java.time.LocalDateTime;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Base64;
+import java.util.HexFormat;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/** Issues and rotates first-party tokens while maintaining a durable security audit trail. */
 @Service
 @RequiredArgsConstructor
-@Transactional
 public class AuthService {
 
-  private static final long REFRESH_TOKEN_TTL_DAYS = 7;
+  private final UserRepository users;
+  private final RefreshSessionRepository sessions;
+  private final PasswordEncoder passwords;
+  private final JwtTokenService jwtTokens;
+  private final TokenBlacklistService blacklist;
+  private final AuthAuditService audit;
 
-  private final UserRepository userRepository;
-  private final PasswordEncoder passwordEncoder;
-  private final AuthenticationManager authenticationManager;
-  private final JwtTokenService jwtTokenService;
-  private final RefreshTokenService refreshTokenService;
-  private final TokenBlacklistService tokenBlacklistService;
-  private final UserContactEventPublisher userContactEventPublisher;
-
-  public AuthResponse register(RegisterRequest request) {
-    String email = normalizeEmail(request.getEmail());
-
-    if (userRepository.existsByEmail(email)) {
-      throw new ResourceAlreadyExistsException("User already exists with email: " + email);
-    }
-
-    User user =
-        User.builder()
-            .name(request.getName().trim())
-            .email(email)
-            .password(passwordEncoder.encode(request.getPassword()))
-            .role(Role.CUSTOMER)
-            .status(UserStatus.ACTIVE)
-            .tokenVersion(0L)
-            .build();
-
-        user = userRepository.save(user);
-        userContactEventPublisher.publish(user);
-        return issueTokens(user);
-  }
-
+  @Transactional
   public AuthResponse login(LoginRequest request) {
-    String email = normalizeEmail(request.getEmail());
-
-    try {
-      authenticationManager.authenticate(
-          new UsernamePasswordAuthenticationToken(email, request.getPassword()));
-    } catch (AuthenticationException ex) {
-      throw new UnauthorizedException("Invalid credentials");
-    }
-
-    User user =
-        userRepository
-            .findByEmail(email)
-            .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
-
-    if (user.getStatus() != UserStatus.ACTIVE) {
-      throw new UnauthorizedException("User account is not active");
-    }
-
-    return issueTokens(user);
+    return login(request, AuditRequestContext.empty());
   }
 
+  @Transactional
+  public AuthResponse login(LoginRequest request, AuditRequestContext context) {
+    User user = users.findByEmailNormalized(normalize(request.getEmail())).orElse(null);
+    if (user == null) {
+      audit.recordAttempt(
+          null,
+          null,
+          "LOGIN",
+          AuthAuditOutcome.FAILURE,
+          context,
+          Map.of("reason", "invalid_credentials"));
+      throw invalidCredentials();
+    }
+
+    if (!user.isActiveAndVerified() || !passwords.matches(request.getPassword(), user.getPasswordHash())) {
+      audit.recordAttempt(
+          user.getId(),
+          user.getId(),
+          "LOGIN",
+          AuthAuditOutcome.FAILURE,
+          context,
+          Map.of("reason", "invalid_credentials"));
+      throw invalidCredentials();
+    }
+
+    AuthResponse response = issue(user, UUID.randomUUID(), context);
+    audit.record(user.getId(), user.getId(), "LOGIN", AuthAuditOutcome.SUCCESS, context, Map.of());
+    return response;
+  }
+
+  @Transactional(noRollbackFor = UnauthorizedException.class)
   public AuthResponse refresh(RefreshRequest request) {
-    RefreshToken refreshToken =
-        refreshTokenService
-            .findByToken(request.getRefreshToken())
-            .orElseThrow(() -> new UnauthorizedException("Invalid refresh token"));
-
-    if (refreshToken.getExpiry().isBefore(LocalDateTime.now())) {
-      refreshTokenService.revoke(request.getRefreshToken());
-      throw new UnauthorizedException("Refresh token expired");
-    }
-
-    User user = refreshToken.getUser();
-    if (user.getStatus() != UserStatus.ACTIVE) {
-      throw new UnauthorizedException("User account is not active");
-    }
-
-    refreshTokenService.revoke(request.getRefreshToken());
-    return issueTokens(user);
+    return refresh(request, AuditRequestContext.empty());
   }
 
-  public void logout(Jwt jwt, String refreshTokenValue) {
-    if (jwt == null) {
-      throw new UnauthorizedException("Missing access token");
+  @Transactional(noRollbackFor = UnauthorizedException.class)
+  public AuthResponse refresh(RefreshRequest request, AuditRequestContext context) {
+    RefreshSession old = sessions.findByTokenHash(hash(request.getRefreshToken())).orElse(null);
+    if (old == null) {
+      audit.recordAttempt(
+          null,
+          null,
+          "TOKEN_REFRESH",
+          AuthAuditOutcome.FAILURE,
+          context,
+          Map.of("reason", "invalid_refresh_token"));
+      throw invalidRefreshToken();
     }
 
-    tokenBlacklistService.blacklistToken(jwt);
-
-    String userIdValue = jwt.getClaimAsString("userId");
-    if (userIdValue == null || userIdValue.isBlank()) {
-      throw new UnauthorizedException("Missing userId claim");
+    Instant now = Instant.now();
+    UUID userId = old.getUser().getId();
+    if (old.getRevokedAt() != null) {
+      revokeFamily(old.getTokenFamilyId(), now);
+      audit.recordAttempt(
+          userId,
+          userId,
+          "REFRESH_TOKEN_REUSE_DETECTED",
+          AuthAuditOutcome.DENIED,
+          context,
+          Map.of());
+      throw invalidRefreshToken();
     }
 
-    UUID userId;
-    try {
-      userId = UUID.fromString(userIdValue);
-    } catch (Exception ex) {
-      throw new UnauthorizedException("Invalid userId claim");
+    if (old.getExpiresAt().isBefore(now) || !old.getUser().isActiveAndVerified()) {
+      old.setRevokedAt(now);
+      audit.recordAttempt(
+          userId,
+          userId,
+          "TOKEN_REFRESH",
+          AuthAuditOutcome.FAILURE,
+          context,
+          Map.of("reason", "expired_or_inactive"));
+      throw invalidRefreshToken();
     }
 
-    if (refreshTokenValue != null && !refreshTokenValue.isBlank()) {
-      refreshTokenService
-          .findByToken(refreshTokenValue)
-          .ifPresentOrElse(
-              token -> {
-                if (!token.getUser().getId().equals(userId)) {
-                  throw new UnauthorizedException("Refresh token does not belong to current user");
+    AuthResponse response = issue(old.getUser(), old.getTokenFamilyId(), context);
+    RefreshSession replacement =
+        sessions.findByTokenHash(hash(response.getRefreshToken())).orElseThrow();
+    old.setRevokedAt(now);
+    old.setLastUsedAt(now);
+    old.setReplacedBySessionId(replacement.getId());
+    audit.record(userId, userId, "TOKEN_REFRESH", AuthAuditOutcome.SUCCESS, context, Map.of());
+    return response;
+  }
+
+  @Transactional
+  public void logout(Jwt jwt, String refreshToken) {
+    logout(jwt, refreshToken, AuditRequestContext.empty());
+  }
+
+  @Transactional
+  public void logout(Jwt jwt, String refreshToken, AuditRequestContext context) {
+    UUID actorUserId = userId(jwt);
+    if (jwt != null) {
+      blacklist.blacklistToken(jwt);
+    }
+
+    if (refreshToken != null && !refreshToken.isBlank()) {
+      sessions
+          .findByTokenHash(hash(refreshToken))
+          .ifPresent(
+              session -> {
+                UUID sessionUserId = session.getUser().getId();
+                if (actorUserId != null && !actorUserId.equals(sessionUserId)) {
+                  audit.recordAttempt(
+                      actorUserId,
+                      sessionUserId,
+                      "LOGOUT",
+                      AuthAuditOutcome.DENIED,
+                      context,
+                      Map.of("reason", "refresh_session_owner_mismatch"));
+                  throw invalidRefreshToken();
                 }
-                refreshTokenService.revoke(refreshTokenValue);
-              },
-              () -> refreshTokenService.revokeAllForUser(userId));
-    } else {
-      refreshTokenService.revokeAllForUser(userId);
+                session.setRevokedAt(Instant.now());
+              });
     }
+
+    audit.record(actorUserId, actorUserId, "LOGOUT", AuthAuditOutcome.SUCCESS, context, Map.of());
   }
 
-  private AuthResponse issueTokens(User user) {
-    String accessToken = jwtTokenService.generateAccessToken(user);
-    String refreshTokenValue = UUID.randomUUID().toString();
-    LocalDateTime expiry = LocalDateTime.now().plusDays(REFRESH_TOKEN_TTL_DAYS);
+  /** Revokes every active refresh session for a user. The caller records the business-level audit event. */
+  @Transactional
+  public void revokeAll(UUID userId) {
+    sessions.findByUser_IdAndRevokedAtIsNull(userId).forEach(session -> session.setRevokedAt(Instant.now()));
+  }
 
-    refreshTokenService.issue(user, refreshTokenValue, expiry);
-
+  private AuthResponse issue(User user, UUID family, AuditRequestContext context) {
+    String raw = token();
+    AuditRequestContext safeContext = context == null ? AuditRequestContext.empty() : context;
+    sessions.save(
+        RefreshSession.builder()
+            .user(user)
+            .tokenHash(hash(raw))
+            .tokenFamilyId(family)
+            .expiresAt(Instant.now().plus(Duration.ofDays(7)))
+            .ipAddress(safeContext.ipAddress())
+            .userAgent(safeContext.userAgent())
+            .build());
     return new AuthResponse(
-        accessToken,
-        refreshTokenValue,
+        jwtTokens.generateAccessToken(user),
+        raw,
         "Bearer",
-        jwtTokenService.getAccessTokenTtlSeconds(),
-        toUserResponse(user));
+        jwtTokens.getAccessTokenTtlSeconds(),
+        profile(user));
   }
 
-  private UserResponse toUserResponse(User user) {
+  private void revokeFamily(UUID family, Instant now) {
+    sessions.findByTokenFamilyIdAndRevokedAtIsNull(family).forEach(session -> session.setRevokedAt(now));
+  }
+
+  private UserResponse profile(User user) {
     return new UserResponse(
         user.getId(),
         user.getName(),
@@ -164,7 +204,42 @@ public class AuthService {
         user.getUpdatedAt());
   }
 
-  private String normalizeEmail(String email) {
-    return email == null ? null : email.toLowerCase().trim();
+  private UUID userId(Jwt jwt) {
+    if (jwt == null) {
+      return null;
+    }
+    try {
+      return UUID.fromString(jwt.getClaimAsString("userId"));
+    } catch (IllegalArgumentException | NullPointerException ignored) {
+      return null;
+    }
+  }
+
+  private UnauthorizedException invalidCredentials() {
+    return new UnauthorizedException("Invalid credentials");
+  }
+
+  private UnauthorizedException invalidRefreshToken() {
+    return new UnauthorizedException("Invalid refresh token");
+  }
+
+  private String token() {
+    byte[] bytes = new byte[32];
+    new SecureRandom().nextBytes(bytes);
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+  }
+
+  private String hash(String value) {
+    try {
+      return HexFormat.of()
+          .formatHex(
+              MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+    } catch (Exception exception) {
+      throw new IllegalStateException(exception);
+    }
+  }
+
+  private String normalize(String email) {
+    return email.trim().toLowerCase(Locale.ROOT);
   }
 }

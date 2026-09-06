@@ -17,6 +17,10 @@ public interface OrderService {
 
     OrderResponse createOrder(UUID userId, CreateOrderRequest request);
 
+    default OrderResponse createOrder(UUID userId, CreateOrderRequest request, String idempotencyKey) {
+        return createOrder(userId, request);
+    }
+
     Page<OrderResponse> getMyOrders(UUID userId, Pageable pageable, OrderStatus status);
 
     OrderResponse getOrderById(UUID userId, UUID orderId);

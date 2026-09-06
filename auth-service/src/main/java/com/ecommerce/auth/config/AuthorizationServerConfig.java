@@ -5,6 +5,7 @@ import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -18,6 +19,7 @@ import org.springframework.security.oauth2.server.authorization.settings.Authori
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
+@EnableConfigurationProperties(AuthorizationServerProperties.class)
 public class AuthorizationServerConfig {
 
   @Bean
@@ -40,8 +42,8 @@ public class AuthorizationServerConfig {
   }
 
   @Bean
-  public AuthorizationServerSettings authorizationServerSettings() {
-    return AuthorizationServerSettings.builder().issuer("http://localhost:8081").build();
+  public AuthorizationServerSettings authorizationServerSettings(AuthorizationServerProperties properties) {
+    return AuthorizationServerSettings.builder().issuer(properties.getIssuer()).build();
   }
 
   @Bean

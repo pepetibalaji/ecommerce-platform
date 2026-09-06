@@ -1,6 +1,7 @@
 package com.ecommerce.notification.kafka;
 
 import com.ecommerce.common.events.topic.KafkaTopics;
+import com.ecommerce.notification.service.AuthActionNotificationService;
 import com.ecommerce.notification.service.NotificationEventService;
 import com.ecommerce.notification.service.RecipientDirectoryService;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -10,11 +11,15 @@ import org.springframework.stereotype.Component;
 public class NotificationKafkaConsumer {
   private final NotificationEventService events;
   private final RecipientDirectoryService recipients;
+  private final AuthActionNotificationService authActions;
 
   public NotificationKafkaConsumer(
-      NotificationEventService events, RecipientDirectoryService recipients) {
+      NotificationEventService events,
+      RecipientDirectoryService recipients,
+      AuthActionNotificationService authActions) {
     this.events = events;
     this.recipients = recipients;
+    this.authActions = authActions;
   }
 
   @KafkaListener(
@@ -40,5 +45,17 @@ public class NotificationKafkaConsumer {
       groupId = "${notification.kafka.consumer-group:notification-service}")
   public void consumeUserContact(String message) {
     recipients.consume(message);
+  }
+
+  @KafkaListener(
+      topics = {
+        AuthActionNotificationService.USER_VERIFICATION_REQUESTED,
+        AuthActionNotificationService.PASSWORD_RESET_REQUESTED,
+        AuthActionNotificationService.EMAIL_CHANGE_REQUESTED
+      },
+      groupId = "${notification.kafka.consumer-group:notification-service}")
+  public void consumeAuthIdentityAction(
+      String message, org.apache.kafka.clients.consumer.ConsumerRecord<String, String> record) {
+    authActions.consume(record.topic(), message);
   }
 }

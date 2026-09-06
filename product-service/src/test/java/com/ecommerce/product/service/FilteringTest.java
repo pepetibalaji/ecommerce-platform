@@ -66,20 +66,20 @@ class FilteringTest {
     void shouldFilterByCategory() {
         Page<Product> page = new PageImpl<>(List.of(product));
 
-        when(productRepository.findByCategory(eq("Mobile"), any(Pageable.class)))
+        when(productRepository.findPublicProductsByCategory(eq("Mobile"), any(Pageable.class)))
                 .thenReturn(page);
         when(productMapper.toResponse(product)).thenReturn(response);
 
         productService.getAllProducts(0, 10, "Mobile", null, null);
 
-        verify(productRepository).findByCategory(eq("Mobile"), any(Pageable.class));
+        verify(productRepository).findPublicProductsByCategory(eq("Mobile"), any(Pageable.class));
     }
 
     @Test
     void shouldFilterByPriceRange() {
         Page<Product> page = new PageImpl<>(List.of(product));
 
-        when(productRepository.findByPriceBetween(
+        when(productRepository.findPublicProductsByPriceBetween(
                 eq(BigDecimal.valueOf(500)),
                 eq(BigDecimal.valueOf(1000)),
                 any(Pageable.class)
@@ -94,7 +94,7 @@ class FilteringTest {
                 BigDecimal.valueOf(1000)
         );
 
-        verify(productRepository).findByPriceBetween(
+        verify(productRepository).findPublicProductsByPriceBetween(
                 eq(BigDecimal.valueOf(500)),
                 eq(BigDecimal.valueOf(1000)),
                 any(Pageable.class)
@@ -105,7 +105,7 @@ class FilteringTest {
     void shouldFilterByCategoryAndPriceRange() {
         Page<Product> page = new PageImpl<>(List.of(product));
 
-        when(productRepository.findByCategoryAndPriceBetween(
+        when(productRepository.findPublicProductsByCategoryAndPriceBetween(
                 eq("Mobile"),
                 eq(BigDecimal.valueOf(500)),
                 eq(BigDecimal.valueOf(1000)),
@@ -121,7 +121,7 @@ class FilteringTest {
                 BigDecimal.valueOf(1000)
         );
 
-        verify(productRepository).findByCategoryAndPriceBetween(
+        verify(productRepository).findPublicProductsByCategoryAndPriceBetween(
                 eq("Mobile"),
                 eq(BigDecimal.valueOf(500)),
                 eq(BigDecimal.valueOf(1000)),
@@ -133,11 +133,11 @@ class FilteringTest {
     void shouldReturnAllProductsWhenNoFiltersProvided() {
         Page<Product> page = new PageImpl<>(List.of(product));
 
-        when(productRepository.findAll(any(Pageable.class))).thenReturn(page);
+        when(productRepository.findPublicProducts(any(Pageable.class))).thenReturn(page);
         when(productMapper.toResponse(product)).thenReturn(response);
 
         productService.getAllProducts(0, 10, null, null, null);
 
-        verify(productRepository).findAll(any(Pageable.class));
+        verify(productRepository).findPublicProducts(any(Pageable.class));
     }
 }

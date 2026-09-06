@@ -15,7 +15,7 @@ Gateway --> Auth Service --> PostgreSQL
                  |             action tokens, outbox, audit
                  |
                  +--> Redis
-                 |     rate limits and short-lived security state
+                 |     access-token blacklist and short-lived revocation state
                  |
                  +--> Kafka --> Notification Service --> Email provider
                  |
@@ -31,6 +31,8 @@ Gateway --> Auth Service --> PostgreSQL
 - Rotate refresh tokens and detect token reuse.
 - Reset passwords and revoke sessions after a reset.
 - Enforce role- and permission-based authorization data.
+- Run the OAuth/OIDC Authorization Server with database-backed clients, authorizations, and consents.
+- Sign tokens with a stable RSA key from a keystore, HSM, or KMS JCA provider and expose its public key at `/oauth2/jwks`.
 - Publish business events reliably through a transactional outbox.
 - Produce immutable, privacy-safe audit records.
 
@@ -43,11 +45,12 @@ Gateway --> Auth Service --> PostgreSQL
 ## Core state transitions
 
 ```text
-Registration -> PENDING_VERIFICATION -> ACTIVE
-                                   |       |
-                                   |       +-> SUSPENDED
-                                   +----------> DELETED
+PENDING_VERIFICATION -> ACTIVE -> SUSPENDED -> ACTIVE
+          |                |          |
+          +----------------+----------+-> DELETED (terminal)
 ```
 
 Only an `ACTIVE` user with a non-null `email_verified_at` may receive or refresh a session.
+
+Public registration, resend, and recovery endpoints must be rate-limited at the gateway/edge by IP and normalized email. Auth currently has no in-service Redis rate limiter; add one before relying on Auth alone for abuse protection.
 

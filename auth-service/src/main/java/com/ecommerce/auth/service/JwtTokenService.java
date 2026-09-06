@@ -1,8 +1,10 @@
 package com.ecommerce.auth.service;
 
+import com.ecommerce.auth.config.AuthorizationServerProperties;
 import com.ecommerce.auth.entity.User;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,6 +20,7 @@ public class JwtTokenService {
 
   private final JwtEncoder jwtEncoder;
   private final AuthorizationServerSettings authorizationServerSettings;
+  private final AuthorizationServerProperties authorizationServerProperties;
 
   @Value("${auth.token.access-ttl-minutes:30}")
   private long accessTtlMinutes;
@@ -27,7 +30,7 @@ public class JwtTokenService {
     Instant expiry = now.plus(accessTtlMinutes, ChronoUnit.MINUTES);
     String jti = UUID.randomUUID().toString();
 
-    JwtClaimsSet claims =
+    JwtClaimsSet.Builder claims =
         JwtClaimsSet.builder()
             .issuer(authorizationServerSettings.getIssuer())
             .issuedAt(now)
@@ -35,12 +38,18 @@ public class JwtTokenService {
             .subject(user.getEmail())
             .id(jti)
             .claim("userId", user.getId().toString())
-            .claim("role", user.getRole().name())
+            .claim("role", user.getPrimaryRoleCode())
+            .claim("roles", user.getRoleCodes())
+            .claim("permissions", user.getPermissionCodes())
+            .claim("email_verified", user.getEmailVerifiedAt() != null)
             .claim("status", user.getStatus().name())
-            .claim("tokenVersion", user.getTokenVersion())
-            .build();
+            .claim("tokenVersion", user.getTokenVersion());
 
-    return jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
+    if (!authorizationServerProperties.getAudiences().isEmpty()) {
+      claims.audience(List.copyOf(authorizationServerProperties.getAudiences()));
+    }
+
+    return jwtEncoder.encode(JwtEncoderParameters.from(claims.build())).getTokenValue();
   }
 
   public long getAccessTokenTtlSeconds() {

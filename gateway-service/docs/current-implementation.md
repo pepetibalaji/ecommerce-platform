@@ -1,3 +1,16 @@
-# Current Implementation
+# Gateway Service current implementation
 
-Gateway Service is the Spring Cloud edge service. `SecurityConfig` permits Swagger and actuator health/info/prometheus, validates JWTs for protected routes, and applies the shared JWT authority converter. `GatewayRateLimitConfig` provides route rate limiting backed by Redis where configured. Routes are supplied externally rather than hard-coded in controllers. `GatewayFallbackController` handles `/__fallback/**` and returns `application/problem+json` for dependency failures; `GatewayDependencyExceptionHandler` translates gateway failures consistently. It has no application database or Kafka consumer. Required runtime configuration is route definitions, JWT issuer/JWK settings, Redis when rate limiting is enabled, Config Server URL, tracing, and actuator exposure.
+## Implemented
+
+* Reactive Spring Cloud Gateway edge with externally supplied routes.
+* Stateless JWT validation, public path allowlist, admin/seller gates, and custom role conversion.
+* Credentialed CORS with explicit configured origins.
+* User-or-IP and IP-only rate-limit key resolvers; optional trusted-proxy header support.
+* Redis rate-limit dependency failures and circuit-breaker fallback responses as RFC-style 503 Problem Details.
+* Bounded downstream HTTP timeouts, health/info/prometheus/gateway actuator exposure, structured logs, and tracing dependencies.
+
+## Important limitations
+
+* Route inventory, quotas, circuit-breaker use, token relay behavior, and upstream URIs are external configuration; they cannot be inferred from source alone.
+* Gateway is not the sole authorization boundary; each service must retain route/ownership enforcement.
+* No business persistence, Kafka events, API aggregation transformation, WAF, TLS termination policy, or hard-coded rate-limit quota is implemented here.

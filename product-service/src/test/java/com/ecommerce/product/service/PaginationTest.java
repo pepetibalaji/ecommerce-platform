@@ -68,7 +68,7 @@ class PaginationTest {
     void shouldReturnPaginatedProducts() {
         Page<Product> page = new PageImpl<>(List.of(product));
 
-        when(productRepository.findAll(any(Pageable.class))).thenReturn(page);
+        when(productRepository.findPublicProducts(any(Pageable.class))).thenReturn(page);
         when(productMapper.toResponse(product)).thenReturn(response);
 
         Page<ProductResponse> result = productService.getAllProducts(0, 10, null, null, null);
@@ -79,7 +79,7 @@ class PaginationTest {
 
     @Test
     void shouldReturnEmptyPage() {
-        when(productRepository.findAll(any(Pageable.class))).thenReturn(Page.empty());
+        when(productRepository.findPublicProducts(any(Pageable.class))).thenReturn(Page.empty());
 
         Page<ProductResponse> result = productService.getAllProducts(0, 10, null, null, null);
 
@@ -90,11 +90,11 @@ class PaginationTest {
     void shouldUseCorrectPaginationParameters() {
         Page<Product> page = new PageImpl<>(List.of(product));
 
-        when(productRepository.findAll(any(Pageable.class))).thenReturn(page);
+        when(productRepository.findPublicProducts(any(Pageable.class))).thenReturn(page);
         when(productMapper.toResponse(product)).thenReturn(response);
 
         productService.getAllProducts(2, 5, null, null, null);
 
-        verify(productRepository).findAll(PageRequest.of(2, 5));
+        verify(productRepository).findPublicProducts(PageRequest.of(2, 5));
     }
 }

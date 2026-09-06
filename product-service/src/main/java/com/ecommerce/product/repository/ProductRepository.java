@@ -7,6 +7,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.mongodb.repository.Query;
 
 import java.math.BigDecimal;
 
@@ -34,4 +35,17 @@ public interface ProductRepository
             BigDecimal maxPrice,
             Pageable pageable
     );
+
+    @Query("{ 'active': { $ne: false } }")
+    Page<Product> findPublicProducts(Pageable pageable);
+
+    @Query("{ '$and': [ { 'active': { $ne: false } }, { 'category': ?0 } ] }")
+    Page<Product> findPublicProductsByCategory(String category, Pageable pageable);
+
+    @Query("{ '$and': [ { 'active': { $ne: false } }, { 'price': { $gte: ?0, $lte: ?1 } } ] }")
+    Page<Product> findPublicProductsByPriceBetween(BigDecimal minPrice, BigDecimal maxPrice, Pageable pageable);
+
+    @Query("{ '$and': [ { 'active': { $ne: false } }, { 'category': ?0 }, { 'price': { $gte: ?1, $lte: ?2 } } ] }")
+    Page<Product> findPublicProductsByCategoryAndPriceBetween(
+            String category, BigDecimal minPrice, BigDecimal maxPrice, Pageable pageable);
 }

@@ -1,3 +1,19 @@
-# Current Implementation
+# Order Service current implementation
 
-Order Service owns PostgreSQL orders, order items, shipping snapshots, payment-event deduplication, and inventory-release outbox records. Customer APIs are `/api/v1/orders`; admin APIs are `/api/v1/admin/orders`; seller listing is `/api/v1/seller/orders` and filters each result to the JWT seller’s item rows. At checkout the request contains product ID and quantity only. `ProductSellerClient` calls Product Service with connection/read timeouts; missing/inactive/unavailable products and catalog failures fail before reservation. The server persists immutable product name, authoritative unit price, seller ID, quantity, and reservation ID, then calculates total and calls Inventory gRPC. Failed checkout compensates reservations. It publishes `order-created`, consumes payment success/failure/refund topics idempotently, and uses an outbox to retry releases on cancellation/refund. Flyway V7 adds seller item ownership and V8 product-name snapshots.
+## Implemented
+
+* Customer checkout with server-side catalog name/price/seller snapshots and shipping snapshot.
+* Product active/availability validation and synchronous Inventory gRPC reservation with stable IDs.
+* Customer ownership, admin order management, and seller-filtered item views.
+* Payment success/failure/refund Kafka consumption with persistent event-ID deduplication.
+* Inventory release outbox with scheduled retry, terminal failure, and manual-review states.
+* PostgreSQL/Flyway persistence, OpenAPI, metrics, structured logging, and tracing dependencies.
+
+## Important limitations
+
+* `order-created` publication is asynchronous and not transactional with the order save; missed events require reconciliation.
+* Checkout compensation release is best-effort; a failure there is logged rather than persisted as outbox work.
+* `POST /orders` supports a per-user `Idempotency-Key` header, but legacy calls without it remain non-idempotent.
+* Shipping data is caller-provided snapshot; no Address Service lookup/verification exists.
+* Product/catalog changes after purchase do not alter immutable item snapshots.
+* No fulfillment integration, shipment lifecycle, or automatic cart clearing is implemented.

@@ -17,6 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -138,7 +139,7 @@ class ProductServiceTest {
     void shouldReturnProductsPage() {
         Page<Product> page = new PageImpl<>(List.of(product));
 
-        when(productRepository.findAll(any(PageRequest.class))).thenReturn(page);
+        when(productRepository.findPublicProducts(any(Pageable.class))).thenReturn(page);
         when(productMapper.toResponse(product)).thenReturn(response);
 
         Page<ProductResponse> result = productService.getAllProducts(0, 10, null, null, null);

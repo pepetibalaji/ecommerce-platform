@@ -166,7 +166,7 @@ public class ProductService {
 
             products =
                     productRepository
-                            .findByCategoryAndPriceBetween(
+                            .findPublicProductsByCategoryAndPriceBetween(
                                     category,
                                     minPrice,
                                     maxPrice,
@@ -176,7 +176,7 @@ public class ProductService {
         } else if (category != null) {
 
             products =
-                    productRepository.findByCategory(
+                    productRepository.findPublicProductsByCategory(
                             category,
                             pageable
                     );
@@ -185,7 +185,7 @@ public class ProductService {
                 maxPrice != null) {
 
             products =
-                    productRepository.findByPriceBetween(
+                    productRepository.findPublicProductsByPriceBetween(
                             minPrice,
                             maxPrice,
                             pageable
@@ -194,7 +194,7 @@ public class ProductService {
         } else {
 
             products =
-                    productRepository.findAll(pageable);
+                    productRepository.findPublicProducts(pageable);
         }
 
         return products.map(productMapper::toResponse);

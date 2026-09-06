@@ -76,7 +76,8 @@ class OrderControllerTest {
 
         when(orderService.createOrder(
                 eq(USER_ID),
-                any(CreateOrderRequest.class)
+                any(CreateOrderRequest.class),
+                isNull()
         )).thenReturn(response);
 
         OrderResponse result =
@@ -118,7 +119,8 @@ class OrderControllerTest {
         verify(orderService)
                 .createOrder(
                         eq(USER_ID),
-                        any(CreateOrderRequest.class)
+                        any(CreateOrderRequest.class),
+                        isNull()
                 );
     }
 

@@ -18,11 +18,13 @@ import org.springframework.util.StringUtils;
 public class MailtrapSandboxSmtpEmailProvider implements EmailProvider {
   private final JavaMailSender sender;
   private final NotificationProperties properties;
+  private final NotificationEmailContent content;
 
   public MailtrapSandboxSmtpEmailProvider(
-      JavaMailSender sender, NotificationProperties properties) {
+      JavaMailSender sender, NotificationProperties properties, NotificationEmailContent content) {
     this.sender = sender;
     this.properties = properties;
+    this.content = content;
   }
 
   @Override
@@ -31,21 +33,10 @@ public class MailtrapSandboxSmtpEmailProvider implements EmailProvider {
     MimeMessageHelper helper = new MimeMessageHelper(message, false, "UTF-8");
     helper.setFrom(properties.getSandboxFromEmail());
     helper.setTo(email);
-    helper.setSubject(subject(notification));
-    helper.setText(subject(notification) + ". Notification: " + notification.getId(), false);
+    helper.setSubject(content.subject(notification));
+    helper.setText(content.body(notification), false);
     sender.send(message);
     String messageId = message.getMessageID();
     return StringUtils.hasText(messageId) ? messageId : "mailtrap-sandbox-" + notification.getId();
-  }
-
-  private String subject(Notification n) {
-    return switch (n.getType()) {
-      case "ORDER_RECEIVED" -> "We received your order";
-      case "PAYMENT_SUCCESSFUL" -> "Your payment was successful";
-      case "PAYMENT_FAILED" -> "Your payment failed";
-      case "ORDER_CANCELLED" -> "Your order was cancelled";
-      case "REFUND_PROCESSED" -> "Your refund was processed";
-      default -> "Ecommerce Platform notification";
-    };
   }
 }

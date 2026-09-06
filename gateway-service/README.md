@@ -2,7 +2,7 @@
 
 ## What this service is
 
-API Gateway is the public HTTP entry point. It runs on port `8080`, routes `/api/v1/**` requests to the owning service, applies CORS/security policy, and validates JWTs before forwarding protected requests.
+API Gateway is the public HTTP entry point. It runs on port `8080`, routes externally configured paths to the owning service, applies CORS/security policy, validates JWTs before protected requests, and can support Redis-backed route rate limiting and circuit-breaker fallbacks.
 
 ## Technology
 
@@ -38,6 +38,12 @@ mvn spring-boot:run
 - Auth issuer/JWK settings.
 - CORS origin settings.
 
-## Current and next work
+## Documentation
 
-Current: routing, JWT validation, CORS, fallback/error handling. Next: stage TLS, active rate-limit policy, circuit breakers, and deployment-level WAF policy.
+Detailed integration and design documentation is in [`docs/`](docs/README.md):
+
+- [API and contracts](docs/api.md)
+- [High-level design](docs/hld.md)
+- [Low-level design](docs/lld.md)
+- [Data model](docs/schema.md)
+- [Events and operations](docs/events-and-operations.md)

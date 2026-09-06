@@ -15,20 +15,24 @@ Auth Service owns user identity and account lifecycle. It runs on port `8081`, i
 
 ## Data owned
 
-- `users`: identity, role, account status, token version.
-- `refresh_tokens`: refresh-token lifecycle.
+- `users`, roles, and permissions: identity, RBAC, account status, and token version.
+- `refresh_sessions`: hashed, rotating refresh-token lifecycle.
+- `identity_action_tokens`: hashed email-verification, reset, and email-change actions.
+- `auth_outbox_events` and `auth_audit_events`: reliable event delivery and security/admin audit history.
+- Spring Authorization Server clients, authorizations, and consents.
 - Redis blacklist: revoked access-token IDs until expiry.
 
 ## End-to-end flow
 
 ```text
 Register
-  -> validate request and persist active user
-  -> publish user-contact-updated(eventId, userId, email, active=true)
-  -> issue access JWT + refresh token
+  -> persist PENDING_VERIFICATION user
+  -> publish token-free verification-request event
+  -> Notification obtains the delivery token privately and sends confirmation email
+  -> confirmation activates the user and publishes user-contact-updated
 
 Login
-  -> verify BCrypt password and active status
+  -> verify BCrypt password, ACTIVE status, and verified email
   -> issue access JWT + refresh token
 
 Delete/deactivate
@@ -49,7 +53,7 @@ Requires PostgreSQL, Redis, Kafka, Config Server, and Auth database configuratio
 
 ## Current and next work
 
-Current: registration, login, refresh/logout, profile/admin users, user contact events. Next: recipient backfill for existing users, persistent signing keys, refresh-token hashing, MFA, and account recovery.
+Current: verified registration/resend, login, refresh/logout, reset, verified email change, profile/admin users, persistent OAuth state, stable signing-key support, audit events, and token-free Notification delivery. Future hardening includes MFA, an Auth-local rate limiter, multi-instance outbox leasing/DLQ, and overlapping-JWK key rotation.
 
 ## Replacement design
 
