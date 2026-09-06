@@ -53,7 +53,9 @@ import org.testcontainers.utility.DockerImageName;
  * available, so normal local unit-test runs do not fail on developer machines without Docker.
  */
 @SpringBootTest(
-    webEnvironment = SpringBootTest.WebEnvironment.NONE,
+    // Auth registers servlet SecurityFilterChains. MOCK supplies the servlet infrastructure without
+    // opening a server port, allowing this data/messaging integration test to load production config.
+    webEnvironment = SpringBootTest.WebEnvironment.MOCK,
     properties = {
       "spring.cloud.config.enabled=false",
       "spring.task.scheduling.enabled=false",
