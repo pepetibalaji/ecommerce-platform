@@ -75,13 +75,27 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public OrderResponse createOrder(UUID userId, CreateOrderRequest request) {
+        return createOrder(userId, request, null);
+    }
+
+    @Override
+    public OrderResponse createOrder(UUID userId, CreateOrderRequest request, String idempotencyKey) {
         validateCreateOrderRequest(request);
+
+        String normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
+        if (normalizedIdempotencyKey != null) {
+            var existing = orderRepository.findByUserIdAndIdempotencyKey(userId, normalizedIdempotencyKey);
+            if (existing.isPresent()) {
+                return toResponse(existing.get());
+            }
+        }
 
         List<OrderItem> reservedItems = new ArrayList<>();
 
         try {
             Order order = new Order();
             order.setUserId(userId);
+            order.setIdempotencyKey(normalizedIdempotencyKey);
             order.setCurrency(resolveCurrency(request.getCurrency()));
             order.setStatus(OrderStatus.PENDING);
 
@@ -353,6 +367,17 @@ public class OrderServiceImpl implements OrderService {
         }
 
         return resolved;
+    }
+
+    private String normalizeIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return null;
+        }
+        String normalized = idempotencyKey.trim();
+        if (normalized.length() > 100) {
+            throw new BadRequestException("Idempotency-Key must not exceed 100 characters");
+        }
+        return normalized;
     }
 
     private void applyShippingAddress(

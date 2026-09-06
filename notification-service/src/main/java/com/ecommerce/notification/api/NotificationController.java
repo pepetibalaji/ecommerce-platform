@@ -18,19 +18,19 @@ public class NotificationController {
   private final PreferenceRepository preferences;
 
   @GetMapping("/users/{userId}")
-  @PreAuthorize("#userId.toString() == authentication.name or hasRole('ADMIN')")
+  @PreAuthorize("#userId.toString() == authentication.tokenAttributes['userId'] or hasRole('ADMIN')")
   public List<Notification> history(@PathVariable UUID userId) {
     return notifications.findByRecipientUserIdOrderByCreatedAtDesc(userId);
   }
 
   @GetMapping("/users/{userId}/preferences")
-  @PreAuthorize("#userId.toString() == authentication.name or hasRole('ADMIN')")
+  @PreAuthorize("#userId.toString() == authentication.tokenAttributes['userId'] or hasRole('ADMIN')")
   public List<NotificationPreference> preferences(@PathVariable UUID userId) {
     return preferences.findByUserId(userId);
   }
 
   @PutMapping("/users/{userId}/preferences")
-  @PreAuthorize("#userId.toString() == authentication.name or hasRole('ADMIN')")
+  @PreAuthorize("#userId.toString() == authentication.tokenAttributes['userId'] or hasRole('ADMIN')")
   public NotificationPreference savePreference(
       @PathVariable UUID userId, @Valid @RequestBody PreferenceRequest request) {
     NotificationPreference p =

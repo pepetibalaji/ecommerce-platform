@@ -2,7 +2,7 @@
 
 ## What this service is
 
-Product Service owns the catalog and runs on port `8082`. Customers can browse products; administrators manage catalog records.
+Product Service owns the catalog and runs on port `8082`. It is the current authority for product details, seller ownership, active status, and unit price. Customers can browse; sellers manage their own catalog; administrators can manage every product.
 
 ## Technology
 
@@ -18,8 +18,9 @@ MongoDB `product_db` stores products and catalog indexes. Other services must no
 ## End-to-end flow
 
 ```text
-Customer -> Gateway -> Product Service -> MongoDB -> product response
-Administrator -> Gateway + ADMIN JWT -> Product Service -> validate/save product -> MongoDB
+Public customer -> Gateway -> Product Service -> MongoDB -> product response
+Seller/admin -> Gateway + JWT -> Product Service -> validate/save -> MongoDB
+                                                       -> Kafka product-created -> Inventory provisioning
 ```
 
 ## Run locally
@@ -31,6 +32,12 @@ mvn spring-boot:run
 
 Requires MongoDB, Config Server, and Auth issuer/JWK configuration.
 
-## Current and next work
+## Documentation
 
-Current: catalog reads and administration. Next: authoritative checkout-time price validation, product lifecycle events, images, price history, and search indexing.
+Detailed integration and design documentation is in [`docs/`](docs/README.md):
+
+- [API and contracts](docs/api.md)
+- [High-level design](docs/hld.md)
+- [Low-level design](docs/lld.md)
+- [Data model](docs/schema.md)
+- [Events and operations](docs/events-and-operations.md)

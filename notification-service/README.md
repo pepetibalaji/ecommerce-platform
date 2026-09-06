@@ -2,7 +2,7 @@
 
 ## What this service is
 
-Notification Service runs on port `8088` and sends transactional customer/seller email asynchronously. It consumes Kafka events, stores notification state in its own PostgreSQL database, and sends through Mailtrap without blocking business workflows.
+Notification Service runs on port `8088` and sends transactional customer/seller email asynchronously. It consumes business and identity Kafka events, stores notification state in PostgreSQL, and delivers through the configured provider without blocking business workflows.
 
 ## Technology
 
@@ -57,6 +57,12 @@ Register new user -> confirm user-contact-updated is consumed
 -> inspect Mailtrap Sandbox inbox and notification_deliveries
 ```
 
-## Current and next work
+## Documentation
 
-Current: durable email intent, idempotency, retry, Mailtrap adapters, recipient directory, metrics/admin visibility. Next: recipient backfill, end-to-end integration tests, stage sender-domain verification, fulfilment/inventory/seller event producers, SMS/push/in-app inbox.
+Detailed integration and design documentation is in [`docs/`](docs/README.md):
+
+- [API and contracts](docs/api.md)
+- [High-level design](docs/hld.md)
+- [Low-level design](docs/lld.md)
+- [Data model](docs/schema.md)
+- [Events and operations](docs/events-and-operations.md)

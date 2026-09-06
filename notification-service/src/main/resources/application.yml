@@ -4,7 +4,15 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
   config:
-    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888},optional:file:${NOTIFICATION_LOCAL_ENV_FILE:../../ecommerce-config-repo/dev/.env}[.properties]
+
+notification:
+  auth-action-delivery:
+    auth-base-url: ${AUTH_SERVICE_INTERNAL_URL:http://localhost:8081}
+    internal-service-token: ${AUTH_INTERNAL_SERVICE_TOKEN:}
+    verification-url: ${AUTH_EMAIL_VERIFICATION_URL:http://localhost:3000/verify-email}
+    password-reset-url: ${AUTH_PASSWORD_RESET_URL:http://localhost:3000/reset-password}
+    email-change-url: ${AUTH_EMAIL_CHANGE_URL:http://localhost:3000/confirm-email-change}
 
 logging:
   structured:

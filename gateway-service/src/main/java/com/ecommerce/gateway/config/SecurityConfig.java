@@ -7,14 +7,18 @@ import org.springframework.security.config.annotation.web.reactive.EnableWebFlux
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverterAdapter;
-import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 @Configuration
 @EnableWebFluxSecurity
@@ -36,6 +40,10 @@ public class SecurityConfig {
                                 "/api/v1/auth/register",
                                 "/api/v1/auth/login",
                                 "/api/v1/auth/refresh",
+                                "/api/v1/auth/verification/confirm",
+                                "/api/v1/auth/verification/resend",
+                                "/api/v1/auth/password/forgot",
+                                "/api/v1/auth/password/reset",
                                 "/api/v1/cart/guest/**",
                                 "/oauth2/**",
                                 "/.well-known/**",
@@ -48,6 +56,8 @@ public class SecurityConfig {
                                 "/product/v3/api-docs/**",
                                 "/payment/v3/api-docs",
                                 "/payment/v3/api-docs/**",
+                                "/notification/v3/api-docs",
+                                "/notification/v3/api-docs/**",
                                 "/inventory/v3/api-docs",
                                 "/inventory/v3/api-docs/**",
                                 "/cart/v3/api-docs",
@@ -88,13 +98,25 @@ public class SecurityConfig {
 
     @Bean
     public ReactiveJwtAuthenticationConverterAdapter reactiveJwtAuthenticationConverterAdapter() {
-        JwtGrantedAuthoritiesConverter authoritiesConverter = new JwtGrantedAuthoritiesConverter();
-        authoritiesConverter.setAuthoritiesClaimName("role");
-        authoritiesConverter.setAuthorityPrefix("ROLE_");
-
         JwtAuthenticationConverter jwtAuthenticationConverter = new JwtAuthenticationConverter();
-        jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(authoritiesConverter);
+        jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(jwt -> {
+            Set<GrantedAuthority> authorities = new LinkedHashSet<>();
+            addRoleAuthorities(jwt.getClaim("roles"), authorities);
+            if (authorities.isEmpty()) {
+                addRoleAuthorities(jwt.getClaim("role"), authorities);
+            }
+            return authorities;
+        });
 
         return new ReactiveJwtAuthenticationConverterAdapter(jwtAuthenticationConverter);
+    }
+
+    private void addRoleAuthorities(Object claim, Collection<GrantedAuthority> authorities) {
+        if (claim instanceof Collection<?> values) {
+            values.forEach(value -> addRoleAuthorities(value, authorities));
+        } else if (claim instanceof String value && !value.isBlank()) {
+            authorities.add(new SimpleGrantedAuthority(
+                    value.startsWith("ROLE_") ? value : "ROLE_" + value));
+        }
     }
 }

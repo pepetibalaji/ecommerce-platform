@@ -2,7 +2,7 @@
 
 ## What this service is
 
-Cart Service runs on port `8085` and manages temporary customer carts. It is intentionally separate from Order Service; a cart does not automatically create an order.
+Cart Service runs on port `8085` and manages temporary authenticated-customer and anonymous guest carts in Redis. It stores only product IDs and quantities. It is intentionally separate from Order Service: a cart does not create an order and is not an authority for price, stock, or product validity.
 
 ## Technology
 
@@ -14,12 +14,11 @@ Cart Service runs on port `8085` and manages temporary customer carts. It is int
 ## End-to-end flow
 
 ```text
-Authenticated customer -> Gateway -> Cart Service
-  -> read/write Redis key cart:{userId}
-  -> return current cart
+Authenticated customer -> Gateway -> Cart Service -> cart:{userId}
+Anonymous guest          -> Gateway -> Cart Service -> guest-cart:{guestId}
 ```
 
-Cart state expires after its configured inactivity period. The client sends a valid order request to Order Service when checkout begins.
+Customer carts expire after the configured inactivity period (7 days by default); guest carts expire after 30 days by default. A guest cart can be merged into the authenticated customer's cart after sign-in. The client sends a valid order request to Order Service when checkout begins, where catalog, price, and stock must be revalidated.
 
 ## Run locally
 
@@ -30,6 +29,12 @@ mvn spring-boot:run
 
 Requires Redis, Config Server, and Auth issuer/JWK configuration.
 
-## Current and next work
+## Documentation
 
-Current: customer cart CRUD and merge support. Next: checkout-time product/price validation and approved post-order cart clearing policy.
+Detailed integration and design documentation is in [`docs/`](docs/README.md):
+
+- [API and contracts](docs/api.md)
+- [High-level design](docs/hld.md)
+- [Low-level design](docs/lld.md)
+- [Data model](docs/schema.md)
+- [Operations](docs/events-and-operations.md)

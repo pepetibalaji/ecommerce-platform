@@ -1,14 +1,14 @@
 # API Contract
 
-Base path: `/api/v1/auth`. Public write endpoints should be rate-limited by IP and normalized email. Never reveal whether an email address exists during verification resend or password-reset requests.
+Base paths: Auth endpoints use `/api/v1/auth`; self-service endpoints use `/api/v1/users`; admin endpoints use `/api/v1/admin/users`. Public write endpoints should be rate-limited by IP and normalized email at the gateway/edge until Auth has an in-service control. Never reveal whether an email address exists during verification resend or password-reset requests.
 
 ## Registration and verification
 
 | Method and path | Purpose | Response |
 | --- | --- | --- |
-| `POST /register` | Create a pending user and queue verification email. | `202 Accepted` |
-| `POST /verification/resend` | Queue a new verification email. | `202 Accepted` |
-| `POST /verification/confirm` | Consume a valid verification token and activate the user. | `204 No Content` |
+| `POST /api/v1/auth/register` | Create a pending user and queue verification email. | `202 Accepted` |
+| `POST /api/v1/auth/verification/resend` | Queue a new verification email. | `202 Accepted` |
+| `POST /api/v1/auth/verification/confirm` | Consume a valid verification token and activate the user. | `204 No Content` |
 
 `POST /register` request:
 
@@ -32,11 +32,11 @@ Use a frontend confirmation page that posts the token; do not use a state-changi
 
 | Method and path | Purpose |
 | --- | --- |
-| `POST /login` | Authenticate an active, verified user. |
-| `POST /refresh` | Rotate a refresh token and issue a new access token. |
-| `POST /logout` | Revoke the current session. |
-| `GET /sessions` | List current user's active sessions. |
-| `DELETE /sessions/{sessionId}` | Revoke one session. |
+| `POST /api/v1/auth/login` | Authenticate an active, verified user. |
+| `POST /api/v1/auth/refresh` | Rotate a refresh token and issue a new access token. |
+| `POST /api/v1/auth/logout` | Blacklist the presented access JWT and, when supplied, revoke its owned refresh session. |
+| `GET /api/v1/users/me/sessions` | List current user's active sessions. |
+| `DELETE /api/v1/users/me/sessions/{sessionId}` | Revoke one session. |
 
 Login and refresh response:
 
@@ -45,7 +45,8 @@ Login and refresh response:
   "accessToken": "jwt",
   "refreshToken": "opaque-token",
   "tokenType": "Bearer",
-  "expiresIn": 900
+  "expiresInSeconds": 1800,
+  "user": { "id": "uuid", "name": "Jane Doe", "email": "jane@example.com", "role": "CUSTOMER", "status": "ACTIVE" }
 }
 ```
 
@@ -53,8 +54,8 @@ Login and refresh response:
 
 | Method and path | Purpose | Response |
 | --- | --- | --- |
-| `POST /password/forgot` | Queue a password-reset email if the account exists. | `202 Accepted` |
-| `POST /password/reset` | Consume reset token, change password, revoke sessions. | `204 No Content` |
+| `POST /api/v1/auth/password/forgot` | Queue a password-reset email for a matching active, verified account without revealing eligibility. | `202 Accepted` |
+| `POST /api/v1/auth/password/reset` | Consume reset token, change password, revoke sessions. | `204 No Content` |
 
 ## Self-service user APIs
 
@@ -62,19 +63,20 @@ All self-service endpoints require an access token and operate only on the authe
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET /users/me` | Return the current user's profile, verification state, roles, and active-session summary. |
-| `PATCH /users/me` | Update safe profile fields such as `displayName`. |
-| `POST /users/me/email-change` | Request a confirmation email for a new address. |
-| `POST /users/me/email-change/confirm` | Consume an `EMAIL_CHANGE` token and replace the verified email. |
-| `POST /users/me/password` | Change password after validating the current password. |
+| `GET /api/v1/users/me` | Return the current user's profile, role, and status. |
+| `PUT /api/v1/users/me` | Update safe profile fields such as `name`. |
+| `DELETE /api/v1/users/me` | Soft-delete the authenticated user and revoke refresh sessions. |
+| `POST /api/v1/users/me/email-change` | Request a confirmation email for a new address. |
+| `POST /api/v1/users/me/email-change/confirm` | Consume an `EMAIL_CHANGE` token and replace the verified email. |
+| `POST /api/v1/users/me/password` | Change password after validating the current password. |
 
-`PATCH /users/me` request:
+`PUT /users/me` request:
 
 ```json
-{ "displayName": "Jane Smith" }
+{ "name": "Jane Smith" }
 ```
 
-Email must not be changed directly by `PATCH`. The change request creates an `EMAIL_CHANGE` action token with `target_email`; confirmation atomically updates `email`, `email_normalized`, and `email_verified_at`. Send a security notification to both the old and new addresses.
+Email must not be changed directly by `PUT`. The change request creates an `EMAIL_CHANGE` action token with `target_email`; confirmation atomically updates `email`, `email_normalized`, and `email_verified_at`, then publishes the contact-directory update.
 
 Password change request:
 
@@ -93,16 +95,16 @@ All endpoints below require an `ADMIN` role plus the corresponding permission. T
 
 | Method and path | Required permission | Purpose |
 | --- | --- | --- |
-| `GET /admin/users` | `USER:READ` | Paginated search by email, status, role, and creation date. |
-| `GET /admin/users/{userId}` | `USER:READ` | View one user's administrative profile. |
-| `PATCH /admin/users/{userId}/status` | `USER:STATUS_WRITE` | Suspend, reactivate, or soft-delete an account. |
-| `PUT /admin/users/{userId}/roles` | `USER:ROLE_WRITE` | Replace the user's assigned roles. |
-| `DELETE /admin/users/{userId}/sessions` | `USER:SESSION_REVOKE` | Revoke all active refresh sessions. |
+| `GET /api/v1/admin/users` | `USER:READ` | Paginated user list. |
+| `GET /api/v1/admin/users/{userId}` | `USER:READ` | View one user's administrative profile. |
+| `PATCH /api/v1/admin/users/{userId}/status` | `USER:STATUS_WRITE` | Suspend, reactivate a verified suspended account, or soft-delete an account. |
+| `PUT /api/v1/admin/users/{userId}/roles` | `USER:ROLE_WRITE` | Replace the user's assigned roles. |
+| `DELETE /api/v1/admin/users/{userId}/sessions` | `USER:SESSION_REVOKE` | Revoke all active refresh sessions. |
 
 Status update request:
 
 ```json
-{ "status": "SUSPENDED", "reason": "Repeated policy violations" }
+{ "status": "SUSPENDED" }
 ```
 
 Role update request:
@@ -111,7 +113,7 @@ Role update request:
 { "roles": ["SELLER"] }
 ```
 
-Every admin action writes an `auth_audit_events` row with the administrator as `actor_user_id` and the affected user as `subject_user_id`. Suspending, deleting, or changing roles must revoke the user's sessions and increment `token_version` so existing access tokens can be rejected at their next validation boundary.
+Every admin action writes an `auth_audit_events` row with the administrator as `actor_user_id` and the affected user as `subject_user_id`. Suspending, deleting, or changing roles revokes refresh sessions and increments `token_version`. Existing JWTs remain valid until expiry unless each resource server adopts token-version or revocation checking.
 
 Administrators must not directly set a user's password, mark an email verified, or change email addresses. Use the same verified, user-controlled recovery and email-change flows instead.
 
@@ -127,8 +129,10 @@ Until all dependent services are migrated, issue these claims:
   "role": "CUSTOMER",
   "roles": ["CUSTOMER"],
   "permissions": [],
-  "status": "ACTIVE"
+  "status": "ACTIVE",
+  "email_verified": true,
+  "tokenVersion": 4
 }
 ```
 
-`userId` must remain a UUID string. `role` is retained for existing Product and authorization code; `roles` is the new multi-role claim. Publish active signing keys through `/.well-known/jwks.json` and keep issuer/audience validation configured consistently in every resource service.
+`userId` must remain a UUID string. `role` is retained for legacy resource-service consumers; `roles` is the new multi-role claim. Publish active signing keys through `/oauth2/jwks` and keep issuer/audience validation configured consistently in every resource service.

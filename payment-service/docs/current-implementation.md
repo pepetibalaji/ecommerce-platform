@@ -1,3 +1,18 @@
-# Current Implementation
+# Payment Service current implementation
 
-Payment Service owns PostgreSQL payment, attempt, provider webhook-event, and refund records. Customer APIs create checkout sessions and read own payments under `/api/v1/payments`; public provider-return paths are `/public/payments/success` and `/cancel`; Stripe and Razorpay webhooks are `/api/v1/payments/webhooks/*`; admin listing/detail/refund routes are `/api/v1/admin/payments`. It consumes `order-created`, persists provider interactions, deduplicates callbacks, and publishes payment-success, payment-failed, and payment-refund-completed Kafka events. It also exposes an internal gRPC payment service. Required configuration includes PostgreSQL, Kafka, provider credentials/webhook secrets, OAuth/JWK, redirect URLs, Config Server, actuator/tracing; provider secrets and raw payment payloads must never be logged.
+## Implemented
+
+* Idempotent payment preparation from `order-created`.
+* Customer-owned checkout-session and payment-query endpoints.
+* Sandbox, Stripe, and Razorpay adapter structure; signed Stripe/Razorpay webhook processing.
+* Persistent checkout attempts, webhook inbox, refunds, and optimistic payment versioning.
+* Admin payment visibility and idempotent refund initiation.
+* Payment success/failure/refund Kafka outcomes, gRPC server, OpenAPI, Actuator, metrics, and tracing dependencies.
+
+## Important limitations
+
+* Browser success/cancel routes are informational; only webhooks change payment state.
+* Payment persistence and Kafka outcome publishing have no transactional outbox guarantee.
+* No general retry scheduler/cancellation policy for provider work is implemented here.
+* Payment amount/currency are trusted from Order Service event and are not independently revalidated against the order.
+* Provider secrets and raw payloads require careful deployment/logging hygiene.

@@ -33,6 +33,9 @@ public class Order {
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 
+    @Column(name = "idempotency_key", length = 100)
+    private String idempotencyKey;
+
     @Column(name = "total_amount", nullable = false)
     private BigDecimal totalAmount;
 

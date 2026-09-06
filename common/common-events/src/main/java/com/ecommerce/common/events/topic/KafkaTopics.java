@@ -20,6 +20,12 @@ public final class KafkaTopics {
   public static final String LOW_INVENTORY = "low-inventory";
   public static final String SELLER_ORDER_PAID = "seller-order-paid";
   public static final String USER_CONTACT_UPDATED = "user-contact-updated";
+  public static final String AUTH_USER_VERIFICATION_REQUESTED =
+      "auth.user-verification-requested.v1";
+  public static final String AUTH_USER_EMAIL_VERIFIED = "auth.user-email-verified.v1";
+  public static final String AUTH_PASSWORD_RESET_REQUESTED = "auth.password-reset-requested.v1";
+  public static final String AUTH_EMAIL_CHANGE_REQUESTED = "auth.email-change-requested.v1";
+  public static final String AUTH_USER_EMAIL_CHANGED = "auth.user-email-changed.v1";
   public static final String NOTIFICATION_REQUESTED = "notification-requested";
   public static final String PRODUCT_CREATED = "product-created";
 
@@ -45,6 +51,11 @@ public final class KafkaTopics {
         LOW_INVENTORY,
         SELLER_ORDER_PAID,
         USER_CONTACT_UPDATED,
+        AUTH_USER_VERIFICATION_REQUESTED,
+        AUTH_USER_EMAIL_VERIFIED,
+        AUTH_PASSWORD_RESET_REQUESTED,
+        AUTH_EMAIL_CHANGE_REQUESTED,
+        AUTH_USER_EMAIL_CHANGED,
         NOTIFICATION_REQUESTED,
         PRODUCT_CREATED);
   }

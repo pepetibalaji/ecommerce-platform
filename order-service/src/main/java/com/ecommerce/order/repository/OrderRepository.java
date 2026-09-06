@@ -18,6 +18,8 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
 
     Page<Order> findByUserIdAndStatus(UUID userId, OrderStatus status, Pageable pageable);
 
+    Optional<Order> findByUserIdAndIdempotencyKey(UUID userId, String idempotencyKey);
+
     Page<Order> findByStatus(OrderStatus status, Pageable pageable);
 
     @Query("select distinct o from Order o join o.items i where i.sellerId = :sellerId")

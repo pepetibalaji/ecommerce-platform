@@ -1,9 +1,12 @@
 package com.ecommerce.notification.service;
 
+import com.ecommerce.notification.config.AuthActionDeliveryProperties;
 import com.ecommerce.notification.config.NotificationProperties;
 import com.ecommerce.notification.domain.*;
 import com.ecommerce.notification.provider.EmailProvider;
 import com.ecommerce.notification.repository.*;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.*;
 import java.time.*;
 import java.util.*;
@@ -21,6 +24,9 @@ public class NotificationDeliveryService {
   private final RecipientDirectoryService recipients;
   private final EmailProvider provider;
   private final NotificationProperties properties;
+  private final AuthDeliveryTokenClient deliveryTokens;
+  private final AuthActionDeliveryProperties authActionProperties;
+  private final ObjectMapper mapper;
   private final Counter exhausted;
 
   public NotificationDeliveryService(
@@ -29,12 +35,18 @@ public class NotificationDeliveryService {
       RecipientDirectoryService r,
       EmailProvider p,
       NotificationProperties props,
+      AuthDeliveryTokenClient deliveryTokens,
+      AuthActionDeliveryProperties authActionProperties,
+      ObjectMapper mapper,
       MeterRegistry metrics) {
     notifications = n;
     deliveries = d;
     recipients = r;
     provider = p;
     properties = props;
+    this.deliveryTokens = deliveryTokens;
+    this.authActionProperties = authActionProperties;
+    this.mapper = mapper;
     exhausted = Counter.builder("notification_delivery_exhausted_total").register(metrics);
   }
 
@@ -67,7 +79,7 @@ public class NotificationDeliveryService {
     d.setAttemptCount(attempt);
     d.setProvider(properties.getProvider());
     d.setStatus(DeliveryStatus.PENDING);
-    Optional<String> email = recipients.findActiveEmail(n.getRecipientUserId());
+    Optional<String> email = deliveryEmail(n);
     if (email.isEmpty()) {
       d.setStatus(DeliveryStatus.FAILED);
       d.setLastError("Recipient email unavailable from identity directory");
@@ -76,7 +88,7 @@ public class NotificationDeliveryService {
       return;
     }
     try {
-      d.setProviderMessageId(provider.send(email.get(), n));
+      d.setProviderMessageId(provider.send(email.get(), notificationForProvider(n)));
       d.setStatus(DeliveryStatus.SENT);
       n.setStatus(NotificationStatus.SENT);
       n.setSentAt(Instant.now());
@@ -88,6 +100,46 @@ public class NotificationDeliveryService {
       retryOrFail(n, d);
       deliveries.save(d);
     }
+  }
+
+  private Optional<String> deliveryEmail(Notification notification) {
+    if (!AuthActionNotificationService.isAuthActionNotification(notification.getType())) {
+      return recipients.findActiveEmail(notification.getRecipientUserId());
+    }
+    try {
+      String email = mapper.readTree(notification.getPayload()).path("deliveryEmail").asText();
+      return email == null || email.isBlank() ? Optional.empty() : Optional.of(email);
+    } catch (Exception exception) {
+      throw new IllegalArgumentException("Invalid Auth action notification payload", exception);
+    }
+  }
+
+  /**
+   * Uses a detached copy so the raw token-containing link is passed to the provider but never
+   * flushes into the notification table.
+   */
+  private Notification notificationForProvider(Notification notification) throws Exception {
+    if (!AuthActionNotificationService.isAuthActionNotification(notification.getType())) {
+      return notification;
+    }
+    JsonNode payload = mapper.readTree(notification.getPayload());
+    UUID actionId = UUID.fromString(payload.path("actionId").asText());
+    String token = deliveryTokens.obtainDeliveryToken(actionId);
+    String actionUrl = authActionProperties.actionUrl(notification.getType(), token);
+
+    Notification outbound = new Notification();
+    outbound.setId(notification.getId());
+    outbound.setEventId(notification.getEventId());
+    outbound.setRecipientUserId(notification.getRecipientUserId());
+    outbound.setChannel(notification.getChannel());
+    outbound.setType(notification.getType());
+    outbound.setStatus(notification.getStatus());
+    outbound.setPayload(
+        mapper.writeValueAsString(
+            Map.of(
+                "actionUrl", actionUrl,
+                "eventType", payload.path("eventType").asText())));
+    return outbound;
   }
 
   private void retryOrFail(Notification n, NotificationDelivery d) {
@@ -110,6 +162,7 @@ public class NotificationDeliveryService {
 
   private String safeError(Exception ex) {
     String message = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+    message = message.replaceAll("(?i)([?&]token=)[^&\\s]+", "$1[redacted]");
     return message.length() > 1000 ? message.substring(0, 1000) : message;
   }
 }

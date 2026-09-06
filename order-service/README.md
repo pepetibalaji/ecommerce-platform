@@ -2,7 +2,7 @@
 
 ## What this service is
 
-Order Service runs on port `8086` and owns the order lifecycle. It reserves inventory synchronously, publishes order events, consumes payment outcomes, and compensates inventory safely when an order fails or is cancelled.
+Order Service runs on port `8086` and owns checkout and the order lifecycle. It snapshots current catalog data, reserves inventory synchronously, publishes order events, consumes payment outcomes, and compensates inventory through a durable release outbox when an order fails, is refunded, or is cancelled.
 
 ## Technology
 
@@ -44,6 +44,12 @@ mvn spring-boot:run
 
 Requires PostgreSQL, Kafka, Inventory gRPC, Config Server, and Auth issuer/JWK configuration.
 
-## Current and next work
+## Documentation
 
-Current: order creation, payment outcome handling, idempotent inventory compensation. Next: transactional Kafka outbox for `order-created`, seller paid-order event enrichment, and Fulfilment integration.
+Detailed integration and design documentation is in [`docs/`](docs/README.md):
+
+- [API and contracts](docs/api.md)
+- [High-level design](docs/hld.md)
+- [Low-level design](docs/lld.md)
+- [Data model](docs/schema.md)
+- [Events and operations](docs/events-and-operations.md)

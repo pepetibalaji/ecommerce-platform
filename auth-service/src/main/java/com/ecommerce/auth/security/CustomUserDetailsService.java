@@ -2,6 +2,9 @@ package com.ecommerce.auth.security;
 
 import com.ecommerce.auth.entity.User;
 import com.ecommerce.auth.repository.UserRepository;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -18,16 +21,20 @@ public class CustomUserDetailsService implements UserDetailsService {
   public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
     User user =
         userRepository
-            .findByEmail(email)
+            .findAuthorizationDataByEmailNormalized(email.trim().toLowerCase(Locale.ROOT))
             .orElseThrow(() -> new UsernameNotFoundException("User not found: " + email));
 
+    List<String> authorities = new ArrayList<>();
+    user.getRoleCodes().forEach(role -> authorities.add("ROLE_" + role));
+    user.getPermissionCodes().forEach(permission -> authorities.add("PERMISSION_" + permission));
+
     return org.springframework.security.core.userdetails.User.withUsername(user.getEmail())
-        .password(user.getPassword())
-        .authorities("ROLE_" + user.getRole().name())
+        .password(user.getPasswordHash())
+        .authorities(authorities.toArray(String[]::new))
         .accountExpired(false)
-        .accountLocked(user.getStatus() != com.ecommerce.auth.entity.enums.UserStatus.ACTIVE)
+        .accountLocked(!user.isActiveAndVerified())
         .credentialsExpired(false)
-        .disabled(user.getStatus() != com.ecommerce.auth.entity.enums.UserStatus.ACTIVE)
+        .disabled(!user.isActiveAndVerified())
         .build();
   }
 }

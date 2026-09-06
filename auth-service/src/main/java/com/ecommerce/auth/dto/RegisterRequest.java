@@ -1,5 +1,6 @@
 package com.ecommerce.auth.dto;
 
+import com.ecommerce.auth.entity.enums.Role;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -20,4 +21,7 @@ public class RegisterRequest {
   @Size(min = 8, max = 100, message = "Password must be between 8 and 100 characters")
   @NotBlank(message = "Password is required")
   private String password;
+
+  /** Optional public account type; defaults to CUSTOMER for backwards compatibility. */
+  private Role role = Role.CUSTOMER;
 }
