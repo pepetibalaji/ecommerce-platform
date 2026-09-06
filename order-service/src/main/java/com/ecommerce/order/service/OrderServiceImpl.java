@@ -25,6 +25,7 @@ import com.ecommerce.order.repository.OrderRepository;
 import com.ecommerce.order.entity.OrderProcessedEvent;
 import com.ecommerce.order.observability.PaymentOutcomeMetrics;
 import com.ecommerce.order.catalog.ProductSellerClient;
+import com.ecommerce.order.config.CheckoutProperties;
 import com.ecommerce.order.dto.SellerOrderResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,7 +37,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -51,6 +54,7 @@ public class OrderServiceImpl implements OrderService {
     private final PaymentOutcomeMetrics paymentOutcomeMetrics;
     private final InventoryReleaseOutboxService inventoryReleaseOutboxService;
     private final ProductSellerClient productSellerClient;
+    private final CheckoutProperties checkoutProperties;
 
     @Value("${order.default-currency:INR}")
     private String defaultCurrency;
@@ -62,7 +66,8 @@ public class OrderServiceImpl implements OrderService {
             OrderProcessedEventRepository orderProcessedEventRepository,
             PaymentOutcomeMetrics paymentOutcomeMetrics,
             InventoryReleaseOutboxService inventoryReleaseOutboxService,
-            ProductSellerClient productSellerClient
+            ProductSellerClient productSellerClient,
+            CheckoutProperties checkoutProperties
     ) {
         this.orderRepository = orderRepository;
         this.inventoryGrpcClient = inventoryGrpcClient;
@@ -71,6 +76,7 @@ public class OrderServiceImpl implements OrderService {
         this.paymentOutcomeMetrics = paymentOutcomeMetrics;
         this.inventoryReleaseOutboxService = inventoryReleaseOutboxService;
         this.productSellerClient = productSellerClient;
+        this.checkoutProperties = checkoutProperties;
     }
 
     @Override
@@ -105,9 +111,11 @@ public class OrderServiceImpl implements OrderService {
                     request.getShippingAddress()
             );
 
+            List<CreateOrderItemRequest> aggregatedItems = aggregateAndValidateQuantities(request.getItems());
             BigDecimal totalAmount = BigDecimal.ZERO;
 
-            for (CreateOrderItemRequest itemRequest : request.getItems()) {
+            // Complete catalog validation before inventory is queried or any reservation is made.
+            for (CreateOrderItemRequest itemRequest : aggregatedItems) {
                 ProductSellerClient.OrderableProduct catalogProduct = productSellerClient
                         .getOrderableProduct(itemRequest.getProductId());
                 OrderItem item = new OrderItem();
@@ -127,7 +135,7 @@ public class OrderServiceImpl implements OrderService {
                 );
             }
 
-            validateStockAvailability(request);
+            validateStockAvailability(aggregatedItems);
             reserveStock(order.getItems(), reservedItems);
 
             order.setTotalAmount(totalAmount);
@@ -344,6 +352,9 @@ public class OrderServiceImpl implements OrderService {
         }
 
         for (CreateOrderItemRequest item : request.getItems()) {
+            if (item == null) {
+                throw new BadRequestException("Order items must not be null");
+            }
             if (item.getProductId() == null) {
                 throw new BadRequestException("Product id is required");
             }
@@ -419,14 +430,46 @@ public class OrderServiceImpl implements OrderService {
         orderEventPublisher.publishOrderCreated(event);
     }
 
-    private void validateStockAvailability(CreateOrderRequest request) {
-        for (CreateOrderItemRequest itemRequest : request.getItems()) {
+    private List<CreateOrderItemRequest> aggregateAndValidateQuantities(List<CreateOrderItemRequest> requestedItems) {
+        Map<UUID, Integer> quantitiesByProduct = new LinkedHashMap<>();
+        int totalQuantity = 0;
+
+        for (CreateOrderItemRequest item : requestedItems) {
+            try {
+                totalQuantity = Math.addExact(totalQuantity, item.getQuantity());
+                quantitiesByProduct.merge(item.getProductId(), item.getQuantity(), Math::addExact);
+            } catch (ArithmeticException exception) {
+                throw new BadRequestException("CHECKOUT_ITEM_INVALID_QUANTITY productId=" + item.getProductId());
+            }
+        }
+        if (totalQuantity > checkoutProperties.getMaxTotalQuantity()) {
+            throw new BadRequestException("CHECKOUT_ORDER_QUANTITY_LIMIT requested=" + totalQuantity
+                    + " maximum=" + checkoutProperties.getMaxTotalQuantity());
+        }
+
+        List<CreateOrderItemRequest> aggregatedItems = new ArrayList<>();
+        quantitiesByProduct.forEach((productId, quantity) -> {
+            int maximum = checkoutProperties.maximumQuantityFor(productId);
+            if (maximum <= 0 || quantity > maximum) {
+                throw new BadRequestException("CHECKOUT_ITEM_QUANTITY_LIMIT productId=" + productId
+                        + " requested=" + quantity + " maximum=" + maximum);
+            }
+            CreateOrderItemRequest aggregated = new CreateOrderItemRequest();
+            aggregated.setProductId(productId);
+            aggregated.setQuantity(quantity);
+            aggregatedItems.add(aggregated);
+        });
+        return aggregatedItems;
+    }
+
+    private void validateStockAvailability(List<CreateOrderItemRequest> items) {
+        for (CreateOrderItemRequest itemRequest : items) {
             var inventory = inventoryGrpcClient.getInventory(itemRequest.getProductId());
 
             if (inventory.getAvailableStock() < itemRequest.getQuantity()) {
-                throw new BadRequestException(
-                        "Insufficient stock for product: " + itemRequest.getProductId()
-                );
+                throw new BadRequestException("CHECKOUT_ITEM_INSUFFICIENT_STOCK productId="
+                        + itemRequest.getProductId() + " requested=" + itemRequest.getQuantity()
+                        + " available=" + inventory.getAvailableStock());
             }
         }
     }
