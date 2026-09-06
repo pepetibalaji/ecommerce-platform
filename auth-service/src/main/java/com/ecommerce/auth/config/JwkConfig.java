@@ -13,6 +13,7 @@ import java.security.PrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -49,7 +50,7 @@ public class JwkConfig {
     RSAKey activeKey =
         new RSAKey.Builder((RSAPublicKey) keyPair.getPublic())
             .privateKey(keyPair.getPrivate())
-            .keyID(requiredKeyId(properties.getKeyId()))
+            .keyID(activeKeyId(properties))
             .build();
     List<com.nimbusds.jose.jwk.JWK> keys = new ArrayList<>();
     keys.add(activeKey);
@@ -145,6 +146,16 @@ public class JwkConfig {
       throw new IllegalStateException("Every signing key requires a stable key-id");
     }
     return keyId;
+  }
+
+  private String activeKeyId(SigningKeyProperties properties) {
+    // A test/dev generated key changes on every start, so it must also have a fresh kid. A
+    // persistent key, however, must always have its operator-provided stable identifier.
+    if (properties.getSource() == SigningKeyProperties.Source.GENERATED
+        && !hasText(properties.getKeyId())) {
+      return UUID.randomUUID().toString();
+    }
+    return requiredKeyId(properties.getKeyId());
   }
 
   private char[] chars(String value) {

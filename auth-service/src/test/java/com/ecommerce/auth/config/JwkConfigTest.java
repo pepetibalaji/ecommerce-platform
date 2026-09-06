@@ -1,6 +1,7 @@
 package com.ecommerce.auth.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 import com.nimbusds.jwt.SignedJWT;
 import java.time.Instant;
@@ -28,5 +29,18 @@ class JwkConfigTest {
         .expiresAt(Instant.now().plusSeconds(60)).build())).getTokenValue();
 
     assertThat(SignedJWT.parse(token).getHeader().getKeyID()).isEqualTo("auth-dev-key-2026-01");
+  }
+
+  @Test
+  void generatedTestKeyWithoutConfiguredKidGetsAnEphemeralKid() {
+    SigningKeyProperties properties = new SigningKeyProperties();
+    properties.setSource(SigningKeyProperties.Source.GENERATED);
+    properties.setAllowEphemeral(true);
+    StandardEnvironment environment = new StandardEnvironment();
+    environment.setActiveProfiles("test");
+    JwkConfig config = new JwkConfig();
+
+    assertThatCode(() -> config.jwkSource(config.keyPair(properties, environment), properties))
+        .doesNotThrowAnyException();
   }
 }
