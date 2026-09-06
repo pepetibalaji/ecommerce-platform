@@ -11,6 +11,8 @@ import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.PrivateKey;
 import java.security.interfaces.RSAPublicKey;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -42,14 +44,22 @@ public class JwkConfig {
 
   @Bean
   public JWKSource<SecurityContext> jwkSource(KeyPair keyPair, SigningKeyProperties properties) {
-    String keyId =
-        hasText(properties.getKeyId()) ? properties.getKeyId() : UUID.randomUUID().toString();
-    RSAKey key =
+    // The active key is the sole signing candidate; retired keys are public-only verification keys.
+    // This lets Nimbus select the active key deterministically and keeps retired private material
+    // out of the JWKS object graph.
+    RSAKey activeKey =
         new RSAKey.Builder((RSAPublicKey) keyPair.getPublic())
             .privateKey(keyPair.getPrivate())
-            .keyID(keyId)
+            .keyID(activeKeyId(properties))
             .build();
-    JWKSet keySet = new JWKSet(key);
+    List<com.nimbusds.jose.jwk.JWK> keys = new ArrayList<>();
+    keys.add(activeKey);
+    for (SigningKeyProperties.PreviousKey previous : properties.getPreviousKeys()) {
+      RSAPublicKey previousPublicKey = loadPreviousPublicKey(previous);
+      keys.add(new RSAKey.Builder(previousPublicKey)
+          .keyID(requiredKeyId(previous.getKeyId())).build());
+    }
+    JWKSet keySet = new JWKSet(keys);
     return (selector, context) -> selector.select(keySet);
   }
 
@@ -93,6 +103,30 @@ public class JwkConfig {
     return new KeyPair(publicKey, signingKey);
   }
 
+  private RSAPublicKey loadPreviousPublicKey(SigningKeyProperties.PreviousKey properties) {
+    try {
+      if (!hasText(properties.getKeyAlias())) {
+        throw new IllegalStateException("A previous signing keystore alias is required");
+      }
+      KeyStore keyStore = hasText(properties.getKeyStoreProvider())
+          ? KeyStore.getInstance(properties.getKeyStoreType(), properties.getKeyStoreProvider())
+          : KeyStore.getInstance(properties.getKeyStoreType());
+      if (properties.getKeyStoreLocation() == null) {
+        keyStore.load(null, chars(properties.getKeyStorePassword()));
+      } else {
+        try (InputStream input = properties.getKeyStoreLocation().getInputStream()) {
+          keyStore.load(input, chars(properties.getKeyStorePassword()));
+        }
+      }
+      if (!(keyStore.getCertificate(properties.getKeyAlias()).getPublicKey() instanceof RSAPublicKey publicKey)) {
+        throw new IllegalStateException("Previous signing key must have an RSA certificate");
+      }
+      return publicKey;
+    } catch (Exception exception) {
+      throw new IllegalStateException("Unable to load previous Auth signing public key", exception);
+    }
+  }
+
   private KeyPair generateDevelopmentKeyPair(
       SigningKeyProperties properties, Environment environment) throws Exception {
     if (!properties.isAllowEphemeral() && !environment.matchesProfiles("dev", "test")) {
@@ -105,6 +139,23 @@ public class JwkConfig {
 
   private boolean hasText(String value) {
     return value != null && !value.isBlank();
+  }
+
+  private String requiredKeyId(String keyId) {
+    if (!hasText(keyId)) {
+      throw new IllegalStateException("Every signing key requires a stable key-id");
+    }
+    return keyId;
+  }
+
+  private String activeKeyId(SigningKeyProperties properties) {
+    // A test/dev generated key changes on every start, so it must also have a fresh kid. A
+    // persistent key, however, must always have its operator-provided stable identifier.
+    if (properties.getSource() == SigningKeyProperties.Source.GENERATED
+        && !hasText(properties.getKeyId())) {
+      return UUID.randomUUID().toString();
+    }
+    return requiredKeyId(properties.getKeyId());
   }
 
   private char[] chars(String value) {
