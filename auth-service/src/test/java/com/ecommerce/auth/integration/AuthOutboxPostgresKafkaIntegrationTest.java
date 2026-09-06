@@ -58,13 +58,16 @@ import org.testcontainers.utility.DockerImageName;
     webEnvironment = SpringBootTest.WebEnvironment.MOCK,
     properties = {
       "spring.cloud.config.enabled=false",
+      "spring.profiles.active=test",
       "spring.task.scheduling.enabled=false",
       "auth.outbox.poll-delay-ms=600000",
       "spring.kafka.producer.key-serializer=org.apache.kafka.common.serialization.StringSerializer",
       "spring.kafka.producer.value-serializer=org.apache.kafka.common.serialization.StringSerializer",
       "auth.authorization-server.issuer=https://auth.integration.test",
       "auth.signing-key.source=GENERATED",
-      "auth.signing-key.allow-ephemeral=true"
+      "auth.signing-key.allow-ephemeral=true",
+      "auth.action-token.signing-secret=auth-integration-test-action-token-secret-32-bytes",
+      "auth.internal.service-token=auth-integration-test-service-token"
     })
 @Testcontainers(disabledWithoutDocker = true)
 class AuthOutboxPostgresKafkaIntegrationTest {
