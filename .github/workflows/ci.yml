@@ -6,6 +6,7 @@ on:
             - develop
             - "feature/**"
             - "feat/**"
+            - "auth/**"
         paths:
             - "pom.xml"
             - "common/**"
@@ -182,6 +183,13 @@ jobs:
 
                   CONFIG_SERVER_URL: http://localhost:8888
                   SPRING_CONFIG_IMPORT: optional:configserver:http://localhost:8888
+
+                  # CI deliberately uses an ephemeral key. Stage and production load their
+                  # persistent signing key from the external secret store instead.
+                  AUTH_ISSUER_URI: https://auth.ci.example
+                  AUTH_SIGNING_KEY_SOURCE: GENERATED
+                  AUTH_SIGNING_KEY_ID: auth-ci-ephemeral
+                  AUTH_SIGNING_KEY_ALLOW_EPHEMERAL: "true"
 
                   MANAGEMENT_TRACING_ENABLED: "false"
                   OTEL_TRACES_ENDPOINT: http://localhost:4318/v1/traces

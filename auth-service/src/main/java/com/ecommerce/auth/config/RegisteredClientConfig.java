@@ -36,7 +36,8 @@ public class RegisteredClientConfig {
   @Bean
   public OAuth2AuthorizationService authorizationService(
       JdbcOperations jdbcOperations, RegisteredClientRepository registeredClientRepository) {
-    return new JdbcOAuth2AuthorizationService(jdbcOperations, registeredClientRepository);
+    return new HashingOAuth2AuthorizationService(
+        new JdbcOAuth2AuthorizationService(jdbcOperations, registeredClientRepository));
   }
 
   @Bean
