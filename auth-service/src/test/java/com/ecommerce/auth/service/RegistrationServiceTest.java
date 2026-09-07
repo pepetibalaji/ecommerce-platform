@@ -19,6 +19,7 @@ import com.ecommerce.auth.repository.IdentityActionTokenRepository;
 import com.ecommerce.auth.repository.RoleRepository;
 import com.ecommerce.auth.repository.UserRepository;
 import com.ecommerce.common.exception.ResourceAlreadyExistsException;
+import com.ecommerce.common.exception.BadRequestException;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
@@ -41,12 +42,13 @@ class RegistrationServiceTest {
   @Mock private PasswordEncoder passwords;
   @Mock private AuthAuditService audit;
   @Mock private ActionTokenCodec actionTokens;
+  @Mock private AuthAbuseProtection abuseProtection;
 
   private RegistrationService service;
 
   @BeforeEach
   void setUp() {
-    service = new RegistrationService(users, roles, actions, outbox, passwords, audit, actionTokens);
+    service = new RegistrationService(users, roles, actions, outbox, passwords, audit, actionTokens, abuseProtection);
   }
 
   @Test
@@ -127,6 +129,16 @@ class RegistrationServiceTest {
     verify(actions, never()).save(any());
     verify(outbox, never()).enqueue(any(), any(), any(), any(), any(), any());
     verify(audit, never()).record(any(), any(), any(), any(), any(), any());
+  }
+
+  @Test
+  void registerRejectsPrivilegedPublicRole() {
+    RegisterRequest request = registerRequest("Jane Doe", "jane@example.com");
+    request.setRole(com.ecommerce.auth.entity.enums.Role.SELLER);
+
+    assertThrows(BadRequestException.class, () -> service.register(request));
+
+    verify(users, never()).save(any());
   }
 
   private RegisterRequest registerRequest(String name, String email) {

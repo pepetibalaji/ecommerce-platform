@@ -46,6 +46,7 @@ class AuthServiceTest {
   @Mock private JwtTokenService jwtTokens;
   @Mock private TokenBlacklistService blacklist;
   @Mock private AuthAuditService audit;
+  @Mock private AuthAbuseProtection abuseProtection;
   @InjectMocks private AuthService service;
 
   private User user;
@@ -158,6 +159,8 @@ class AuthServiceTest {
     assertThrows(UnauthorizedException.class, () -> service.refresh(refreshRequest("reused")));
 
     assertThat(familyPeer.getRevokedAt()).isNotNull();
+    assertThat(user.getTokenVersion()).isEqualTo(1L);
+    verify(users).save(user);
     verify(audit)
         .recordAttempt(
             eq(user.getId()),

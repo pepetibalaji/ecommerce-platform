@@ -49,13 +49,15 @@ class ActionTokenServiceTest {
   @Mock private PasswordEncoder passwords;
   @Mock private AuthAuditService audit;
   @Mock private ActionTokenCodec actionTokens;
+  @Mock private AuthAbuseProtection abuseProtection;
+  @Mock private AuthService authService;
 
   private ActionTokenService service;
   private User user;
 
   @BeforeEach
   void setUp() {
-    service = new ActionTokenService(actions, users, sessions, outbox, passwords, audit, actionTokens);
+    service = new ActionTokenService(actions, users, sessions, outbox, passwords, audit, actionTokens, abuseProtection, authService);
     user = User.builder()
         .id(UUID.fromString("10000000-0000-0000-0000-000000000001"))
         .name("Jane Doe")
@@ -260,7 +262,7 @@ class ActionTokenServiceTest {
     when(actions.findByTokenHash(hash(RAW_TOKEN))).thenReturn(Optional.of(action));
     when(sessions.findByUser_IdAndRevokedAtIsNull(user.getId())).thenReturn(List.of(session));
 
-    service.confirmEmailChange(user.getId(), actionRequest(RAW_TOKEN), AuditRequestContext.empty());
+    service.confirmEmailChange(actionRequest(RAW_TOKEN), AuditRequestContext.empty());
 
     assertThat(action.getConsumedAt()).isNotNull();
     assertThat(user.getEmail()).isEqualTo("new@example.com");
@@ -279,7 +281,7 @@ class ActionTokenServiceTest {
     verify(outbox).enqueueUserContactUpdated(user);
     verify(audit)
         .record(
-            eq(user.getId()),
+            eq(null),
             eq(user.getId()),
             eq("EMAIL_CHANGE_CONFIRMED"),
             eq(AuthAuditOutcome.SUCCESS),

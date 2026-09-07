@@ -67,7 +67,7 @@ All self-service endpoints require an access token and operate only on the authe
 | `PUT /api/v1/users/me` | Update safe profile fields such as `name`. |
 | `DELETE /api/v1/users/me` | Soft-delete the authenticated user and revoke refresh sessions. |
 | `POST /api/v1/users/me/email-change` | Request a confirmation email for a new address. |
-| `POST /api/v1/users/me/email-change/confirm` | Consume an `EMAIL_CHANGE` token and replace the verified email. |
+| `POST /api/v1/auth/email-change/confirm` | Publicly consume a one-time `EMAIL_CHANGE` token and replace the verified email; all sessions are revoked. |
 | `POST /api/v1/users/me/password` | Change password after validating the current password. |
 
 `PUT /users/me` request:

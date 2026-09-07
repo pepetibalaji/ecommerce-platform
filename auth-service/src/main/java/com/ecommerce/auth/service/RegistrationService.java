@@ -19,8 +19,10 @@ public class RegistrationService {
   private final UserRepository users; private final RoleRepository roles; private final IdentityActionTokenRepository actions;
   private final AuthOutboxService outbox; private final PasswordEncoder passwordEncoder; private final AuthAuditService audit;
   private final ActionTokenCodec actionTokens;
+  private final AuthAbuseProtection abuseProtection;
   @Transactional public void register(RegisterRequest request) { register(request, AuditRequestContext.empty()); }
   @Transactional public void register(RegisterRequest request, AuditRequestContext context) {
+    abuseProtection.check("register", request.getEmail(), context);
     String normalized = request.getEmail().trim().toLowerCase(Locale.ROOT);
     if (users.existsByEmailNormalized(normalized)) {
       audit.recordAttempt(null, null, "REGISTERED", AuthAuditOutcome.DENIED, context,
@@ -29,8 +31,8 @@ public class RegistrationService {
     }
     com.ecommerce.auth.entity.enums.Role requestedRole =
         request.getRole() == null ? com.ecommerce.auth.entity.enums.Role.CUSTOMER : request.getRole();
-    if (requestedRole == com.ecommerce.auth.entity.enums.Role.ADMIN) {
-      throw new BadRequestException("Administrator accounts must be assigned by an administrator");
+    if (requestedRole != com.ecommerce.auth.entity.enums.Role.CUSTOMER) {
+      throw new BadRequestException("Public registration creates customer accounts only");
     }
     com.ecommerce.auth.entity.Role role = roles.findByCode(requestedRole.name())
         .orElseThrow(() -> new IllegalStateException(requestedRole + " role is missing"));

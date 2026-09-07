@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 public class TokenBlacklistService {
 
   private static final String KEY_PREFIX = "auth:blacklist:jti:";
+  private static final String VERSION_KEY_PREFIX = "auth:token-version:";
 
   private final RedisTemplate<String, String> redisTemplate;
 
@@ -40,6 +41,9 @@ public class TokenBlacklistService {
       return false;
     }
     return Boolean.TRUE.equals(redisTemplate.hasKey(key(jti)));
+  }
+  public void publishTokenVersion(java.util.UUID userId, long version) {
+    redisTemplate.opsForValue().set(VERSION_KEY_PREFIX + userId, Long.toString(version));
   }
 
   private String key(String jti) {

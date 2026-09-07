@@ -37,6 +37,7 @@ public class AuthService {
   private final JwtTokenService jwtTokens;
   private final TokenBlacklistService blacklist;
   private final AuthAuditService audit;
+  private final AuthAbuseProtection abuseProtection;
 
   @Transactional
   public AuthResponse login(LoginRequest request) {
@@ -45,6 +46,7 @@ public class AuthService {
 
   @Transactional
   public AuthResponse login(LoginRequest request, AuditRequestContext context) {
+    abuseProtection.check("login", request.getEmail(), context);
     User user = users.findByEmailNormalized(normalize(request.getEmail())).orElse(null);
     if (user == null) {
       audit.recordAttempt(
@@ -80,6 +82,7 @@ public class AuthService {
 
   @Transactional(noRollbackFor = UnauthorizedException.class)
   public AuthResponse refresh(RefreshRequest request, AuditRequestContext context) {
+    abuseProtection.check("refresh", null, context);
     RefreshSession old = sessions.findByTokenHash(hash(request.getRefreshToken())).orElse(null);
     if (old == null) {
       audit.recordAttempt(
@@ -96,6 +99,10 @@ public class AuthService {
     UUID userId = old.getUser().getId();
     if (old.getRevokedAt() != null) {
       revokeFamily(old.getTokenFamilyId(), now);
+      User user = old.getUser();
+      user.setTokenVersion(user.getTokenVersion() + 1);
+      users.save(user);
+      publishTokenVersion(user);
       audit.recordAttempt(
           userId,
           userId,
@@ -167,6 +174,10 @@ public class AuthService {
   @Transactional
   public void revokeAll(UUID userId) {
     sessions.findByUser_IdAndRevokedAtIsNull(userId).forEach(session -> session.setRevokedAt(Instant.now()));
+  }
+
+  public void publishTokenVersion(User user) {
+    blacklist.publishTokenVersion(user.getId(), user.getTokenVersion() == null ? 0L : user.getTokenVersion());
   }
 
   private AuthResponse issue(User user, UUID family, AuditRequestContext context) {

@@ -23,5 +23,9 @@ public class AuthOutboxEvent {
   @Column(name = "published_at") private Instant publishedAt;
   @Column(nullable = false) private int attempts;
   @Column(name = "last_error") private String lastError;
+  @Column(name = "next_attempt_at") private Instant nextAttemptAt;
+  @Column(name = "lease_owner") private String leaseOwner;
+  @Column(name = "lease_until") private Instant leaseUntil;
+  @Column(name = "dead_lettered_at") private Instant deadLetteredAt;
   @PrePersist void prePersist() { if (id == null) id = UUID.randomUUID(); if (createdAt == null) createdAt = Instant.now(); }
 }

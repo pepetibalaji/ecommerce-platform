@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import org.springframework.http.HttpHeaders;
 
 @RestControllerAdvice(basePackages = "com.ecommerce")
 public class GlobalExceptionHandler {
@@ -148,9 +149,7 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, String>> handleValidation(
-            MethodArgumentNotValidException exception
-    ) {
+    public ResponseEntity<ApiErrorResponse> handleValidation(MethodArgumentNotValidException exception, HttpServletRequest request) {
 
         Map<String, String> errors = new HashMap<>();
 
@@ -163,10 +162,22 @@ public class GlobalExceptionHandler {
                         )
                 );
 
-        return ResponseEntity
-                .badRequest()
+        ApiErrorResponse response = ApiErrorResponse.builder().timestamp(LocalDateTime.now())
+                .status(HttpStatus.BAD_REQUEST.value()).error("Bad Request")
+                .message("Request validation failed").path(request.getRequestURI()).fieldErrors(Map.copyOf(errors)).build();
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(errors);
+                .body(response);
+    }
+
+    @ExceptionHandler(TooManyRequestsException.class)
+    public ResponseEntity<ApiErrorResponse> handleTooManyRequests(
+            TooManyRequestsException exception, HttpServletRequest request) {
+        ApiErrorResponse response = ApiErrorResponse.builder().timestamp(LocalDateTime.now())
+                .status(HttpStatus.TOO_MANY_REQUESTS.value()).error("Too Many Requests")
+                .message("Too many requests. Please try again later.").path(request.getRequestURI()).build();
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, "60").contentType(MediaType.APPLICATION_JSON).body(response);
     }
 
     @ExceptionHandler(Exception.class)
@@ -176,11 +187,10 @@ public class GlobalExceptionHandler {
     ) {
 
         LOGGER.error(
-                "Unhandled request failure: method={}, path={}, exceptionType={}, message={}",
+                "Unhandled request failure: method={}, path={}, exceptionType={}",
                 request.getMethod(),
                 request.getRequestURI(),
                 exception.getClass().getSimpleName(),
-                exception.getMessage(),
                 exception
         );
 
@@ -189,7 +199,7 @@ public class GlobalExceptionHandler {
                         .timestamp(LocalDateTime.now())
                         .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
                         .error("Internal Server Error")
-                        .message(exception.getMessage())
+                        .message("An unexpected error occurred")
                         .path(request.getRequestURI())
                         .build();
 
