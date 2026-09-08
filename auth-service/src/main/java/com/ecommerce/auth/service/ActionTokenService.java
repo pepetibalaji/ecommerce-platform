@@ -21,6 +21,8 @@ public class ActionTokenService {
   private final IdentityActionTokenRepository actions; private final UserRepository users; private final RefreshSessionRepository sessions;
   private final AuthOutboxService outbox; private final PasswordEncoder passwords; private final AuthAuditService audit;
   private final ActionTokenCodec actionTokens;
+  private final AuthAbuseProtection abuseProtection;
+  private final AuthService authService;
 
   @Transactional
   public DeliveryTokenResponse mintDeliveryToken(UUID actionId) {
@@ -67,6 +69,7 @@ public class ActionTokenService {
   /** Does not reveal whether an address is registered or pending verification. */
   @Transactional
   public void resendVerification(ResendVerificationRequest request, AuditRequestContext context) {
+    abuseProtection.check("verification-resend", request.getEmail(), context);
     User user =
         users
             .findByEmailNormalized(normalize(request.getEmail()))
@@ -110,6 +113,7 @@ public class ActionTokenService {
   @Transactional public void requestPasswordReset(ForgotPasswordRequest request) { requestPasswordReset(request, AuditRequestContext.empty()); }
 
   @Transactional public void requestPasswordReset(ForgotPasswordRequest request, AuditRequestContext context) {
+    abuseProtection.check("password-forgot", request.getEmail(), context);
     User user = users.findByEmailNormalized(normalize(request.getEmail())).filter(User::isActiveAndVerified).orElse(null);
     if (user == null) {
       // Preserve the public response semantics while retaining an auditable, non-PII attempt.
@@ -128,6 +132,7 @@ public class ActionTokenService {
   @Transactional public void resetPassword(ResetPasswordRequest request) { resetPassword(request, AuditRequestContext.empty()); }
 
   @Transactional public void resetPassword(ResetPasswordRequest request, AuditRequestContext context) {
+    abuseProtection.check("password-reset", null, context);
     IdentityActionToken action;
     try {
       action = usable(request.getToken(), IdentityActionType.PASSWORD_RESET);
@@ -143,12 +148,13 @@ public class ActionTokenService {
       throw new UnauthorizedException("Invalid or expired token");
     }
     action.setConsumedAt(Instant.now()); user.setPasswordHash(passwords.encode(request.getNewPassword())); user.setPasswordChangedAt(Instant.now()); user.setTokenVersion(user.getTokenVersion() + 1);
-    sessions.findByUser_IdAndRevokedAtIsNull(user.getId()).forEach(s -> s.setRevokedAt(Instant.now())); users.save(user); event(user, "auth.password-reset.v1", "auth.password-reset.v1");
+    sessions.findByUser_IdAndRevokedAtIsNull(user.getId()).forEach(s -> s.setRevokedAt(Instant.now())); users.save(user); authService.publishTokenVersion(user); event(user, "auth.password-reset.v1", "auth.password-reset.v1");
     audit.record(user.getId(), user.getId(), "PASSWORD_RESET", AuthAuditOutcome.SUCCESS, context, Map.of());
   }
 
   @Transactional
   public void requestEmailChange(UUID userId, EmailChangeRequest request, AuditRequestContext context) {
+    abuseProtection.check("email-change-request", request.getEmail(), context);
     User user = users.findById(userId).orElseThrow(() -> new ResourceNotFoundException("User not found"));
     if (!user.isActiveAndVerified()) {
       audit.recordAttempt(userId, userId, "EMAIL_CHANGE_REQUESTED", AuthAuditOutcome.DENIED, context,
@@ -177,23 +183,20 @@ public class ActionTokenService {
   }
 
   @Transactional
-  public void confirmEmailChange(UUID userId, ActionTokenRequest request, AuditRequestContext context) {
+  public void confirmEmailChange(ActionTokenRequest request, AuditRequestContext context) {
+    abuseProtection.check("email-change-confirm", null, context);
     IdentityActionToken action;
     try {
       action = usable(request.getToken(), IdentityActionType.EMAIL_CHANGE);
     } catch (UnauthorizedException exception) {
-      audit.recordAttempt(userId, null, "EMAIL_CHANGE_CONFIRMED", AuthAuditOutcome.FAILURE, context,
+      audit.recordAttempt(null, null, "EMAIL_CHANGE_CONFIRMED", AuthAuditOutcome.FAILURE, context,
           Map.of("reason", "invalid_or_expired_token"));
       throw exception;
     }
     User user = action.getUser();
     if (!user.isActiveAndVerified()) {
-      audit.recordAttempt(userId, user.getId(), "EMAIL_CHANGE_CONFIRMED", AuthAuditOutcome.DENIED, context,
+      audit.recordAttempt(null, user.getId(), "EMAIL_CHANGE_CONFIRMED", AuthAuditOutcome.DENIED, context,
           Map.of("reason", "account_is_not_active"));
-      throw new UnauthorizedException("Invalid or expired token");
-    }
-    if (!user.getId().equals(userId)) {
-      audit.recordAttempt(userId, user.getId(), "EMAIL_CHANGE_CONFIRMED", AuthAuditOutcome.DENIED, context, Map.of());
       throw new UnauthorizedException("Invalid or expired token");
     }
     if (action.getTargetEmail() == null || action.getTargetEmail().isBlank()) {
@@ -215,13 +218,20 @@ public class ActionTokenService {
     user.setTokenVersion(user.getTokenVersion() + 1);
     sessions.findByUser_IdAndRevokedAtIsNull(user.getId()).forEach(session -> session.setRevokedAt(now));
     users.save(user);
+    authService.publishTokenVersion(user);
 
     outbox.enqueue("USER", user.getId(), KafkaTopics.AUTH_USER_EMAIL_CHANGED, KafkaTopics.AUTH_USER_EMAIL_CHANGED,
         user.getId().toString(), Map.of("eventId", UUID.randomUUID(), "eventType", "auth.user-email-changed.v1",
             "userId", user.getId(), "oldEmail", previousEmail, "newEmail", newEmail, "occurredAt", now));
     outbox.enqueueUserContactUpdated(user);
-    audit.record(userId, user.getId(), "EMAIL_CHANGE_CONFIRMED", AuthAuditOutcome.SUCCESS, context,
-        Map.of("previousEmail", previousEmail, "newEmail", newEmail));
+    audit.record(null, user.getId(), "EMAIL_CHANGE_CONFIRMED", AuthAuditOutcome.SUCCESS, context,
+        Map.of());
+  }
+
+  /** @deprecated Email-change links are public; callers must not supply an authenticated user. */
+  @Deprecated
+  public void confirmEmailChange(UUID ignoredUserId, ActionTokenRequest request, AuditRequestContext context) {
+    confirmEmailChange(request, context);
   }
 
   private IdentityActionToken usable(String raw, IdentityActionType type) {

@@ -44,6 +44,7 @@ class JwtContractTest {
   @Mock private JwtEncoder encoder;
   @Mock private UserRepository users;
   @Mock private AuthAuditService audit;
+  @Mock private TokenBlacklistService tokenBlacklistService;
 
   @Test
   void directLoginTokenKeepsLegacyAndRbacClaims() {
@@ -53,7 +54,8 @@ class JwtContractTest {
         new JwtTokenService(
             encoder,
             AuthorizationServerSettings.builder().issuer("https://auth.example.test").build(),
-            properties);
+            properties,
+            tokenBlacklistService);
     when(encoder.encode(any(JwtEncoderParameters.class))).thenReturn(encodedJwt());
 
     service.generateAccessToken(user);

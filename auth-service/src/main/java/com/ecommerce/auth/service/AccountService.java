@@ -133,6 +133,7 @@ public class AccountService {
     user.setPasswordChangedAt(Instant.now());
     user.setTokenVersion(user.getTokenVersion() + 1);
     auth.revokeAll(id);
+    auth.publishTokenVersion(user);
     audit.record(id, id, "PASSWORD_CHANGE", AuthAuditOutcome.SUCCESS, context, Map.of());
   }
 
@@ -228,6 +229,7 @@ public class AccountService {
     // Any status transition invalidates issued access-token version and all refresh sessions.
     user.setTokenVersion(user.getTokenVersion() + 1);
     auth.revokeAll(id);
+    auth.publishTokenVersion(user);
     outbox.enqueueUserContactUpdated(user);
     audit.record(
         actorUserId,
@@ -261,6 +263,7 @@ public class AccountService {
     user.setRoles(new HashSet<>(assigned));
     user.setTokenVersion(user.getTokenVersion() + 1);
     auth.revokeAll(id);
+    auth.publishTokenVersion(user);
     audit.record(
         actorUserId,
         id,
@@ -291,7 +294,7 @@ public class AccountService {
 
   private UserProfileResponse profile(User user) {
     return new UserProfileResponse(
-        user.getId(), user.getName(), user.getEmail(), user.getRole(), user.getStatus());
+        user.getId(), user.getName(), user.getEmail(), user.getRoleCodes(), user.getStatus());
   }
 
   private AdminUserResponse admin(User user) {
@@ -299,7 +302,7 @@ public class AccountService {
         user.getId(),
         user.getName(),
         user.getEmail(),
-        user.getRole(),
+        user.getRoleCodes(),
         user.getStatus(),
         user.getCreatedAt(),
         user.getUpdatedAt());

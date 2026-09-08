@@ -72,6 +72,14 @@ public class AuthController {
     return ResponseEntity.noContent().build();
   }
 
+  /** Confirms a one-time email-change token without relying on an existing browser session. */
+  @PostMapping("/email-change/confirm")
+  public ResponseEntity<Void> confirmEmailChange(
+      @Valid @RequestBody ActionTokenRequest request, HttpServletRequest servletRequest) {
+    actionTokenService.confirmEmailChange(request, AuditRequestContext.from(servletRequest));
+    return ResponseEntity.noContent().build();
+  }
+
   @PostMapping("/login")
   @Operation(summary = "Login and issue tokens")
   public AuthResponse login(

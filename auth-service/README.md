@@ -20,7 +20,7 @@ Auth Service owns user identity and account lifecycle. It runs on port `8081`, i
 - `identity_action_tokens`: hashed email-verification, reset, and email-change actions.
 - `auth_outbox_events` and `auth_audit_events`: reliable event delivery and security/admin audit history.
 - Spring Authorization Server clients, authorizations, and consents.
-- Redis blacklist: revoked access-token IDs until expiry.
+- Redis blacklist and token-version cache: revoked access-token IDs until expiry and immediate JWT invalidation after a security-sensitive account change.
 
 ## End-to-end flow
 
@@ -53,7 +53,7 @@ Requires PostgreSQL, Redis, Kafka, Config Server, and Auth database configuratio
 
 ## Current and next work
 
-Current: verified registration/resend, login, refresh/logout, reset, verified email change, profile/admin users, persistent OAuth state, stable signing-key support, audit events, and token-free Notification delivery. Future hardening includes MFA, an Auth-local rate limiter, multi-instance outbox leasing/DLQ, and overlapping-JWK key rotation.
+Current: verified registration/resend, login, refresh/logout, reset, public email-change confirmation, profile/admin users, persistent OAuth state, stable signing-key support, Redis-backed abuse controls, audit events, token-version invalidation, leased outbox delivery with bounded retry/DLQ replay, and token-free Notification delivery. Future hardening includes MFA and overlapping-JWK key rotation.
 
 ## Replacement design
 

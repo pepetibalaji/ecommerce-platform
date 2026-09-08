@@ -52,5 +52,5 @@ PENDING_VERIFICATION -> ACTIVE -> SUSPENDED -> ACTIVE
 
 Only an `ACTIVE` user with a non-null `email_verified_at` may receive or refresh a session.
 
-Public registration, resend, and recovery endpoints must be rate-limited at the gateway/edge by IP and normalized email. Auth currently has no in-service Redis rate limiter; add one before relying on Auth alone for abuse protection.
+Public registration, resend, login, refresh, and recovery endpoints are rate-limited at both gateway/edge and in Auth using Redis counters keyed by IP and a normalized-email hash. Redis must therefore be available to Auth in every deployed environment.
 

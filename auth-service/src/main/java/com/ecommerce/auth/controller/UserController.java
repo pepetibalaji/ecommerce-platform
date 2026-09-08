@@ -60,15 +60,6 @@ public class UserController {
         currentUserId(jwt), request, AuditRequestContext.from(servletRequest));
   }
 
-  @PostMapping("/me/email-change/confirm")
-  public void confirmEmailChange(
-      @AuthenticationPrincipal Jwt jwt,
-      @Valid @RequestBody ActionTokenRequest request,
-      HttpServletRequest servletRequest) {
-    actionTokenService.confirmEmailChange(
-        currentUserId(jwt), request, AuditRequestContext.from(servletRequest));
-  }
-
   @GetMapping("/me")
   @Operation(summary = "Get my profile")
   public UserProfileResponse getMe(@AuthenticationPrincipal Jwt jwt) {

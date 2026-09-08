@@ -13,7 +13,7 @@ This is a source-level compatibility checklist for the replacement Auth Service.
 | `roles` | Array of role strings | Payment and Notification consume it; it is the target multi-role contract. | Emit it on direct-login and OAuth access tokens. |
 | `permissions` | Array of permission strings | Auth and Notification map it to `PERMISSION_*`; other services do not yet enforce it. | Do not make cross-service authorization depend on it until their converters are updated. |
 | `email_verified` | Boolean | No current downstream authorization decision consumes it. | Emit it from direct-login and OAuth tokens for future consumers. |
-| `status`, `tokenVersion` | String / numeric | No downstream resource server currently enforces either value. | They are informational until every resource service implements token-version or revocation validation. |
+| `status`, `tokenVersion` | String / numeric | Resource services using `common-security` enforce `tokenVersion` against Redis; `status` remains informational. | Provision private Redis access for every protected resource service before relying on immediate distributed invalidation. |
 
 Both direct-login and Authorization Server access tokens emit `userId`, `role`, `roles`, `permissions`, `email_verified`, `status`, and `tokenVersion`. `JwtContractTest` guards that shape for both issuance paths.
 

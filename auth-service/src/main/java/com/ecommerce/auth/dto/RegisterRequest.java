@@ -18,10 +18,13 @@ public class RegisterRequest {
   @Size(max = 255, message = "Email must be at most 255 characters")
   private String email;
 
-  @Size(min = 8, max = 100, message = "Password must be between 8 and 100 characters")
+  @Size(min = 12, max = 128, message = "Password must be between 12 and 128 characters")
   @NotBlank(message = "Password is required")
   private String password;
 
-  /** Optional public account type; defaults to CUSTOMER for backwards compatibility. */
+  /**
+   * Retained only to give legacy clients a clear validation error. Public registration never
+   * creates privileged accounts.
+   */
   private Role role = Role.CUSTOMER;
 }

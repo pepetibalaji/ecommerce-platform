@@ -21,11 +21,13 @@ public class JwtTokenService {
   private final JwtEncoder jwtEncoder;
   private final AuthorizationServerSettings authorizationServerSettings;
   private final AuthorizationServerProperties authorizationServerProperties;
+  private final TokenBlacklistService tokenBlacklistService;
 
   @Value("${auth.token.access-ttl-minutes:30}")
   private long accessTtlMinutes;
 
   public String generateAccessToken(User user) {
+    tokenBlacklistService.publishTokenVersion(user.getId(), user.getTokenVersion() == null ? 0L : user.getTokenVersion());
     Instant now = Instant.now();
     Instant expiry = now.plus(accessTtlMinutes, ChronoUnit.MINUTES);
     String jti = UUID.randomUUID().toString();
