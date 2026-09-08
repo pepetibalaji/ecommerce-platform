@@ -5,15 +5,18 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.HexFormat;
-import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 /** Fixed-window controls keyed by both client IP and a non-reversible normalized-email hash. */
 @Service
-@RequiredArgsConstructor
 public class AuthAbuseProtection {
   private final RedisTemplate<String, String> redis;
+
+  public AuthAbuseProtection(@Qualifier("redisTemplate") RedisTemplate<String, String> redis) {
+    this.redis = redis;
+  }
 
   public void check(String action, String email, AuditRequestContext context) {
     checkKey("ip", action, context == null || context.ipAddress() == null ? "unknown" : context.ipAddress(), 30);

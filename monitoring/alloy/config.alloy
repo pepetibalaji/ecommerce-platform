@@ -76,10 +76,16 @@ loki.process "application_logs" {
     }
   }
 
-  forward_to = [loki.write.default.receiver]
+  forward_to = [loki.write.local.receiver, loki.write.grafana_cloud.receiver]
 }
 
-loki.write "default" {
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+loki.write "grafana_cloud" {
   endpoint {
     url = sys.env("GRAFANA_CLOUD_LOKI_URL")
 

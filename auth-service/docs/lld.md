@@ -64,18 +64,18 @@ Password reset creates a `PASSWORD_RESET` action through the outbox, exactly lik
 
 Self-service profile updates may change only safe display fields directly. Email changes require an `EMAIL_CHANGE` action token and a confirmation link sent to the proposed address. Password changes require the current password and invalidate all sessions.
 
-Administrative status and role changes run in one transaction: update the user or role assignments, revoke refresh sessions, increment `token_version`, and add an audit row. Status changes also enqueue `user-contact-updated`; role changes currently publish no role-change event. This prevents old refresh sessions from retaining access after a suspension or privilege change. Existing JWTs remain usable until expiry unless every resource service implements token-version or revocation checking.
+Administrative status and role changes run in one transaction: update the user or role assignments, revoke refresh sessions, increment `token_version`, publish the new version to Redis, and add an audit row. Status changes also enqueue `user-contact-updated`; role changes currently publish no role-change event. Resource services using `common-security` reject a JWT whose `tokenVersion` differs from Redis; they must have private Redis connectivity for this immediate invalidation control to apply.
 
 ## Outbox publisher
 
-A scheduled worker selects up to 100 unpublished rows, synchronously publishes each one using `event_key`, and sets `published_at` only after broker acknowledgement. A failure increments `attempts` and stores a non-secret error class. Consumers must deduplicate with `eventId`. Add database claim leasing, bounded retries, and a dead-letter workflow before treating the current poller as multi-instance hardened.
+A scheduled worker claims up to 100 eligible rows with PostgreSQL `FOR UPDATE SKIP LOCKED`, leases each claim, synchronously publishes using `event_key`, and sets `published_at` only after broker acknowledgement. Failures use exponential backoff and a non-secret error class; terminal failures are marked dead-lettered after the configured attempt limit and can be replayed through the admin recovery endpoint. Consumers must deduplicate with `eventId`.
 
 ## Security rules
 
 - Use the configured adaptive password encoder; never encrypt or log passwords.
 - Generate at least 32 random bytes for opaque refresh tokens. Action tokens are HMAC-derived from random UUID action ids and a secret-manager key; persist only SHA-256 verifiers.
 - Use TLS for HTTP, PostgreSQL, Redis, and Kafka.
-- Use the gateway/edge for rate limits and anti-abuse counters until Auth implements its own Redis-backed control.
+- Keep gateway/edge limits as the first line of defence; Auth also enforces its Redis-backed limits for public identity actions.
 - Return generic success responses for reset/resend operations.
 - Use configured trusted frontend URLs when building action links; never use the request `Host` header.
 - Do not expose raw tokens in Kafka payloads, notification persistence, logs, traces, browser referrers, or audit records.

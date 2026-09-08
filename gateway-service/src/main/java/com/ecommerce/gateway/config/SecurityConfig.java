@@ -8,6 +8,9 @@ import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverterAdapter;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.security.web.server.authorization.ServerAccessDeniedHandler;
+import org.springframework.http.HttpStatus;
+import io.micrometer.tracing.Tracer;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
@@ -27,7 +30,8 @@ public class SecurityConfig {
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(
             ServerHttpSecurity http,
-            ReactiveJwtAuthenticationConverterAdapter reactiveJwtAuthenticationConverterAdapter
+            ReactiveJwtAuthenticationConverterAdapter reactiveJwtAuthenticationConverterAdapter,
+            Tracer tracer
     ) {
         return http
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
@@ -75,7 +79,20 @@ public class SecurityConfig {
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(reactiveJwtAuthenticationConverterAdapter))
                 )
+                .exceptionHandling(exceptions -> exceptions.accessDeniedHandler(traceAccessDeniedHandler(tracer)))
                 .build();
+    }
+
+    private ServerAccessDeniedHandler traceAccessDeniedHandler(Tracer tracer) {
+        return (exchange, denied) -> {
+            var span = tracer.currentSpan();
+            if (span != null) {
+                exchange.getResponse().getHeaders().set("X-Trace-Id", span.context().traceId());
+                exchange.getResponse().getHeaders().set("X-Span-Id", span.context().spanId());
+            }
+            exchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
+            return exchange.getResponse().setComplete();
+        };
     }
 
     @Bean

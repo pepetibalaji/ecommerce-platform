@@ -294,7 +294,7 @@ public class AccountService {
 
   private UserProfileResponse profile(User user) {
     return new UserProfileResponse(
-        user.getId(), user.getName(), user.getEmail(), user.getRole(), user.getStatus());
+        user.getId(), user.getName(), user.getEmail(), user.getRoleCodes(), user.getStatus());
   }
 
   private AdminUserResponse admin(User user) {
@@ -302,7 +302,7 @@ public class AccountService {
         user.getId(),
         user.getName(),
         user.getEmail(),
-        user.getRole(),
+        user.getRoleCodes(),
         user.getStatus(),
         user.getCreatedAt(),
         user.getUpdatedAt());
