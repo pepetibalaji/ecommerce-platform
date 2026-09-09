@@ -143,9 +143,9 @@ public class PaymentProviderProperties {
     public static class Checkout {
 
         @NotBlank(message = "Checkout success URL is required")
-        private String successUrl = "http://localhost:3000/payments/success?orderId={ORDER_ID}&paymentId={PAYMENT_ID}";
+        private String successUrl = "http://localhost:5173/payment/return?orderId={ORDER_ID}&paymentId={PAYMENT_ID}";
 
         @NotBlank(message = "Checkout cancel URL is required")
-        private String cancelUrl = "http://localhost:3000/payments/cancel?orderId={ORDER_ID}&paymentId={PAYMENT_ID}";
+        private String cancelUrl = "http://localhost:5173/payment/return?orderId={ORDER_ID}&paymentId={PAYMENT_ID}";
     }
 }

@@ -12,9 +12,9 @@ import org.springframework.web.util.UriComponentsBuilder;
 public class AuthActionDeliveryProperties {
   private String authBaseUrl = "http://auth-service:8081";
   private String internalServiceToken;
-  private String verificationUrl = "http://localhost:3000/verify-email";
-  private String passwordResetUrl = "http://localhost:3000/reset-password";
-  private String emailChangeUrl = "http://localhost:3000/confirm-email-change";
+  private String verificationUrl = "http://localhost:5173/verify-email";
+  private String passwordResetUrl = "http://localhost:5173/reset-password";
+  private String emailChangeUrl = "http://localhost:5173/confirm-email-change";
   private boolean authBaseUrlConfigured;
   private boolean internalServiceTokenConfigured;
   private boolean verificationUrlConfigured;

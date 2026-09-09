@@ -11,7 +11,7 @@ Customer base path: `/api/v1/payments`; admin base path: `/api/v1/admin/payments
 | `GET /payments/orders/{orderId}` | Gets only caller-owned payment for order. | `200` payment |
 | `GET /payments/{paymentId}` | Gets only caller-owned payment. | `200` payment |
 
-Checkout response contains `paymentId`, `orderId`, status, provider, `checkoutUrl`, and expiry. An active `CREATED`/`REQUIRES_CUSTOMER_ACTION` attempt with future expiry is reused. New checkout is rejected for SUCCESS, PROCESSING, or refund/refunded payment states.
+Checkout response contains `paymentId`, `orderId`, status, provider, `checkoutUrl`, and expiry. An active `CREATED`/`REQUIRES_CUSTOMER_ACTION` attempt with future expiry is reused. New checkout is rejected for SUCCESS, PROCESSING, or refund/refunded payment states. Provider success and cancellation URLs must return the browser to the frontend's `/payment/return?orderId=&paymentId=` route; that screen reads authoritative Order and Payment API state.
 
 ## Provider and public endpoints
 
@@ -19,8 +19,8 @@ Checkout response contains `paymentId`, `orderId`, status, provider, `checkoutUr
 | --- | --- | --- |
 | `POST /payments/webhooks/stripe` | Stripe | Raw payload plus required `Stripe-Signature`; adapter verifies it. |
 | `POST /payments/webhooks/razorpay` | Razorpay | Raw payload plus optional `X-Razorpay-Signature`; adapter validation decides acceptance. |
-| `GET /public/payments/success?orderId=&paymentId=` | Public | Plain confirmation text; does not change payment state. |
-| `GET /public/payments/cancel?orderId=&paymentId=` | Public | Plain cancellation text; does not change payment state. |
+| `GET /public/payments/success?orderId=&paymentId=` | Public | Legacy plain confirmation diagnostic; does not change payment state and must not be used as a provider return URL. |
+| `GET /public/payments/cancel?orderId=&paymentId=` | Public | Legacy plain cancellation diagnostic; does not change payment state and must not be used as a provider return URL. |
 
 Only a verified webhook changes payment state. Provider event IDs are unique per provider, so replayed callbacks are acknowledged without repeat processing.
 

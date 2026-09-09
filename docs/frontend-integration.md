@@ -23,6 +23,21 @@ Only public frontend values belong in the frontend environment/build configurati
 5. Payment preparation follows asynchronous `order-created`. After checkout, poll `GET /api/v1/payments/orders/{orderId}` briefly; `404` can mean the payment is not prepared yet. Once it exists, call `POST /api/v1/payments/orders/{orderId}/checkout-session`.
 6. Provider browser return pages are informational. Poll payment/order status; verified webhooks are authoritative.
 
+## Seller and administrator paths
+
+Seller pages call only `/api/v1/seller/**`; administrator pages call only
+`/api/v1/admin/**` (plus the operator-only Notification diagnostics route).
+Use roles for navigation only: the Gateway and downstream service permission
+checks are authoritative. The current contracts deliberately do not support an
+admin catalogue/inventory directory, seller fulfilment actions, seller metrics,
+or a customer notification inbox, so the frontend shows known-ID or read-only
+boundaries instead of calling invented endpoints.
+
+Payment Service serializes payment identity as `paymentId`; the frontend client
+normalizes that wire field internally and must send an admin refund idempotency
+key in the JSON body (and may send the standard header). Admin user status PATCH
+returns no body, so refresh the known user record after a successful update.
+
 ## API client rules
 
 * Generate TypeScript types from Gateway OpenAPI routes where practical (`/product/v3/api-docs`, `/cart/v3/api-docs`, and so on).

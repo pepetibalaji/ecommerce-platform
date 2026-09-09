@@ -15,7 +15,7 @@ spring:
                     httpclient:
                         # Bound downstream calls so one unhealthy service cannot exhaust Netty connections.
                         connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
-                        response-timeout: ${GATEWAY_RESPONSE_TIMEOUT:5s}
+                        response-timeout: ${GATEWAY_RESPONSE_TIMEOUT:10s}
 
     webflux:
         problemdetails:
@@ -27,7 +27,7 @@ gateway:
         trust-forwarded-for: ${GATEWAY_TRUST_FORWARDED_FOR:false}
 
     cors:
-        allowed-origins: ${GATEWAY_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:4200}
+        allowed-origins: ${GATEWAY_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:4200,http://localhost:5173}
 
 logging:
     structured:

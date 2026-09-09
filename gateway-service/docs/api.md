@@ -19,7 +19,7 @@ JWT role conversion reads an array/string `roles` claim; if no authority results
 
 ## CORS and forwarding
 
-Allowed origins are `GATEWAY_CORS_ALLOWED_ORIGINS` (default `http://localhost:3000,http://localhost:4200`). Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS. Allowed headers: Authorization, Content-Type, Accept, X-Requested-With. Credentials are allowed; trace headers `X-Trace-Id` and `X-Span-Id` are exposed. Requests that pass route/security policies are proxied unchanged to their configured backend.
+Allowed origins are `GATEWAY_CORS_ALLOWED_ORIGINS` (default `http://localhost:3000,http://localhost:4200,http://localhost:5173`). Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS. Allowed headers: Authorization, Content-Type, Accept, X-Requested-With, Idempotency-Key. Credentials are allowed; trace headers `X-Trace-Id` and `X-Span-Id` are exposed. Requests that pass route/security policies are proxied unchanged to their configured backend.
 
 ## Dependency responses
 
@@ -29,4 +29,4 @@ Allowed origins are `GATEWAY_CORS_ALLOWED_ORIGINS` (default `http://localhost:30
 { "type": "about:blank", "title": "Upstream service unavailable", "status": 503, "detail": "Please retry shortly." }
 ```
 
-A Redis rate-limiter failure is also translated to a `503 application/problem+json` with title `Rate limiting unavailable`. These paths should not be exposed as application APIs.
+The gateway error handler translates unhandled Redis connectivity or timeout failures to a `503 application/problem+json` with title `Service temporarily unavailable`. These paths should not be exposed as application APIs.

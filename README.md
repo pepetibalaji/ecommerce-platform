@@ -1,6 +1,8 @@
 # Event-Driven E-Commerce Platform
 
-A Java 21 / Spring Boot microservices backend for an e-commerce platform. It uses REST at the edge, gRPC for inventory reservation, Kafka for domain events, and service-owned data stores.
+A Java 21 / Spring Boot microservices platform with a React/TypeScript web client.
+It uses REST at the edge, gRPC for inventory reservation, Kafka for domain
+events, and service-owned data stores.
 
 ## Architecture
 
@@ -74,6 +76,7 @@ payment-service/         Payments and refunds
 notification-service/    Kafka-driven email delivery
 common/                  Shared events, security, gRPC, exceptions
 config-server/           Spring Cloud Config Server
+frontend/                React/Vite customer, seller, and admin web application
 monitoring/              Prometheus, Grafana, Tempo, Loki, Alloy
 scripts/                 Local infrastructure helpers
 docs/                    Detailed design and operational documentation
@@ -81,7 +84,8 @@ docs/                    Detailed design and operational documentation
 
 ## Local development
 
-Prerequisites: Java 21, Maven 3.9+, Docker Desktop, and the separate `ecommerce-config-repo`.
+Prerequisites: Java 21, Maven 3.9+, Node 22+, Docker Desktop, and the separate
+`ecommerce-config-repo`.
 
 1. Start local infrastructure:
 
@@ -102,6 +106,18 @@ Config Server -> Auth -> Product / Inventory / Cart -> Order -> Payment -> Notif
 ```bash
 mvn -pl auth-service,product-service,inventory-service,cart-service,order-service,payment-service,notification-service -am clean test
 ```
+
+5. Run the web client in a separate terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Set `VITE_API_BASE_URL` to the Gateway only; see the
+[frontend README](frontend/README.md) and
+[frontend integration contract](docs/frontend-integration.md).
 
 Start Config Server first, then start the services from your IDE or with Maven. See [platform documentation](docs/README.md) and the README in each service directory for service-specific setup.
 
@@ -127,6 +143,8 @@ Metrics are exposed through Spring Boot Actuator and collected by Prometheus/Gra
 - [Non-functional requirements](docs/non-functional-requirements.md)
 - [High-level design](docs/high-level-design.md)
 - [Low-level design](docs/low-level-design.md)
+- [Frontend requirements](docs/frontend-requirements.md)
+- [Stage deployment plan](docs/stage-deployment-plan.md)
 
 ## Current scope
 

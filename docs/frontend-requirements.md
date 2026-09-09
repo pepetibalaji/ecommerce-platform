@@ -2,14 +2,16 @@
 
 ## 1. Purpose
 
-Build a responsive web storefront for the existing e-commerce platform. The
+Build a responsive web application for the existing e-commerce platform. The
 application lets customers discover products, maintain a guest or signed-in
-cart, check out, pay, and review orders. The frontend communicates exclusively
-with the API Gateway; it does not call a microservice port directly.
+cart, check out, pay, and review orders; sellers manage their own catalogue and
+stock; and administrators perform the limited, documented operational tasks.
+The frontend communicates exclusively with the API Gateway; it does not call a
+microservice port directly.
 
 ## 2. Product scope
 
-### First release (customer storefront)
+### Stage release (customer storefront)
 
 | Area | Required capability |
 | --- | --- |
@@ -21,10 +23,22 @@ with the API Gateway; it does not call a microservice port directly.
 | Payment | Show preparation state, start provider checkout, show final order/payment state. |
 | Orders | List the customer's orders, view order details, cancel an eligible order. |
 
+### Stage release (role-protected workspaces)
+
+| Area | Required capability | Boundary |
+| --- | --- | --- |
+| Seller catalogue | List, create, fully edit, deactivate, and delete only the seller's products. | No media upload, variants, SKU, bulk operations, or search/filter API. |
+| Seller stock | Read/create/update inventory for a known owned product. | Updates replace the absolute available quantity; there is no inventory list or history. |
+| Seller orders | View the seller-scoped paginated order queue. | Read-only; no seller order detail, fulfilment, shipping, refund, payout, or customer-message API exists. |
+| Admin users | List/read users, change status or complete role set, revoke sessions, and soft-delete. | Permissions remain backend-enforced; no search/filter API exists. |
+| Admin catalogue | Create, edit, or delete a product by a known ID. | There is no all-products list/search endpoint. |
+| Admin stock | Create/read/update inventory by known product ID. | No admin inventory list/search or adjustment history exists. |
+| Admin orders | View the paginated queue and make documented status transitions. | No deep-link detail API or fulfilment/tracking flow exists. |
+| Admin payments | List/read payments and request a documented refund. | Never expose raw provider diagnostics. |
+| Admin notifications | Read failed-notification diagnostics only where the operator contract is enabled. | No customer inbox/preferences; diagnostic DTOs are not yet a stable public UI contract. |
+
 ### Explicitly deferred
 
-- Seller catalogue and seller-order workspace.
-- Administrator user, catalogue, inventory, order, payment, and notification consoles.
 - Customer notification inbox and notification-preferences centre. These are a
   later release after the Notification Service exposes versioned, paginated,
   privacy-safe DTOs and enforced preference categories.
@@ -39,8 +53,8 @@ These can be planned as later releases after the customer checkout path is stabl
 | --- | --- | --- |
 | Guest | Discover products and build a cart without an account. | Public catalogue and `/api/v1/cart/guest/**`. |
 | Customer | Purchase and manage their account/orders. | Authenticated customer APIs. |
-| Seller | Manage owned products and view seller-relevant orders. | Deferred UI; `SELLER` role. |
-| Administrator | Operate users, catalogue, orders, inventory and payments. | Deferred UI; `ADMIN` role. |
+| Seller | Manage owned products/stock and view seller-relevant orders. | `/seller/**`; `SELLER` or `ADMIN` role. Admin use of seller endpoints remains scoped to the administrator's own seller identity. |
+| Administrator | Operate documented users, catalogue, orders, inventory, payments and diagnostics. | `/admin/**`; `ADMIN` role plus endpoint-specific permissions. |
 
 The UI must use the roles in the access token/user profile to show only relevant
 navigation. Role-based visibility is for usability; authorization remains the
@@ -142,6 +156,38 @@ backend's responsibility.
 2. For an eligible order, the customer may request cancellation.
 3. The UI refreshes the order until the backend reports the resulting state.
 
+### 4.8 Seller workspace
+
+1. An administrator assigns the `SELLER` role; public registration always creates
+   a customer and there is no seller self-onboarding flow.
+2. A seller signs in and sees only their paginated products. Create and edit use
+   the full product representation, so an edit form preserves every optional
+   field rather than accidentally clearing it.
+3. Seller inventory is loaded by product ID. A product-created event may provision
+   inventory asynchronously, so a temporary `404` after creation is shown as
+   “inventory is being prepared” with a bounded manual retry.
+4. Stock input means **replace available stock with this number**; it is never a
+   delta/adjustment control. The UI does not make a low-stock or reservation claim.
+5. The seller order queue is read-only. It contains only seller-owned line items;
+   address data is shown only in that fulfilment-context screen and is never logged.
+
+### 4.9 Administrator workspace
+
+1. An administrator signs in and sees role navigation. The backend remains the
+   authorization authority; missing endpoint permissions result in access denied.
+2. User role editing always submits the full desired role array and asks for a
+   confirmation, especially when removing `ADMIN`; status/role changes and
+   deletion revoke the affected user's sessions.
+3. Catalogue and inventory management require a known product ID because the
+   current API has no administrative listing/search contract. The UI must make
+   that limitation explicit instead of pretending to query all products.
+4. Admin order status controls present only backend-valid transitions. The current
+   workflow supports `PENDING → CONFIRMED` or `CANCELLED`, and `CONFIRMED →
+   CANCELLED`; it is not a fulfilment console.
+5. Payment pages use safe status/amount/order data and a confirmed refund request;
+   they never render raw provider identifiers or failure payloads. Notification
+   diagnostics are operator-only, read-only, and must not expose raw payloads.
+
 ## 5. Information architecture and page inventory
 
 | Route | Page | Primary contents |
@@ -159,6 +205,18 @@ backend's responsibility.
 | `/orders` | Order history | Paginated customer order list and status filters. |
 | `/orders/:orderId` | Order detail | Items, address snapshot, price/total, payment and cancel status. |
 | `/account` | Account | Profile update, password, email-change and active-session actions. |
+| `/seller` | Seller overview | Capability summary and explicit backend-contract boundaries; no fabricated metrics. |
+| `/seller/products` | Seller products | Paginated owned-product list, create link, edit/deactivate/delete actions. |
+| `/seller/products/new`, `/seller/products/:productId/edit` | Seller product editor | Full product form, URL-only images, validation, destructive-action confirmation. |
+| `/seller/inventory`, `/seller/products/:productId/inventory` | Seller inventory | Read/create/replace stock for a known owned product; temporary provisioning retry state. |
+| `/seller/orders` | Seller order queue | Read-only seller-scoped pagination and fulfilment-context address snapshot. |
+| `/admin` | Admin overview | Safe operational navigation and known-contract limitations. |
+| `/admin/users`, `/admin/users/:userId` | Admin users | Paginated users plus status, full-role replacement, session revocation, and soft-delete confirmations. |
+| `/admin/catalogue`, `/admin/catalogue/new`, `/admin/catalogue/:productId/edit` | Admin catalogue | Create/edit/delete by known ID; explicit no-list/search state. |
+| `/admin/inventory` | Admin inventory | Read/create/replace stock by known product ID. |
+| `/admin/orders` | Admin orders | Paginated queue and allowed status transitions only. |
+| `/admin/payments` | Admin payments | Paginated list with an in-page safe payment detail and confirmed refund request. |
+| `/admin/notifications` | Admin notifications | Operator-only failed-notification diagnostic list; no raw payload display or customer inbox. |
 
 ## 6. Functional requirements
 
@@ -222,6 +280,57 @@ backend's responsibility.
 - Do not clear a cart directly after order creation from the browser. Apply the
   platform's defined post-order cart result after the authoritative order/payment
   outcome is known.
+
+### Seller workspace
+
+- Guard `/seller/**` with `SELLER` or `ADMIN` navigation. The Gateway and each
+  service remain the final authorization authority; an administrator using a
+  seller route sees records scoped to that administrator's own seller identity.
+- Use `GET /api/v1/seller/products?page=&size=` for the owned list only. There
+  is no seller product-detail, search, filter, sort, bulk-edit, SKU/variant, or
+  media-upload endpoint. Editing after a page refresh may use the loaded list;
+  if a known product cannot be loaded, show the contract limitation.
+- Create/update product fields are `name`, positive `price`, optional
+  `description`, `category`, `brand`, and at most ten HTTPS `imageUrls`. Updates
+  are full replacements; preserve optional values in the edit form. Only update
+  accepts `active`; create always starts active. Do not send a browser-selected
+  currency because the current management contract does not accept one.
+- Seller inventory supports `POST /api/v1/seller/inventory` and known-product
+  `GET`/`PUT`. A write sets absolute `availableStock`, never a delta, and the UI
+  exposes read-only `reservedStock` only in this privileged operational screen.
+  A 404 shortly after product creation can be asynchronous provisioning; offer a
+  bounded retry/create-recovery state.
+- Seller orders use only `GET /api/v1/seller/orders?page=&size=`. Show the
+  read-only seller-scoped queue, never fabricate detail, shipment, cancellation,
+  refund, payout, or messaging controls. Treat shipping addresses as sensitive
+  fulfilment data and never log or expose them outside the queue's need-to-know
+  context.
+
+### Administrator workspace
+
+- Guard `/admin/**` with `ADMIN`. Endpoint permission claims, if present in the
+  session profile, may disable unavailable controls for usability; absence of
+  claims must not be mistaken for permission, and every action relies on the
+  backend result.
+- Use the documented paginated `/api/v1/admin/users` list and known-user detail.
+  Changing roles replaces the complete role set; require confirmation and prevent
+  self-demotion, self-session-revocation, or self-deletion in the UI. Role,
+  status, and deletion actions can revoke the affected user's sessions.
+- Admin product create/edit/delete exists, but there is no admin product list or
+  detail API. Make known-product-ID entry explicit; a public product lookup can
+  only prefill an active public product and is not an admin read substitute.
+- Admin inventory is also known-product-ID-only. `POST` creates a row and `PUT`
+  replaces `availableStock`; no list, safe stock delta, reservation reconciliation,
+  or history is available.
+- Use the admin order list and render only server-valid transitions: `PENDING`
+  to `CONFIRMED`/`CANCELLED`, and `CONFIRMED` to `CANCELLED`. There is no admin
+  order-detail, fulfilment, tracking, or general status-management contract.
+- List/read admin payments and submit a confirmed refund with a stable
+  idempotency key. A refund request is not proof of completion. Restrict provider
+  fields to minimal safe display and never show raw provider failure payloads.
+- Failed-notification diagnostics are read-only and operator-only. Redact
+  recipient/message/payload data. Do not expose dead-letter replay in this stage
+  until a dedicated audited workflow and safe DTO contract are available.
 
 ### Session and account
 
@@ -381,13 +490,14 @@ Every page must define loading, empty, error and success states.
 
 ### Required Figma pages
 
-1. `00 - Cover & flows`: product purpose and customer-flow diagram.
+1. `00 - Cover & flows`: product purpose, customer-flow, seller-flow, and operator-boundary diagrams.
 2. `01 - Foundations`: color, typography, spacing, radius, shadow, icon rules.
 3. `02 - Components`: reusable variants and states.
 4. `03 - Customer desktop`: catalogue, product detail, cart, login, checkout,
    payment return, orders, order detail, account.
 5. `04 - Customer mobile`: the same core journey at 360px width.
-6. `05 - Prototype`: linked browse → cart → login → checkout → payment-return flow.
+6. `05 - Seller & admin`: seller catalogue/stock/order-queue and admin user/catalogue/inventory/order/payment/diagnostic screens, including every known-ID and contract-pending boundary.
+7. `06 - Prototype`: linked browse → cart → login → checkout → payment-return flow plus role-aware workspace entry.
 
 The design must include default, hover, focus, disabled, loading, validation-error,
 empty and unavailable states—not just happy-path screens.
@@ -467,10 +577,11 @@ empty and unavailable states—not just happy-path screens.
   change, active sessions/revoke state, and delete-account confirmation.
 - Every email-link screen must state that tokens are never entered manually,
   are single-use, and may expire.
-- Do not add notification-inbox, delivery-history, provider-status, or preference
-  frames to release-one Figma. If the Notification Centre is approved later, design
-  safe paginated history, loading/empty/error states, and server-controlled
-  preference categories with required notices visibly locked.
+- Do not add a customer notification inbox, delivery-history, provider-status, or
+  preference frames. The stage admin diagnostic screen may show only redacted,
+  read-only failed-notification metadata. If a customer Notification Centre is
+  approved later, design safe paginated history, loading/empty/error states, and
+  server-controlled preference categories with required notices visibly locked.
 
 ## 9. Technical constraints
 
@@ -496,7 +607,8 @@ empty and unavailable states—not just happy-path screens.
 - Public browser flows depend on Gateway explicitly permitting public catalogue
   reads, guest-cart routes, public Auth link-token confirmations, and provider
   webhook paths. All other customer routes require normal authenticated Gateway
-  access; seller/admin UI remains deferred.
+  access; seller/admin workspace routes require their documented role and service
+  permission gates.
 
 ### Gateway integration and recovery
 

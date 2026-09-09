@@ -10,7 +10,7 @@ One CORS configuration applies to `/**`. It supports credentialed browser reques
 
 `userOrIpKeyResolver` is primary for route filters: authenticated requests key by `userId`, subject, or principal; anonymous requests key by IP. `ipKeyResolver` always keys by IP. The gateway ignores `X-Forwarded-For`/`X-Real-IP` by default, preventing client spoofing. Set `gateway.rate-limit.trust-forwarded-for=true` only behind a trusted proxy that overwrites these headers.
 
-Rate limiting itself is route configuration: this module supplies key resolvers and Redis dependency support but does not hard-code quotas or filters. Redis exceptions are intercepted before a committed response and converted to retryable 503 Problem Details.
+Rate limiting itself is route configuration: this module supplies key resolvers and Redis dependency support but does not hard-code quotas or filters. The gateway error handler converts unhandled Redis connectivity and timeout exceptions before a committed response into retryable 503 Problem Details.
 
 ## Fallback and observability
 
