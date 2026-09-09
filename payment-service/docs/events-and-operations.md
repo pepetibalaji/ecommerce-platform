@@ -8,6 +8,8 @@ Consumes `order-created` using group `payment-service` by default and creates a 
 
 Required environment configuration includes PostgreSQL, Kafka, JWT/JWK, active provider choice/credentials, Stripe/Razorpay webhook secrets, redirect URLs, gRPC, Config Server, and tracing. `SPRING_PROFILES_ACTIVE` defaults `dev`; `CONFIG_SERVER_URL` defaults `http://localhost:8888`; `OBSERVABILITY_LOG_FILE` defaults `../logs/payment-service.json`.
 
+Set `PAYMENT_CHECKOUT_SUCCESS_URL` and `PAYMENT_CHECKOUT_CANCEL_URL` to the frontend payment-return route, including `{ORDER_ID}` and `{PAYMENT_ID}` placeholders. Local development uses `http://localhost:5173/payment/return?orderId={ORDER_ID}&paymentId={PAYMENT_ID}`. Stage must use the deployed Vercel origin instead; do not point provider returns to Payment Service's `/public/payments/**` diagnostic endpoints.
+
 Public utility endpoints include health/info/prometheus and OpenAPI/Swagger. Monitor provider latency, invalid signature/webhook counts, payment-event publication errors, consumer lag, payment/refund state anomalies, and expired checkout attempts. Never log secrets, signatures, card data, or raw sensitive provider payloads.
 
 When Kafka is unavailable, reconcile payment records whose terminal state lacks the expected downstream outcome; when a provider callback fails validation, correct provider secret/configuration before replaying according to provider rules.
