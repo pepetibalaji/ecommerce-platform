@@ -4,7 +4,7 @@ import lombok.*;
 
 import java.math.BigDecimal;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 import java.util.UUID;
 import java.util.List;
@@ -29,13 +29,15 @@ public class ProductResponse {
 
     private BigDecimal price;
 
+    private String currency;
+
     private String category;
 
     private String brand;
 
     private List<String> imageUrls;
 
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 }

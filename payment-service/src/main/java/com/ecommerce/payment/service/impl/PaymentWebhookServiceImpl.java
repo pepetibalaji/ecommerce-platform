@@ -51,6 +51,35 @@ public class PaymentWebhookServiceImpl implements PaymentWebhookService {
     private final PaymentEventPublisher paymentEventPublisher;
     private final PaymentMetrics paymentMetrics;
 
+    private final com.ecommerce.payment.mapper.PaymentMapper paymentMapper;
+
+    @Override
+    public com.ecommerce.payment.dto.response.PaymentResponse refreshPayment(UUID orderId, UUID userId) {
+        Payment payment = paymentRepository.findByOrderIdForUpdate(orderId)
+                .orElseThrow(() -> new com.ecommerce.common.exception.ResourceNotFoundException("Payment not found"));
+        if (!payment.getUserId().equals(userId))
+            throw new com.ecommerce.common.exception.ResourceNotFoundException("Payment not found");
+        if (payment.getProvider() != PaymentProvider.STRIPE || !java.util.Set.of(PaymentStatus.PENDING,
+                PaymentStatus.REQUIRES_CUSTOMER_ACTION, PaymentStatus.PROCESSING).contains(payment.getStatus()))
+            return paymentMapper.toResponse(payment);
+        LocalDateTime now = LocalDateTime.now(java.time.Clock.systemUTC());
+        if (payment.getLastProviderCheckAt() != null && payment.getLastProviderCheckAt().isAfter(now.minusSeconds(5)))
+            return paymentMapper.toResponse(payment);
+        var attempt = paymentAttemptRepository.findTopByPayment_IdOrderByCreatedAtDesc(payment.getId()).orElse(null);
+        if (attempt == null || !hasText(attempt.getProviderSessionId())) return paymentMapper.toResponse(payment);
+        ProviderWebhookEvent verified = paymentGatewayFactory.getGateway(PaymentProvider.STRIPE).getPaymentStatus(attempt.getProviderSessionId());
+        if (verified == null || verified.getProvider() != PaymentProvider.STRIPE
+                || !attempt.getProviderSessionId().equals(verified.getProviderSessionId()) || verified.getStatus() == null)
+            throw new com.ecommerce.payment.exception.PaymentConfirmationUnavailableException();
+        PaymentStatus previous = payment.getStatus();
+        applyProviderState(verified, payment, attempt);
+        payment.setLastProviderCheckAt(LocalDateTime.now(java.time.Clock.systemUTC()));
+        paymentAttemptRepository.save(attempt);
+        paymentRepository.save(payment);
+        if (previous != payment.getStatus()) publishOutcomeIfTerminal(payment);
+        return paymentMapper.toResponse(payment);
+    }
+
     @Override
     public WebhookAckResponse processWebhook(
             PaymentProvider provider,
@@ -240,6 +269,7 @@ public class PaymentWebhookServiceImpl implements PaymentWebhookService {
         PaymentAttempt attempt = attemptOptional.get();
         payment = attempt.getPayment();
 
+        PaymentStatus previousStatus = payment.getStatus();
         applyProviderState(providerEvent, payment, attempt);
 
         paymentAttemptRepository.save(attempt);
@@ -247,7 +277,7 @@ public class PaymentWebhookServiceImpl implements PaymentWebhookService {
 
         markWebhookEvent(savedWebhookEvent, WebhookProcessingStatus.PROCESSED);
 
-        publishOutcomeIfTerminal(payment);
+        if (previousStatus != payment.getStatus()) publishOutcomeIfTerminal(payment);
 
         log.info(
                 "Webhook processed successfully. provider={}, providerEventId={}, eventType={}, paymentId={}, orderId={}, paymentStatus={}, attemptStatus={}",
@@ -350,6 +380,10 @@ public class PaymentWebhookServiceImpl implements PaymentWebhookService {
             PaymentAttempt attempt
     ) {
         applyProviderIdentifiers(providerEvent, attempt);
+
+        // Late checkout events must not downgrade a confirmed payment or a refund.
+        if (java.util.Set.of(PaymentStatus.SUCCESS, PaymentStatus.REFUND_REQUESTED, PaymentStatus.REFUND_PROCESSING,
+                PaymentStatus.REFUNDED, PaymentStatus.REFUND_FAILED).contains(payment.getStatus())) return;
 
         switch (providerEvent.getStatus()) {
             case SUCCESS -> {

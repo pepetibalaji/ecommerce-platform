@@ -198,11 +198,11 @@ public class InventoryService {
     /** At-least-once product-created events are idempotent by the unique product_id key. */
     @Transactional
     public InventoryResponse createInitialInventory(UUID productId, UUID sellerId) {
+        if (productId == null) throw new IllegalArgumentException("Product id is required");
+        inventoryRepository.insertInitialIfAbsent(UUID.randomUUID(), productId, sellerId);
         return inventoryRepository.findByProductId(productId)
                 .map(inventoryMapper::toResponse)
-                .orElseGet(() -> inventoryMapper.toResponse(inventoryRepository.save(Inventory.builder()
-                        .id(UUID.randomUUID()).productId(productId).sellerId(sellerId)
-                        .availableStock(0).reservedStock(0).updatedAt(LocalDateTime.now()).build())));
+                .orElseThrow(() -> new IllegalStateException("Inventory provisioning did not create a row"));
     }
 
     @Transactional
@@ -284,6 +284,9 @@ public class InventoryService {
     }
 
     private void ensureAvailableStock(Inventory inventory, Integer quantity) {
+        if (!inventory.isProductActive()) {
+            throw new IllegalArgumentException("Product is unavailable for new reservations");
+        }
         if (inventory.getAvailableStock() < quantity) {
             throw new IllegalArgumentException("Insufficient stock available");
         }

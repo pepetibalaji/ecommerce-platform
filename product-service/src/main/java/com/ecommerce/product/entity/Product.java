@@ -1,6 +1,7 @@
 package com.ecommerce.product.entity;
 
 import lombok.*;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.data.mongodb.core.mapping.FieldType;
 import org.springframework.data.mongodb.core.mapping.MongoId;
@@ -9,7 +10,7 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import java.math.BigDecimal;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 import java.util.List;
 import java.util.UUID;
@@ -28,6 +29,10 @@ public class Product {
     // MongoDB's required _id index is unique; UUID values are stored as strings.
     @MongoId(targetType = FieldType.STRING)
     private UUID id;
+
+    /** Optimistic concurrency revision; lifecycle versions are revision + 1. */
+    @Version
+    private Long version;
 
     @Indexed(name = "seller_id_idx")
     private UUID sellerId;
@@ -48,6 +53,9 @@ public class Product {
     @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal price;
 
+    @Builder.Default
+    private String currency = "USD";
+
     @Indexed(name = "category_idx")
     private String category;
 
@@ -56,7 +64,8 @@ public class Product {
     @Builder.Default
     private List<String> imageUrls = List.of();
 
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
+
 }

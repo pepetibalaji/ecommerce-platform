@@ -1,6 +1,6 @@
 # Inventory Service data model
 
-PostgreSQL owns the inventory schema. Flyway migrations V1–V3 create the following structures.
+PostgreSQL owns the inventory schema. Flyway migrations V1–V4 create the following structures.
 
 ## `inventory`
 
@@ -9,6 +9,9 @@ PostgreSQL owns the inventory schema. Flyway migrations V1–V3 create the follo
 | `id` | UUID primary key | Inventory row identity. |
 | `product_id` | UUID, not null, unique | One inventory record per product. |
 | `seller_id` | UUID, nullable | Added in V3; populated by product-created provisioning, not generic REST creation. |
+| `product_active` | boolean, not null | Latest catalogue state; false prevents new reservations. Defaults true for legacy rows until reconciliation. |
+| `product_version` | bigint, non-negative, not null | Last applied Product version. Zero marks legacy rows awaiting a snapshot. |
+| `last_product_event_id` | UUID, nullable | Last lifecycle event committed with metadata. |
 | `available_stock` | integer, not null | Stock available to reserve. |
 | `reserved_stock` | integer, not null | Stock currently held. |
 | `updated_at` | timestamp, not null | Last service mutation time. |

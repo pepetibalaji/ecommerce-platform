@@ -26,6 +26,16 @@ public class Inventory {
     @Column(name = "seller_id")
     private UUID sellerId;
 
+    @Builder.Default
+    @Column(name = "product_active", nullable = false)
+    private boolean productActive = true;
+
+    @Column(name = "product_version", nullable = false)
+    private long productVersion;
+
+    @Column(name = "last_product_event_id")
+    private UUID lastProductEventId;
+
     @Column(name = "available_stock", nullable = false)
     private Integer availableStock;
 

@@ -27,11 +27,11 @@ microservice port directly.
 
 | Area | Required capability | Boundary |
 | --- | --- | --- |
-| Seller catalogue | List, create, fully edit, deactivate, and delete only the seller's products. | No media upload, variants, SKU, bulk operations, or search/filter API. |
+| Seller catalogue | List, single/bulk create, fully edit, deactivate/reactivate, and archive owned products. | No media upload, variants, SKU, bulk edit, or server-side workspace search/filter API. |
 | Seller stock | Read/create/update inventory for a known owned product. | Updates replace the absolute available quantity; there is no inventory list or history. |
 | Seller orders | View the seller-scoped paginated order queue. | Read-only; no seller order detail, fulfilment, shipping, refund, payout, or customer-message API exists. |
 | Admin users | List/read users, change status or complete role set, revoke sessions, and soft-delete. | Permissions remain backend-enforced; no search/filter API exists. |
-| Admin catalogue | Create, edit, or delete a product by a known ID. | There is no all-products list/search endpoint. |
+| Admin catalogue | Create for an eligible seller; read/edit/reactivate/archive by known ID; replay/reconcile Product delivery. | There is no administrative all-products list/search endpoint; bulk import is seller-only. |
 | Admin stock | Create/read/update inventory by known product ID. | No admin inventory list/search or adjustment history exists. |
 | Admin orders | View the paginated queue and make documented status transitions. | No deep-link detail API or fulfilment/tracking flow exists. |
 | Admin payments | List/read payments and request a documented refund. | Never expose raw provider diagnostics. |
@@ -53,7 +53,7 @@ These can be planned as later releases after the customer checkout path is stabl
 | --- | --- | --- |
 | Guest | Discover products and build a cart without an account. | Public catalogue and `/api/v1/cart/guest/**`. |
 | Customer | Purchase and manage their account/orders. | Authenticated customer APIs. |
-| Seller | Manage owned products/stock and view seller-relevant orders. | `/seller/**`; `SELLER` or `ADMIN` role. Admin use of seller endpoints remains scoped to the administrator's own seller identity. |
+| Seller | Manage owned products/stock and view seller-relevant orders. | `/seller/**`; `SELLER` or `ADMIN`, except bulk import requires SELLER. Product list/create use JWT identity; authorized admin product support can manage another seller's known ID. |
 | Administrator | Operate documented users, catalogue, orders, inventory, payments and diagnostics. | `/admin/**`; `ADMIN` role plus endpoint-specific permissions. |
 
 The UI must use the roles in the access token/user profile to show only relevant
@@ -98,7 +98,7 @@ backend's responsibility.
    invalid/expired/previously-used link (resend verification action). The API
    deliberately returns the same `401` response for those final cases, so the UI
    must not claim that it can identify an "already verified" account.
-5. An active verified user logs in; the UI stores session state and fetches their
+5. An active verified user logs in; the UI keeps session state in memory and fetches their
    profile.
 6. Immediately after successful login, it calls `POST /api/v1/cart/merge-guest`.
 
@@ -163,7 +163,7 @@ backend's responsibility.
 2. A seller signs in and sees only their paginated products. Create and edit use
    the full product representation, so an edit form preserves every optional
    field rather than accidentally clearing it.
-3. Seller inventory is loaded by product ID. A product-created event may provision
+3. Seller inventory is loaded by product ID. A product lifecycle snapshot may provision
    inventory asynchronously, so a temporary `404` after creation is shown as
    “inventory is being prepared” with a bounded manual retry.
 4. Stock input means **replace available stock with this number**; it is never a
@@ -206,23 +206,24 @@ backend's responsibility.
 | `/orders/:orderId` | Order detail | Items, address snapshot, price/total, payment and cancel status. |
 | `/account` | Account | Profile update, password, email-change and active-session actions. |
 | `/seller` | Seller overview | Capability summary and explicit backend-contract boundaries; no fabricated metrics. |
-| `/seller/products` | Seller products | Paginated owned-product list, create link, edit/deactivate/delete actions. |
+| `/seller/products` | Seller products | Progressive owned-product list, single/bulk create links, edit/visibility/archive actions. |
+| `/seller/products/import` | Seller bulk import | JSON preview and validation for 1..100 owned products; SELLER role required. |
 | `/seller/products/new`, `/seller/products/:productId/edit` | Seller product editor | Full product form, URL-only images, validation, destructive-action confirmation. |
 | `/seller/inventory`, `/seller/products/:productId/inventory` | Seller inventory | Read/create/replace stock for a known owned product; temporary provisioning retry state. |
 | `/seller/orders` | Seller order queue | Read-only seller-scoped pagination and fulfilment-context address snapshot. |
 | `/admin` | Admin overview | Safe operational navigation and known-contract limitations. |
 | `/admin/users`, `/admin/users/:userId` | Admin users | Paginated users plus status, full-role replacement, session revocation, and soft-delete confirmations. |
-| `/admin/catalogue`, `/admin/catalogue/new`, `/admin/catalogue/:productId/edit` | Admin catalogue | Create/edit/delete by known ID; explicit no-list/search state. |
+| `/admin/catalogue`, `/admin/catalogue/new`, `/admin/catalogue/:productId/edit` | Admin catalogue | Managed read/create/edit/visibility/archive by known ID; confirmed Product replay/reconciliation; explicit no-list/search state. |
 | `/admin/inventory` | Admin inventory | Read/create/replace stock by known product ID. |
 | `/admin/orders` | Admin orders | Paginated queue and allowed status transitions only. |
 | `/admin/payments` | Admin payments | Paginated list with an in-page safe payment detail and confirmed refund request. |
-| `/admin/notifications` | Admin notifications | Operator-only failed-notification diagnostic list; no raw payload display or customer inbox. |
+| `/admin/notifications` | Admin notifications | Redacted failed-notification diagnostics and confirmed Auth outbox replay; no raw payload display or customer inbox. |
 
 ## 6. Functional requirements
 
 ### Catalogue
 
-- This section assumes the Product Service catalogue-hardening ticket is complete.
+- This section follows the implemented [Product API contract](../product-service/docs/api.md).
 - Use `GET /api/v1/products` with `q`, `category`, `brand`, `minPrice`,
   `maxPrice`, `sort`, `page`, and `size` query parameters.
 - Support independent and combined filters, including one-sided price ranges.
@@ -244,8 +245,8 @@ backend's responsibility.
 
 ### Product API integration assumptions
 
-- `GET /api/v1/products/facets` returns category and brand values and product
-  counts for the current catalogue context.
+- `GET /api/v1/products/facets` returns global active category/brand counts,
+  grouped case-insensitively; current search filters do not narrow these facets.
 - Product lifecycle events are published reliably for product creation, update,
   deactivation, reactivation, and archival.
 - Product responses use UTC-aware timestamps and include currency with price.
@@ -284,17 +285,20 @@ backend's responsibility.
 ### Seller workspace
 
 - Guard `/seller/**` with `SELLER` or `ADMIN` navigation. The Gateway and each
-  service remain the final authorization authority; an administrator using a
-  seller route sees records scoped to that administrator's own seller identity.
-- Use `GET /api/v1/seller/products?page=&size=` for the owned list only. There
-  is no seller product-detail, search, filter, sort, bulk-edit, SKU/variant, or
-  media-upload endpoint. Editing after a page refresh may use the loaded list;
-  if a known product cannot be loaded, show the contract limitation.
-- Create/update product fields are `name`, positive `price`, optional
+  service remain the final authorization authority. Product list/create use the
+  signed-in identity; authorized admin managed-product reads/mutations can support
+  another seller's known product ID. Bulk import requires SELLER.
+- Use `GET /api/v1/seller/products?page=&size=` for the owned list and managed
+  `GET /api/v1/seller/products/{id}` for editors, including inactive records after
+  reload. Search loaded products is a client filter; no seller server-side search,
+  filter, sort, bulk-edit, SKU/variant, or media-upload endpoint exists.
+- Bulk import uses `POST /api/v1/seller/products/bulk` with 1..100 validated
+  products. Only SELLER can import; the browser cannot choose another owner.
+- Create/update product fields are `name`, positive `price`, ISO `currency`, optional
   `description`, `category`, `brand`, and at most ten HTTPS `imageUrls`. Updates
   are full replacements; preserve optional values in the edit form. Only update
-  accepts `active`; create always starts active. Do not send a browser-selected
-  currency because the current management contract does not accept one.
+  accepts `active`; create always starts active. DELETE archives and preserves
+  history; enabling visibility and saving reactivates an eligible seller's product.
 - Seller inventory supports `POST /api/v1/seller/inventory` and known-product
   `GET`/`PUT`. A write sets absolute `availableStock`, never a delta, and the UI
   exposes read-only `reservedStock` only in this privileged operational screen.
@@ -316,9 +320,12 @@ backend's responsibility.
   Changing roles replaces the complete role set; require confirmation and prevent
   self-demotion, self-session-revocation, or self-deletion in the UI. Role,
   status, and deletion actions can revoke the affected user's sessions.
-- Admin product create/edit/delete exists, but there is no admin product list or
-  detail API. Make known-product-ID entry explicit; a public product lookup can
-  only prefill an active public product and is not an admin read substitute.
+- Admin product create/read/edit/archive uses known IDs; managed
+  `GET /api/v1/admin/products/{id}` includes inactive products. There is no admin
+  product directory. Use the managed detail response to prefill edits.
+- Product recovery has confirmed replay and reconciliation actions at
+  `/api/v1/admin/products/outbox/**`. Reconciliation queues up to 100 products per
+  request and offers the returned cursor's next batch until complete.
 - Admin inventory is also known-product-ID-only. `POST` creates a row and `PUT`
   replaces `availableStock`; no list, safe stock delta, reservation reconciliation,
   or history is available.
@@ -328,18 +335,25 @@ backend's responsibility.
 - List/read admin payments and submit a confirmed refund with a stable
   idempotency key. A refund request is not proof of completion. Restrict provider
   fields to minimal safe display and never show raw provider failure payloads.
-- Failed-notification diagnostics are read-only and operator-only. Redact
-  recipient/message/payload data. Do not expose dead-letter replay in this stage
-  until a dedicated audited workflow and safe DTO contract are available.
+- Failed-notification diagnostics remain read-only and operator-only. Redact
+  recipient/message/payload data. The separate confirmed Auth outbox replay action
+  requeues terminal Auth deliveries; Product replay/reconciliation lives in admin
+  catalogue operations. Neither exposes raw event payloads or token values.
 
 ### Session and account
 
-- Send `Authorization: Bearer <accessToken>` to authenticated Gateway requests.
-- On `401`, clear local session state and take the user to login while preserving
-  the intended destination where appropriate.
+- Keep access tokens in memory and send them as `Authorization: Bearer <accessToken>` to authenticated Gateway requests. The refresh secret is an HTTP-only, Secure production cookie and must never be stored in browser web storage.
+- On authenticated `401`, join a single-flight cookie-backed refresh and retry
+  once. If refresh fails, clear local authentication and require sign-in,
+  preserving only a safe intended destination where appropriate.
 - On `403`, show an access-denied screen instead of retrying.
 - Support token refresh before expiry or after an authentication failure, with a
   single-flight refresh mechanism so concurrent failed calls do not create races.
+- Restore through the cookie-backed refresh endpoint on startup; protected routes
+  wait for completion. Recent activity permits silent renewal. The local inactivity
+  countdown defaults to 30 minutes with a five-minute Continue session / Sign out
+  warning. Align its settings with Auth; server idle/absolute expiry remains
+  authoritative. Refresh/logout requests never send a refresh-token JSON body.
 - Never log tokens, passwords, reset tokens, or personally identifiable address data.
 
 ### Auth flows and recovery
@@ -353,9 +367,8 @@ backend's responsibility.
 - Login returns the same `401 Invalid credentials` outcome for an unknown email,
   incorrect password, unverified account, suspended account, or deleted account.
   Offer a separate verification-resend route, but do not infer account status.
-- Use a 12-character minimum in every password UI, even though the current
-  registration endpoint accepts 8 characters; reset and password-change APIs
-  require 12. Backend validation should be aligned before production release.
+- Use the shared 12-character password minimum in registration, reset, and
+  password-change forms; registration now enforces the same backend minimum.
 - On a refresh failure or detected refresh-token reuse, clear the session and
   take the user to sign-in. Refresh requests must be single-flight so parallel
   `401`s cannot rotate the token more than once.
@@ -447,7 +460,7 @@ Every page must define loading, empty, error and success states.
 | --- | --- |
 | `400` validation map | Display field-level messages and retain entered values. |
 | API error body / Problem Details | Display a safe user message; do not parse error-message text for logic. |
-| `401` | Clear session and route to login. |
+| Authenticated `401` | Attempt one shared refresh and one retry; failed refresh clears session and requires sign-in. |
 | `403` | Explain that the account lacks access. |
 | `409` cart version/conflict | Reload the authoritative cart, explain that it changed in another tab/session, and let the customer retry deliberately. |
 | `409 IDEMPOTENCY_KEY_REUSED` | Do not submit again automatically. Explain that the checkout intent differs from the earlier submission; refresh the cart/order view and let the customer start a deliberate new checkout intent. |
@@ -614,7 +627,7 @@ empty and unavailable states—not just happy-path screens.
 
 - Use Gateway as one canonical HTTPS origin per environment. Do not create
   frontend fallbacks to direct service URLs when a Gateway route is unavailable.
-- Send `credentials: "include"` on guest-cart requests. Send bearer authorization
+- Send `credentials: "include"` on Gateway requests for guest-cart and Auth cookies. Send bearer authorization
   only where required by the API-client session policy.
 - On Gateway `429`, prevent repeat submission and respect `Retry-After` when
   supplied. Keep user input/cart state intact.
@@ -662,15 +675,14 @@ empty and unavailable states—not just happy-path screens.
 - The app displays safe recovery UI for validation, authorization, dependency and
   network errors.
 
-## 11. Decisions and risks to resolve before implementation
+## 11. Deployment checks and remaining dependencies
 
-1. **Public catalogue at Gateway:** product documentation declares browsing public,
-   but the current Gateway catch-all rule requires JWT for unlisted paths. Do not
-   begin production frontend integration until the Gateway ticket explicitly permits
-   public catalogue reads and stage smoke tests verify the deployed route rules.
-2. **Token storage:** choose the session model before implementation. Preferred
-   production model is a BFF or secure HttpOnly-cookie session; direct browser token
-   storage needs an explicit XSS/security decision.
+1. **Public catalogue at Gateway:** anonymous catalogue list/detail/facets are
+   explicitly permitted and covered by security tests. Stage smoke tests must
+   verify the deployed route configuration matches that contract.
+2. **Browser sessions:** implemented access-in-memory and HttpOnly refresh-cookie
+   model. Verify HTTPS, exact credentialed CORS origins, cookie SameSite topology,
+   and matching browser/server idle settings before deployment.
 3. **Product images:** define a reliable CDN/storage and image fallback policy.
 4. **Payment provider handoff:** confirm the checkout-session response schema and
    whether the frontend redirects to a URL or invokes a provider SDK.
@@ -682,11 +694,11 @@ empty and unavailable states—not just happy-path screens.
    confirmation, atomic action-token consumption, shared password policy, public
    registration restricted to customers, rate limiting, refresh-token reuse
    invalidation, reliable outbox delivery, and stable error contracts.
-7. **Product ticket dependency:** the Product Service catalogue-hardening ticket
-   must be completed before search/sort/facet UI or a production catalogue claim:
-   filter/pagination validation, inactive-product policy, lifecycle events and
-   outbox reliability, archival, seller validation, UTC/currency, and image/content
-   governance.
+7. **Product deployment:** the implemented contract covers validated queries,
+   inactive visibility, transactional lifecycle delivery, archival, seller
+   eligibility, UTC/currency and content rules. Deploy transaction-capable Mongo,
+   shared events and Inventory consumer/config, then run reconciliation and the
+   documented acceptance checks before claiming the deployed stack is ready.
 8. **Cart ticket dependency:** the Cart Service production-hardening ticket must
    be completed before frontend integration: request limits/validation, safe
    concurrent mutations, idempotent merge and mutation retry, browser-safe guest

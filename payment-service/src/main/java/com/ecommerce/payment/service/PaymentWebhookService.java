@@ -9,6 +9,8 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 public interface PaymentWebhookService {
 
+    com.ecommerce.payment.dto.response.PaymentResponse refreshPayment(@NotNull java.util.UUID orderId, @NotNull java.util.UUID userId);
+
     WebhookAckResponse processWebhook(
             @NotNull PaymentProvider provider,
             @NotBlank String payload,

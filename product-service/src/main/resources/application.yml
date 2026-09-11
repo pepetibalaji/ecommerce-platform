@@ -8,6 +8,23 @@ spring:
     config:
         import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
 
+    kafka:
+        producer:
+            key-serializer: org.apache.kafka.common.serialization.StringSerializer
+            value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+            acks: all
+            properties:
+                enable.idempotence: true
+                spring.json.add.type.headers: true
+
+product:
+    outbox:
+        batch-size: ${PRODUCT_OUTBOX_BATCH_SIZE:100}
+        max-attempts: ${PRODUCT_OUTBOX_MAX_ATTEMPTS:10}
+        retry-delay-seconds: ${PRODUCT_OUTBOX_RETRY_DELAY_SECONDS:5}
+    catalogue:
+        query-timeout-ms: ${PRODUCT_QUERY_TIMEOUT_MS:2000}
+
 logging:
     structured:
         format:

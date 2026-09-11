@@ -152,12 +152,26 @@ public class StripePaymentGateway implements PaymentGateway {
         Optional<StripeObject> objectOptional = event.getDataObjectDeserializer().getObject();
 
         if (objectOptional.isEmpty()) {
-            return ignored(event.getId(), eventType, "Stripe event object could not be deserialized");
+            if (eventType.startsWith("checkout.session.")) {
+                // Signature has already been verified. Retrieve using this SDK's API version
+                // instead of silently losing a completion from a different webhook API version.
+                com.fasterxml.jackson.databind.JsonNode raw;
+                try { raw = new com.fasterxml.jackson.databind.ObjectMapper().readTree(event.getDataObjectDeserializer().getRawJson()); }
+                catch (com.fasterxml.jackson.core.JsonProcessingException invalid) { throw new BadRequestException("Invalid Stripe checkout event"); }
+                if (!raw.path("id").isTextual() || !"checkout.session".equals(raw.path("object").asText()))
+                    throw new BadRequestException("Invalid Stripe checkout event");
+                var current = getPaymentStatus(raw.path("id").asText());
+                return current.toBuilder().providerEventId(event.getId()).eventType(eventType)
+                        .status("checkout.session.async_payment_failed".equals(eventType) && current.getStatus() != ProviderPaymentStatus.SUCCESS
+                                ? ProviderPaymentStatus.FAILED : current.getStatus()).build();
+            }
+            return ignored(event.getId(), eventType, "Unsupported Stripe event object");
         }
 
         StripeObject stripeObject = objectOptional.get();
 
-        if ("checkout.session.completed".equals(eventType) && stripeObject instanceof Session session) {
+        if (("checkout.session.completed".equals(eventType) || "checkout.session.async_payment_succeeded".equals(eventType))
+                && stripeObject instanceof Session session) {
             ProviderPaymentStatus status = "paid".equalsIgnoreCase(session.getPaymentStatus())
                     ? ProviderPaymentStatus.SUCCESS
                     : ProviderPaymentStatus.PROCESSING;
@@ -170,6 +184,12 @@ public class StripePaymentGateway implements PaymentGateway {
                     .providerSessionId(session.getId())
                     .providerPaymentIntentId(session.getPaymentIntent())
                     .build();
+        }
+
+        if ("checkout.session.async_payment_failed".equals(eventType) && stripeObject instanceof Session session) {
+            return ProviderWebhookEvent.builder().provider(PaymentProvider.STRIPE).providerEventId(event.getId())
+                    .eventType(eventType).providerSessionId(session.getId()).providerPaymentIntentId(session.getPaymentIntent())
+                    .status(ProviderPaymentStatus.FAILED).failureReason("Stripe delayed payment failed").build();
         }
 
         if ("checkout.session.expired".equals(eventType) && stripeObject instanceof Session session) {
@@ -223,13 +243,23 @@ public class StripePaymentGateway implements PaymentGateway {
 
     @Override
     public ProviderWebhookEvent getPaymentStatus(String providerPaymentId) {
-        return ProviderWebhookEvent.builder()
-                .provider(PaymentProvider.STRIPE)
-                .eventType("stripe.status.lookup.not-implemented")
-                .status(ProviderPaymentStatus.IGNORED)
-                .providerPaymentIntentId(providerPaymentId)
-                .failureReason("Provider status lookup is not implemented in PAYMENT-102")
-                .build();
+        validateStripeApiKeyConfig();
+        if (providerPaymentId == null || !providerPaymentId.startsWith("cs_"))
+            throw new BadRequestException("A saved Stripe checkout session is required");
+        try {
+            int timeout = (int) Math.min(5000, properties.getProvider().getStripe().getTimeoutMs());
+            Session session = Session.retrieve(providerPaymentId, RequestOptions.builder()
+                    .setApiKey(properties.getProvider().getStripe().getApiKey())
+                    .setConnectTimeout(timeout).setReadTimeout(timeout).setMaxNetworkRetries(0).build());
+            ProviderPaymentStatus status = "paid".equals(session.getPaymentStatus()) ? ProviderPaymentStatus.SUCCESS
+                    : "expired".equals(session.getStatus()) ? ProviderPaymentStatus.CANCELLED
+                    : "complete".equals(session.getStatus()) ? ProviderPaymentStatus.PROCESSING : ProviderPaymentStatus.IGNORED;
+            return ProviderWebhookEvent.builder().provider(PaymentProvider.STRIPE)
+                    .providerEventId("lookup:" + session.getId() + ":" + status).eventType("stripe.checkout.reconciled")
+                    .providerSessionId(session.getId()).providerPaymentIntentId(session.getPaymentIntent()).status(status).build();
+        } catch (StripeException exception) {
+            throw new com.ecommerce.payment.exception.PaymentConfirmationUnavailableException();
+        }
     }
 
     @Override

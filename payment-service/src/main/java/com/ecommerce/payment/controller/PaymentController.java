@@ -29,6 +29,13 @@ public class PaymentController {
 
     private final PaymentQueryService paymentQueryService;
 
+    private final com.ecommerce.payment.service.PaymentWebhookService paymentWebhookService;
+
+    @PostMapping("/orders/{orderId}/refresh")
+    public ResponseEntity<PaymentResponse> refreshPayment(@PathVariable UUID orderId, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(paymentWebhookService.refreshPayment(orderId, extractUserId(jwt)));
+    }
+
     @PostMapping("/orders/{orderId}/checkout-session")
     public ResponseEntity<CreateCheckoutSessionResponse> createCheckoutSession(
             @PathVariable @NotNull(message = "Order id is required") UUID orderId,

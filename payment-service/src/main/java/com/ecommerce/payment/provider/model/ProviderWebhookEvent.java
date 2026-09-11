@@ -10,7 +10,7 @@ import com.ecommerce.payment.dto.response.ProviderRefundStatus;
 import com.ecommerce.payment.enums.PaymentProvider;
 
 @Getter
-@Builder
+@Builder(toBuilder = true)
 public class ProviderWebhookEvent {
 
     private PaymentProvider provider;

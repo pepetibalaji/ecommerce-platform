@@ -6,6 +6,7 @@ import java.util.Set;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -60,8 +61,9 @@ public class SecurityConfig {
   }
 
   /**
-   * The delivery-token endpoint performs constant-time shared-secret verification in
-   * {@code InternalServiceAuthorizer}; it must not be exposed through the public API chain.
+   * Internal controllers perform constant-time shared-secret verification in
+   * {@code InternalServiceAuthorizer}. They do not accept a browser JWT as a service credential.
+   * Only the explicitly defined service contracts can reach those controllers.
    */
   @Bean
   @Order(3)
@@ -69,7 +71,10 @@ public class SecurityConfig {
     http.securityMatcher("/internal/**")
         .csrf(csrf -> csrf.disable())
         .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-        .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
+        .authorizeHttpRequests(auth -> auth
+            .requestMatchers(HttpMethod.GET, "/internal/auth/sellers/*/eligibility").permitAll()
+            .requestMatchers(HttpMethod.POST, "/internal/auth/actions/*/delivery-token").permitAll()
+            .anyRequest().denyAll());
     return http.build();
   }
 

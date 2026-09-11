@@ -15,6 +15,7 @@ import {
   SellerInventoryPage,
   SellerOrdersPage,
   SellerOverviewPage,
+  SellerBulkImportPage,
   SellerProductEditorPage,
   SellerProductsPage,
 } from "./pages/backoffice";
@@ -96,6 +97,9 @@ export function App() {
                 <Route element={<BackofficeLayout area="seller" />}>
                   <Route path="seller" element={<SellerOverviewPage />} />
                   <Route path="seller/products" element={<SellerProductsPage />} />
+                  <Route element={<RequireRole roles={["SELLER"]} />}>
+                    <Route path="seller/products/import" element={<SellerBulkImportPage />} />
+                  </Route>
                   <Route path="seller/products/new" element={<SellerProductEditorPage mode="create" />} />
                   <Route path="seller/products/:productId/edit" element={<SellerProductEditorPage mode="edit" />} />
                   <Route path="seller/products/:productId/inventory" element={<SellerInventoryPage />} />

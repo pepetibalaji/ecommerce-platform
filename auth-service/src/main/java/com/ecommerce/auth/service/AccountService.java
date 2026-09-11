@@ -43,6 +43,15 @@ public class AccountService {
     return profile(user(id));
   }
 
+  @Transactional(readOnly = true)
+  public boolean isEligibleSeller(UUID id) {
+    return users.findById(id)
+        .map(user -> user.isActiveAndVerified()
+            && user.getDeletedAt() == null
+            && user.getRoleCodes().contains("SELLER"))
+        .orElse(false);
+  }
+
   @Transactional
   public List<SessionResponse> sessions(UUID id) {
     return sessions(id, AuditRequestContext.empty());

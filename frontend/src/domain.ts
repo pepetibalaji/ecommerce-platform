@@ -14,10 +14,23 @@ export interface User {
 
 export interface AuthSession {
   accessToken: string;
-  refreshToken?: string;
   tokenType?: string;
   expiresInSeconds?: number;
   user: User;
+}
+
+/**
+ * A safe, self-service view of a browser session. The refresh credential is
+ * intentionally never present here: it is held only in an HttpOnly cookie.
+ */
+export interface BrowserSession {
+  id: string;
+  createdAt?: string;
+  lastUsedAt?: string;
+  expiresAt?: string;
+  deviceName?: string;
+  ipAddress?: string;
+  userAgent?: string;
 }
 
 export interface Page<T> {
@@ -43,6 +56,12 @@ export interface Product {
   active?: boolean;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface CatalogueFacets {
+  categories: Array<{ name: string; count: number }>;
+  brands: Array<{ name: string; count: number }>;
+  priceRange: { min: number | null; max: number | null };
 }
 
 export interface CartItem {

@@ -8,6 +8,17 @@ spring:
     config:
         import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
 
+    kafka:
+        consumer:
+            key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+            value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+            properties:
+                spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+                spring.json.trusted.packages: com.ecommerce.common.events.product,com.ecommerce.common.events.order,com.ecommerce.common.events.inventory
+        producer:
+            key-serializer: org.apache.kafka.common.serialization.StringSerializer
+            value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
 logging:
     structured:
         format:

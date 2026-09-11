@@ -1,21 +1,25 @@
 # Product Service current implementation
 
-## Implemented
+Implemented behavior:
 
-* MongoDB catalog document with UUID identity, seller owner, price stored as Decimal128, descriptive fields, HTTPS image URLs, active status, and timestamps.
-* Public product read/list APIs with paging, category filter, and paired min/max price filter.
-* Admin create, bulk create, full update, and hard delete APIs.
-* Seller create/list/update/delete APIs scoped from JWT `userId`; cross-seller mutations use not-found semantics.
-* `product-created` Kafka publication after create, plus a publish-failure metric.
-* Mongo index initialization, OpenAPI, OAuth resource server, Actuator, structured logs, Prometheus, and tracing dependencies.
+- Anonymous catalogue list/detail/facets through Product and Gateway. Inactive products are excluded from public results and direct reads return 404.
+- Validated literal case-insensitive search across name/brand/description; deterministic tiered relevance, newest/name/price sorts and stable ID tiebreakers.
+- Independent and combined category/brand/minimum/maximum filters, validated paging, explicit stable page responses, case-insensitive facet grouping.
+- Seller-scoped single/bulk creation, managed reads, updates, deactivate/reactivate and archival. Bulk creation belongs to SELLER; administrators manage platform support and explicit eligible seller ownership.
+- Auth seller eligibility checks with secured internal credentials, bounded timeouts and fail-closed behavior.
+- UTC product timestamps, ISO currency, lossless bounded price precision, text limits and approved HTTPS image validation.
+- Mongo optimistic revisions and transactions covering every mutation plus an immutable outbox snapshot. Whole-batch rollback on bulk failure.
+- Lifecycle delivery with claim leasing/fencing, retry backoff, dead-record replay, monitoring and cursor reconciliation. Inventory applies only newer snapshots and preserves stock/reservations.
+- Generated OpenAPI examples, consistent error envelopes, security checks and real Mongo/Kafka/PostgreSQL integration acceptance coverage.
 
-## Important limitations
+Operating boundaries:
 
-* Public catalog lists exclude inactive products, while direct reads may still return them so checkout can enforce availability explicitly.
-* A one-sided `minPrice` or `maxPrice` query is ignored; range filtering requires both.
-* Updates are full replacements for all descriptive fields and have no optimistic-lock/version protection.
-* Creation persistence and Kafka send are not transactional. A product can exist without inventory provisioning; no outbox/retry/replay endpoint exists.
-* Updates/deletes do not publish catalog lifecycle events.
-* Product Service does not manage image binaries, price history, search, inventory, checkout, or purchase snapshots.
+- Product owns list price/catalogue data, not stock, checkout decisions, purchase snapshots or image storage.
+- Description is plain text; no automatic moderation or rich-text sanitizer is provided.
+- Literal substring search can scan selected candidates and is time-bounded. No dedicated Search service or production latency SLA is implied.
+- Price filters/facet bounds compare amounts without exchange-rate conversion.
+- No hard purge or automatic destructive outbox retention is configured.
+- At-least-once delivery permits duplicates and reordering; consumer product-version checks provide convergence.
+- Production requires transaction-capable MongoDB, operational Kafka, configured internal credentials and approval to deploy. Building/tests do not deploy services.
 
-See [API and contracts](api.md) for integration details and [Events and operations](events-and-operations.md) for production behavior.
+See the maintained [API contract](api.md) and [lifecycle operations](lifecycle-operations.md), including exact acceptance commands. A skipped container test is not integration verification.

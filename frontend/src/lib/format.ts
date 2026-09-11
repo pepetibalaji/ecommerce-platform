@@ -15,15 +15,22 @@ export function formatDate(value?: string | null) {
 
 export function toPage<T>(value: unknown): Page<T> {
   if (typeof value === "object" && value !== null && "content" in value && Array.isArray((value as { content: unknown }).content)) {
-    const page = value as Partial<Page<T>>;
+    const page = value as Partial<Page<T>> & {
+      page?: Partial<Pick<Page<T>, "totalElements" | "totalPages" | "number" | "size">> | null;
+    };
+    // Spring Data's VIA_DTO response nests paging metadata under `page`.
+    // Older services and mock responses still return these fields at the top level.
+    const metadata = typeof page.page === "object" && page.page !== null ? page.page : undefined;
+    const totalPages = metadata?.totalPages ?? page.totalPages ?? 1;
+    const number = metadata?.number ?? page.number ?? 0;
     return {
       content: page.content ?? [],
-      totalElements: page.totalElements ?? page.content?.length ?? 0,
-      totalPages: page.totalPages ?? 1,
-      number: page.number ?? 0,
-      size: page.size ?? page.content?.length ?? 10,
-      first: page.first,
-      last: page.last,
+      totalElements: metadata?.totalElements ?? page.totalElements ?? page.content?.length ?? 0,
+      totalPages,
+      number,
+      size: metadata?.size ?? page.size ?? page.content?.length ?? 10,
+      first: page.first ?? number === 0,
+      last: page.last ?? number >= totalPages - 1,
     };
   }
   if (Array.isArray(value)) {
@@ -37,6 +44,11 @@ export function createIdempotencyKey() {
 }
 
 export function messageForError(error: unknown) {
-  if (error instanceof Error) return error.message;
+  if (error instanceof Error) {
+    const fields = "fields" in error && error.fields && typeof error.fields === "object" && !Array.isArray(error.fields)
+      ? Object.entries(error.fields).filter(([, message]) => typeof message === "string" && message.trim()) : [];
+    return fields.length > 0
+      ? `${error.message} ${fields.map(([field, message]) => `${field}: ${message}`).join("; ")}` : error.message;
+  }
   return "Something went wrong. Please try again.";
 }

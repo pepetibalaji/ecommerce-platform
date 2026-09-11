@@ -112,6 +112,34 @@ class InventoryServiceTest {
     }
 
     @Test
+    void inactiveProductsCannotCreateNewReservations() {
+        inventory.setProductActive(false);
+        when(inventoryRepository.findByProductIdForUpdate(productId)).thenReturn(Optional.of(inventory));
+        when(inventoryReservationRepository.findByIdForUpdate(any())).thenReturn(Optional.empty());
+
+        assertThrows(IllegalArgumentException.class, () -> inventoryService.reserveStock(productId, 5));
+        assertThrows(IllegalArgumentException.class,
+                () -> inventoryService.reserveStock(productId, 5, UUID.randomUUID()));
+        assertEquals(100, inventory.getAvailableStock());
+        verify(inventoryRepository, never()).save(any());
+    }
+
+    @Test
+    void replayingExistingReservationRemainsIdempotentAfterProductDeactivation() {
+        UUID reservationId = UUID.randomUUID();
+        inventory.setProductActive(false);
+        inventory.setAvailableStock(95);
+        inventory.setReservedStock(5);
+        when(inventoryRepository.findByProductIdForUpdate(productId)).thenReturn(Optional.of(inventory));
+        when(inventoryReservationRepository.findByIdForUpdate(reservationId))
+                .thenReturn(Optional.of(new InventoryReservation(reservationId, productId, 5)));
+        when(inventoryMapper.toResponse(inventory)).thenReturn(response(95, 5));
+
+        assertEquals(95, inventoryService.reserveStock(productId, 5, reservationId).getAvailableStock());
+        verify(inventoryRepository, never()).save(any());
+    }
+
+    @Test
     void shouldReleaseStock() {
         inventory.setAvailableStock(95);
         inventory.setReservedStock(5);

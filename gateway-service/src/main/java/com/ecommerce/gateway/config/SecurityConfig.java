@@ -10,6 +10,7 @@ import org.springframework.security.oauth2.server.resource.authentication.Reacti
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.security.web.server.authorization.ServerAccessDeniedHandler;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpMethod;
 import io.micrometer.tracing.Tracer;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
@@ -37,6 +38,13 @@ public class SecurityConfig {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .cors(cors -> {})
                 .authorizeExchange(exchange -> exchange
+                        .pathMatchers("/internal/**").denyAll()
+                        .pathMatchers(HttpMethod.POST, "/api/v1/payments/webhooks/stripe",
+                                "/api/v1/payments/webhooks/razorpay").permitAll()
+                        .pathMatchers(HttpMethod.GET,
+                                "/api/v1/products",
+                                "/api/v1/products/",
+                                "/api/v1/products/*").permitAll()
                         .pathMatchers(
                                 "/actuator/health/**",
                                 "/actuator/info",
@@ -49,7 +57,6 @@ public class SecurityConfig {
                                 "/api/v1/auth/password/forgot",
                                 "/api/v1/auth/password/reset",
                                 "/api/v1/auth/email-change/confirm",
-                                "/api/v1/products/**",
                                 "/api/v1/cart/guest/**",
                                 "/oauth2/**",
                                 "/.well-known/**",

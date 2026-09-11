@@ -4,6 +4,7 @@ import com.ecommerce.product.dto.ProductResponse;
 import com.ecommerce.product.entity.Product;
 import com.ecommerce.product.mapper.ProductMapper;
 import com.ecommerce.product.repository.ProductRepository;
+import com.ecommerce.product.outbox.ProductOutboxService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,16 +14,18 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -34,6 +37,12 @@ class PaginationTest {
 
     @Mock
     private ProductMapper productMapper;
+
+    @Mock
+    private ProductOutboxService outbox;
+
+    @Mock
+    private SellerEligibilityClient sellerEligibilityClient;
 
     @InjectMocks
     private ProductService productService;
@@ -50,8 +59,8 @@ class PaginationTest {
                 .price(BigDecimal.valueOf(999))
                 .category("Mobile")
                 .brand("Apple")
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
                 .build();
 
         response = ProductResponse.builder()
@@ -65,10 +74,22 @@ class PaginationTest {
     }
 
     @Test
+    void rejectsUnrepresentablePriceBoundsBeforeDatabaseAccess() {
+        for (BigDecimal value : List.of(new BigDecimal("1E+6145"), new BigDecimal("1E-6177"),
+                new BigDecimal("12345678901234567890123456789012345"))) {
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                    () -> productService.getAllProducts(0, 10, null, value, null));
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                    () -> productService.getAllProducts(0, 10, null, null, value));
+        }
+        org.mockito.Mockito.verifyNoInteractions(productRepository);
+    }
+
+    @Test
     void shouldReturnPaginatedProducts() {
         Page<Product> page = new PageImpl<>(List.of(product));
 
-        when(productRepository.findPublicProducts(any(Pageable.class))).thenReturn(page);
+        when(productRepository.searchPublicProducts(isNull(), isNull(), isNull(), isNull(), isNull(), any(Pageable.class))).thenReturn(page);
         when(productMapper.toResponse(product)).thenReturn(response);
 
         Page<ProductResponse> result = productService.getAllProducts(0, 10, null, null, null);
@@ -79,7 +100,7 @@ class PaginationTest {
 
     @Test
     void shouldReturnEmptyPage() {
-        when(productRepository.findPublicProducts(any(Pageable.class))).thenReturn(Page.empty());
+        when(productRepository.searchPublicProducts(isNull(), isNull(), isNull(), isNull(), isNull(), any(Pageable.class))).thenReturn(Page.empty());
 
         Page<ProductResponse> result = productService.getAllProducts(0, 10, null, null, null);
 
@@ -90,11 +111,12 @@ class PaginationTest {
     void shouldUseCorrectPaginationParameters() {
         Page<Product> page = new PageImpl<>(List.of(product));
 
-        when(productRepository.findPublicProducts(any(Pageable.class))).thenReturn(page);
+        when(productRepository.searchPublicProducts(isNull(), isNull(), isNull(), isNull(), isNull(), any(Pageable.class))).thenReturn(page);
         when(productMapper.toResponse(product)).thenReturn(response);
 
         productService.getAllProducts(2, 5, null, null, null);
 
-        verify(productRepository).findPublicProducts(PageRequest.of(2, 5));
+        verify(productRepository).searchPublicProducts(null, null, null, null, null, PageRequest.of(2, 5,
+                Sort.by("createdAt").descending().and(Sort.by("id"))));
     }
 }
