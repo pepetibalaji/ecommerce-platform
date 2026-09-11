@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import { useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Info, LoaderCircle, PackageOpen, TriangleAlert } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { Page, Product } from "../domain";
@@ -44,9 +44,11 @@ export function StatusBadge({ value }: { value?: string | null }) {
 
 export function ProductImage({ product, compact = false }: { product: Product; compact?: boolean }) {
   const src = product.imageUrls?.find(Boolean);
-  if (src) return <img className={compact ? "product-image product-image-small" : "product-image"} src={src} alt={product.name} />;
+  const [failedSrc, setFailedSrc] = useState<string>();
+  if (src && src !== failedSrc) return <img className={compact ? "product-image product-image-small" : "product-image"} src={src} alt={product.name} loading="lazy" decoding="async" onError={() => setFailedSrc(src)} />;
   const initial = product.name.slice(0, 1).toUpperCase();
-  return <div className={compact ? "product-image product-image-small product-placeholder" : "product-image product-placeholder"} aria-label={`${product.name} image unavailable`} role="img"><span>{initial}</span></div>;
+  const tone = product.name.split("").reduce((total, character) => total + character.charCodeAt(0), 0) % 4;
+  return <div className={`${compact ? "product-image product-image-small " : "product-image "}product-placeholder product-placeholder-${tone}`} aria-label={`${product.name} image unavailable`} role="img"><span>{initial}</span><i aria-hidden="true" /></div>;
 }
 
 export function LoadingBlock({ label = "Loading" }: { label?: string }) {

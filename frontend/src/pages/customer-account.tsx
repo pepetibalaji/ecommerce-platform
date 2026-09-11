@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Clock3, KeyRound, Laptop, Mail, RefreshCw, ShieldCheck, Trash2, UserRound } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { useCart } from "../cart/CartProvider";
-import { ApiError, type Order, type Payment, type Product, type ShippingAddress } from "../domain";
+import { ApiError, type BrowserSession, type Order, type Payment, type Product, type ShippingAddress } from "../domain";
 import { api } from "../lib/api";
 import { createIdempotencyKey, formatDate, formatMoney, messageForError, toPage } from "../lib/format";
 import { useResource } from "../lib/hooks";
+import { pollPaymentConfirmation } from "../lib/payment-confirmation";
 import { Alert, Button, EmptyState, Field, LoadingBlock, PageError, Pagination, ProductImage, SafeLink, SelectField, StatusBadge } from "../components/ui";
 
 const emptyAddress: ShippingAddress = {
@@ -188,7 +190,7 @@ function PaymentPreparation({ order, token, onReviewOrder }: { order: Order; tok
     }
   }
 
-  return <section className="payment-page payment-preparing"><span className="eyebrow">Order {shortOrderId(order.id)}</span><h1>{phase === "ready" ? "Your payment is ready" : "Preparing secure payment"}</h1>{phase === "preparing" ? <><LoadingBlock label="Confirming your order and preparing payment" /><p>Do not refresh or place another order while this is in progress.</p></> : null}{phase === "ready" ? <><Alert tone="info" title="Continue securely">You will leave Marketly for the payment provider. We verify the final payment result after you return.</Alert><Button onClick={continueToProvider}>Continue to secure payment</Button><Button variant="ghost" onClick={onReviewOrder}>Review order instead</Button></> : null}{phase === "unavailable" ? <><Alert tone="warning" title="Payment is not ready yet">{error}</Alert><div className="button-row"><Button variant="secondary" onClick={() => { started.current = true; void prepare(); }}>Check payment again</Button><Button variant="ghost" onClick={() => navigate(`/payment/return?orderId=${encodeURIComponent(order.id)}`)}>View payment status</Button><Button variant="ghost" onClick={onReviewOrder}>View order</Button></div></> : null}</section>;
+  return <section className="payment-page payment-preparing"><span className="eyebrow">Order {shortOrderId(order.id)}</span><h1>{phase === "ready" ? "Your payment is ready" : "Preparing secure payment"}</h1>{phase === "preparing" ? <><LoadingBlock label="Confirming your order and preparing payment" /><p>Do not refresh or place another order while this is in progress.</p></> : null}{phase === "ready" ? <><Alert tone="info" title="Continue securely">You will leave Pepekart for the payment provider. We verify the final payment result after you return.</Alert><Button onClick={continueToProvider}>Continue to secure payment</Button><Button variant="ghost" onClick={onReviewOrder}>Review order instead</Button></> : null}{phase === "unavailable" ? <><Alert tone="warning" title="Payment is not ready yet">{error}</Alert><div className="button-row"><Button variant="secondary" onClick={() => { started.current = true; void prepare(); }}>Check payment again</Button><Button variant="ghost" onClick={() => navigate(`/payment/return?orderId=${encodeURIComponent(order.id)}`)}>View payment status</Button><Button variant="ghost" onClick={onReviewOrder}>View order</Button></div></> : null}</section>;
 }
 
 type VerificationState = { order: Order | null; payment: Payment | null; loading: boolean; error: string | null; stopped: boolean; attempts: number };
@@ -199,19 +201,23 @@ export function PaymentReturnPage() {
   const [search] = useSearchParams();
   const orderId = search.get("orderId")?.trim() ?? "";
   const [state, setState] = useState<VerificationState>({ order: null, payment: null, loading: Boolean(orderId), error: null, stopped: false, attempts: 0 });
+  const [verificationRun, setVerificationRun] = useState(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (cancelled: () => boolean = () => false) => {
     if (!accessToken || !orderId) return null;
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
       const order = await api.orders.byId(accessToken, orderId);
+      if (cancelled()) return null;
       let payment: Payment | null = null;
-      try { payment = await api.payments.byOrder(accessToken, orderId); }
+      try { payment = await api.payments.refresh(accessToken, orderId); }
       catch (caught) { if (!(caught instanceof ApiError && caught.status === 404)) throw caught; }
       const result = { order, payment, terminal: paymentIsTerminal(payment) };
+      if (cancelled()) return null;
       setState((current) => ({ ...current, order, payment, loading: false, error: null }));
       return result;
     } catch (caught) {
+      if (cancelled()) return null;
       setState((current) => ({ ...current, loading: false, error: messageForError(caught) }));
       return { order: null, payment: null, terminal: !(caught instanceof ApiError && caught.retryable) };
     }
@@ -226,24 +232,20 @@ export function PaymentReturnPage() {
   useEffect(() => {
     if (!orderId || !accessToken) return;
     let cancelled = false;
-    async function poll() {
-      for (let attempt = 0; attempt < paymentPollDelays.length; attempt += 1) {
-        const result = await load();
-        if (cancelled || !result || result.terminal) return;
-        setState((current) => ({ ...current, attempts: attempt + 1 }));
-        if (attempt + 1 < paymentPollDelays.length) await wait(paymentPollDelays[attempt]);
-      }
-      if (!cancelled) setState((current) => ({ ...current, stopped: true }));
-    }
-    void poll();
+    setState(current => ({ ...current, stopped: false, attempts: 0, error: null,
+      order: current.order?.id === orderId ? current.order : null,
+      payment: current.order?.id === orderId ? current.payment : null }));
+    void pollPaymentConfirmation(() => load(() => cancelled), () => cancelled,
+      attempts => setState(current => ({ ...current, attempts })),
+      () => setState(current => ({ ...current, stopped: true })));
     return () => { cancelled = true; };
-  }, [accessToken, load, orderId]);
+  }, [accessToken, load, orderId, verificationRun]);
 
   if (!orderId) return <EmptyState title="Payment status unavailable" message="Open this page from an order or from the approved payment return flow." action={<Link className="button button-primary" to="/orders">View orders</Link>} />;
   if (state.loading && !state.order) return <LoadingBlock label="Verifying your payment" />;
-  if (state.error && !state.order) return <PageError message={state.error} retry={() => void load()} />;
+  if (state.error && !state.order) return <PageError message={state.error} retry={() => setVerificationRun(run => run + 1)} />;
   const status = paymentMessage(state.payment, state.order);
-  return <section className="payment-page"><span className="eyebrow">Order {state.order ? shortOrderId(state.order.id) : ""}</span><h1>{status.title}</h1><Alert tone={status.tone} title={status.title}>{status.text}</Alert>{state.error ? <Alert tone="warning" title="Status update delayed">{state.error}</Alert> : null}{!paymentIsTerminal(state.payment) && !state.error ? <div className="payment-polling"><LoadingBlock label={state.stopped ? "Automatic checks paused" : "Checking the latest payment result"} />{state.stopped ? <p>We stopped automatic checks to avoid repeated requests. Refresh when you are ready.</p> : <p>Checking securely. Provider return details are never used as payment confirmation.</p>}</div> : null}<div className="order-status-grid"><div><span>Order status</span><StatusBadge value={state.order?.status} /></div><div><span>Payment status</span><StatusBadge value={state.payment?.status ?? "PREPARING"} /></div></div><div className="button-row"><Button variant="secondary" onClick={() => { setState((current) => ({ ...current, stopped: false })); void load(); }}>Refresh status</Button>{state.order ? <Link className="button button-primary" to={`/orders/${state.order.id}`}>View order</Link> : null}{needsNewCheckout ? <Link className="button button-ghost" to="/cart">Return to cart</Link> : <Link className="button button-ghost" to="/orders">Order history</Link>}</div></section>;
+  return <section className="payment-page"><span className="eyebrow">Order {state.order ? shortOrderId(state.order.id) : ""}</span><h1>{status.title}</h1><Alert tone={status.tone} title={status.title}>{status.text}</Alert>{state.error ? <Alert tone="warning" title="Status update delayed">{state.error}</Alert> : null}{!paymentIsTerminal(state.payment) && !state.error ? <div className="payment-polling"><LoadingBlock label={state.stopped ? "Automatic checks paused" : "Checking the latest payment result"} />{state.stopped ? <p>We stopped automatic checks to avoid repeated requests. Refresh when you are ready.</p> : <p>Checking securely. Provider return details are never used as payment confirmation.</p>}</div> : null}<div className="order-status-grid"><div><span>Order status</span><StatusBadge value={state.order?.status} /></div><div><span>Payment status</span><StatusBadge value={state.payment?.status === "REQUIRES_CUSTOMER_ACTION" ? "AWAITING_CONFIRMATION" : state.payment?.status ?? "PREPARING"} /></div></div><div className="button-row"><Button variant="secondary" disabled={state.loading} onClick={() => setVerificationRun((run) => run + 1)}>Refresh status</Button>{state.order ? <Link className="button button-primary" to={`/orders/${state.order.id}`}>View order</Link> : null}{needsNewCheckout ? <Link className="button button-ghost" to="/cart">Return to cart</Link> : <Link className="button button-ghost" to="/orders">Order history</Link>}</div></section>;
 }
 
 const orderStatusOptions = ["", "PENDING", "CONFIRMED", "PAYMENT_FAILED", "CANCELLED", "PARTIALLY_REFUNDED", "REFUNDED", "REFUND_REQUIRES_FULFILMENT_REVIEW"];
@@ -296,7 +298,15 @@ export function OrderDetailPage() {
   return <section className="order-detail-page"><div className="page-heading"><div><SafeLink to="/orders">← Back to orders</SafeLink><span className="eyebrow">{shortOrderId(order.id)} · {formatDate(order.createdAt)}</span><h1>Order details</h1></div><StatusBadge value={order.status} /></div>{actionError ? <Alert tone="danger" title="Cancellation needs attention">{actionError}</Alert> : null}<div className="order-detail-layout"><div className="order-detail-main"><section className="detail-card"><h2>Items</h2><div className="order-item-list">{order.items.map((item, index) => <div key={item.id ?? `${item.productId}-${index}`} className="order-item"><div><strong>{item.productName ?? "Product"}</strong><span>Quantity {item.quantity}</span></div><div><span>{formatMoney(item.price, order.currency)} each</span><strong>{formatMoney(item.lineTotal ?? item.price * item.quantity, order.currency)}</strong></div></div>)}</div><div className="detail-total"><span>Order total</span><strong>{formatMoney(order.totalAmount, order.currency)}</strong></div></section><section className="detail-card"><h2>Payment</h2><StatusBadge value={data?.payment?.status ?? "PREPARING"} /><p>{paymentStatus.text}</p><Link className="link" to={`/payment/return?orderId=${encodeURIComponent(order.id)}`}>Check payment status</Link></section>{shipping ? <section className="detail-card"><h2>Shipping address</h2><address>{shipping.recipientName}<br />{shipping.line1}<br />{shipping.line2 ? <>{shipping.line2}<br /></> : null}{shipping.city}, {shipping.state} {shipping.postalCode}<br />{shipping.country}<br />{shipping.phone}</address><p className="muted">This is the address snapshot for this order.</p></section> : <section className="detail-card"><h2>Shipping address</h2><p>The address snapshot is not available in this order response.</p></section>}</div><aside className="summary-card"><h2>Order actions</h2>{order.cancelAllowed ? <>{confirmCancellation ? <><Alert tone="warning" title="Cancel this order?">This sends a cancellation request. The final outcome is shown only after the platform updates the order.</Alert><Button variant="danger" loading={cancelling} onClick={() => void cancelOrder()}>Yes, request cancellation</Button><Button variant="ghost" disabled={cancelling} onClick={() => setConfirmCancellation(false)}>Keep order</Button></> : <Button variant="secondary" onClick={() => setConfirmCancellation(true)}>Cancel order</Button>}</> : <p>This order is not currently eligible for cancellation.</p>}<Button variant="ghost" onClick={() => void reload()}>Refresh order</Button></aside></div></section>;
 }
 
-type SessionRecord = { id: string; createdAt?: string; expiresAt?: string; userAgent?: string };
+type SessionRecord = BrowserSession;
+
+function sessionName(session: SessionRecord) {
+  return session.deviceName?.trim() || session.userAgent?.trim() || "Browser session";
+}
+
+function firstName(name?: string) {
+  return name?.trim().split(/\s+/)[0] || "there";
+}
 
 export function AccountPage() {
   const { user, accessToken, refreshProfile, consumeSession } = useAuth();
@@ -310,7 +320,7 @@ export function AccountPage() {
   const [emailMessage, setEmailMessage] = useState<string | null>(null);
   const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
   const [accountMessage, setAccountMessage] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"profile" | "email" | "password" | "delete" | null>(null);
+  const [busy, setBusy] = useState<"profile" | "email" | "password" | "session" | "delete" | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [sessionToRevoke, setSessionToRevoke] = useState<SessionRecord | null>(null);
   const { data: sessions, loading: sessionsLoading, error: sessionsError, reload: reloadSessions } = useResource(() => api.users.sessions(accessToken ?? ""), [accessToken]);
@@ -348,8 +358,10 @@ export function AccountPage() {
   }
   async function revokeSession() {
     if (!accessToken || !sessionToRevoke) return;
+    setBusy("session");
     try { await api.users.revokeSession(accessToken, sessionToRevoke.id); setSessionToRevoke(null); await reloadSessions(); }
     catch (caught) { setAccountMessage(messageForError(caught)); setSessionToRevoke(null); }
+    finally { setBusy(null); }
   }
   async function deleteAccount() {
     if (!accessToken || deleteConfirmation !== "DELETE") return;
@@ -359,5 +371,81 @@ export function AccountPage() {
     finally { setBusy(null); }
   }
 
-  return <section className="account-page"><div className="page-heading"><div><span className="eyebrow">Account settings</span><h1>Account and security</h1><p>Manage your profile and signed-in sessions without exposing security tokens.</p></div>{user ? <StatusBadge value={user.status} /> : null}</div>{accountMessage ? <Alert tone="danger" title="Account action needs attention">{accountMessage}</Alert> : null}<div className="account-grid"><section className="detail-card"><h2>Profile</h2><p className="muted">{user?.email}</p><form className="form-stack" onSubmit={updateProfile}><Field label="Full name" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} required />{profileMessage ? <Alert tone={profileMessage.startsWith("Your profile") ? "success" : "danger"}>{profileMessage}</Alert> : null}<Button type="submit" loading={busy === "profile"}>Save profile</Button></form></section><section className="detail-card"><h2>Change email address</h2><p>We will request a confirmation link for the new address. The change only happens after the link is opened.</p><form className="form-stack" onSubmit={requestEmailChange}><Field label="New email address" type="email" autoComplete="email" value={newEmail} onChange={(event) => setNewEmail(event.target.value)} required />{emailMessage ? <Alert tone={emailMessage.startsWith("Check") ? "success" : "danger"}>{emailMessage}</Alert> : null}<Button type="submit" loading={busy === "email"}>Request confirmation link</Button></form></section><section className="detail-card"><h2>Change password</h2><p>A successful password change signs out all sessions, including this one.</p><form className="form-stack" onSubmit={changePassword}><Field label="Current password" type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /><Field label="New password" type="password" autoComplete="new-password" minLength={12} hint="Use at least 12 characters." value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required /><Field label="Confirm new password" type="password" autoComplete="new-password" minLength={12} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required />{passwordMessage ? <Alert tone="danger">{passwordMessage}</Alert> : null}<Button type="submit" loading={busy === "password"}>Change password and sign out</Button></form></section><section className="detail-card"><div className="section-heading"><div><h2>Active sessions</h2><p>Revoke devices you no longer use.</p></div><Button variant="ghost" onClick={() => void reloadSessions()}>Refresh</Button></div>{sessionsLoading ? <LoadingBlock label="Loading sessions" /> : sessionsError ? <PageError message={sessionsError} retry={() => void reloadSessions()} /> : sessions?.length ? <div className="session-list">{sessions.map((session) => <div key={session.id} className="session-row"><div><strong>{session.userAgent || "Browser session"}</strong><span>Started {formatDate(session.createdAt)} · Expires {formatDate(session.expiresAt)}</span></div><Button variant="secondary" onClick={() => setSessionToRevoke(session)}>Revoke</Button></div>)}</div> : <EmptyState title="No active sessions found" message="Refresh this list if you expect a recent sign-in to appear." />}{sessionToRevoke ? <div className="confirm-panel"><p>Revoke this session? It will need to sign in again.</p><Button variant="danger" onClick={() => void revokeSession()}>Revoke session</Button><Button variant="ghost" onClick={() => setSessionToRevoke(null)}>Cancel</Button></div> : null}</section><section className="detail-card danger-zone"><h2>Delete account</h2><p>Deleting your account is destructive. It revokes refresh sessions and cannot be undone from this screen.</p><Field label='Type DELETE to confirm' value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} /><Button variant="danger" loading={busy === "delete"} disabled={deleteConfirmation !== "DELETE"} onClick={() => void deleteAccount()}>Delete account</Button></section></div></section>;
+  const roles = user?.roles?.length ? user.roles : user?.role ? [user.role] : [];
+  const emailUnchanged = newEmail.trim().toLowerCase() === user?.email.toLowerCase();
+
+  return <section className="account-page account-experience">
+    <header className="account-hero-card">
+      <div className="account-hero-profile">
+        <div className="account-avatar-large" aria-hidden="true">{user?.name.slice(0, 1).toUpperCase() || "P"}</div>
+        <div>
+          <span className="eyebrow">Your Pepekart space</span>
+          <h1>Good to see you, <em>{firstName(user?.name)}.</em></h1>
+          <p>{user?.email || "Your account"} <span aria-hidden="true">·</span> Your account details and sign-in security, in one calm place.</p>
+          <div className="account-hero-tags"><StatusBadge value={user?.status} />{roles.map((role) => <span className="account-role-chip" key={role}>{role.toLowerCase()}</span>)}</div>
+        </div>
+      </div>
+      <aside className="account-protection-card">
+        <span className="account-protection-icon"><ShieldCheck size={21} aria-hidden="true" /></span>
+        <div><strong>Protected browser session</strong><p>Your refresh credential stays in an HttpOnly cookie and is never exposed to this page.</p></div>
+      </aside>
+    </header>
+
+    {accountMessage ? <Alert tone="danger" title="Account action needs attention">{accountMessage}</Alert> : null}
+
+    <div className="account-dashboard">
+      <aside className="account-rail" aria-label="Account settings">
+        <div className="account-rail-heading"><span>Settings</span><small>Choose what you want to manage</small></div>
+        <nav className="account-section-nav">
+          <a href="#account-profile"><UserRound size={16} aria-hidden="true" />Profile</a>
+          <a href="#account-email"><Mail size={16} aria-hidden="true" />Email address</a>
+          <a href="#account-security"><KeyRound size={16} aria-hidden="true" />Password &amp; security</a>
+          <a href="#account-sessions"><Laptop size={16} aria-hidden="true" />Your devices</a>
+        </nav>
+        <div className="account-rail-note"><Clock3 size={16} aria-hidden="true" /><p>Inactive browser sessions end automatically. We will always warn you before your active session expires.</p></div>
+      </aside>
+
+      <main className="account-settings-stack">
+        <section className="account-setting-card" id="account-profile">
+          <div className="account-card-heading"><span className="account-card-icon"><UserRound size={18} aria-hidden="true" /></span><div><h2>Profile</h2><p>Keep the name shown across Pepekart up to date.</p></div></div>
+          <form className="form-stack account-form" onSubmit={updateProfile}>
+            <Field label="Full name" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} required />
+            <div className="account-readonly-field"><span>Email address</span><strong>{user?.email || "—"}</strong><small>Email changes use a separate verified flow.</small></div>
+            {profileMessage ? <Alert tone={profileMessage.startsWith("Your profile") ? "success" : "danger"}>{profileMessage}</Alert> : null}
+            <div className="account-form-actions"><Button type="submit" loading={busy === "profile"}>Save changes</Button></div>
+          </form>
+        </section>
+
+        <section className="account-setting-card" id="account-email">
+          <div className="account-card-heading"><span className="account-card-icon account-card-icon-sun"><Mail size={18} aria-hidden="true" /></span><div><h2>Email address</h2><p>Change it safely with a one-time confirmation link sent to the new address.</p></div></div>
+          <form className="form-stack account-form" onSubmit={requestEmailChange}>
+            <Field label="New email address" type="email" autoComplete="email" value={newEmail} onChange={(event) => setNewEmail(event.target.value)} hint="You will remain signed in until the email link is confirmed." required />
+            {emailMessage ? <Alert tone={emailMessage.startsWith("Check") ? "success" : "danger"}>{emailMessage}</Alert> : null}
+            <div className="account-form-actions"><Button type="submit" loading={busy === "email"} disabled={!newEmail.trim() || emailUnchanged}>Send confirmation link</Button></div>
+          </form>
+        </section>
+
+        <section className="account-setting-card" id="account-security">
+          <div className="account-card-heading"><span className="account-card-icon account-card-icon-violet"><KeyRound size={18} aria-hidden="true" /></span><div><h2>Password &amp; security</h2><p>Use a long, unique password. Updating it signs out every device for your protection.</p></div></div>
+          <form className="form-stack account-form" onSubmit={changePassword}>
+            <Field label="Current password" type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required />
+            <div className="form-grid"><Field label="New password" type="password" autoComplete="new-password" minLength={12} hint="At least 12 characters." value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required /><Field label="Confirm new password" type="password" autoComplete="new-password" minLength={12} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required /></div>
+            {passwordMessage ? <Alert tone="danger">{passwordMessage}</Alert> : null}
+            <div className="account-form-actions"><Button type="submit" loading={busy === "password"}>Update password &amp; sign out</Button></div>
+          </form>
+        </section>
+
+        <section className="account-setting-card" id="account-sessions">
+          <div className="account-card-heading account-card-heading-split"><div className="account-card-heading"><span className="account-card-icon account-card-icon-blue"><Laptop size={18} aria-hidden="true" /></span><div><h2>Your devices</h2><p>Review every active browser session and remove anything you do not recognise.</p></div></div><Button variant="ghost" onClick={() => void reloadSessions()} disabled={sessionsLoading}><RefreshCw size={15} aria-hidden="true" />Refresh</Button></div>
+          {sessionsLoading ? <LoadingBlock label="Loading your active devices" /> : sessionsError ? <PageError message={sessionsError} retry={() => void reloadSessions()} /> : sessions?.length ? <div className="account-session-list">{sessions.map((session) => <article className="account-session" key={session.id}><span className="account-session-icon"><Laptop size={18} aria-hidden="true" /></span><div className="account-session-details"><strong>{sessionName(session)}</strong><div className="account-session-meta"><span>Last active {formatDate(session.lastUsedAt ?? session.createdAt)}</span><span>Started {formatDate(session.createdAt)}</span>{session.ipAddress ? <span>Network {session.ipAddress}</span> : null}</div>{session.userAgent && session.userAgent !== sessionName(session) ? <details><summary>Browser details</summary><p>{session.userAgent}</p></details> : null}</div><Button variant="secondary" onClick={() => setSessionToRevoke(session)} disabled={busy === "session"}>Revoke</Button></article>)}</div> : <EmptyState title="No active devices" message="No active browser sessions were returned. Sign in again if you expected to see this device." />}
+          {sessionToRevoke ? <div className="confirm-panel account-revoke-panel"><div><strong>Remove this device?</strong><p>{sessionName(sessionToRevoke)} will need to sign in again.</p></div><div className="action-row"><Button variant="danger" loading={busy === "session"} onClick={() => void revokeSession()}>Revoke device</Button><Button variant="ghost" disabled={busy === "session"} onClick={() => setSessionToRevoke(null)}>Cancel</Button></div></div> : null}
+        </section>
+
+        <section className="account-setting-card account-delete-card">
+          <div className="account-card-heading"><span className="account-card-icon account-card-icon-danger"><Trash2 size={18} aria-hidden="true" /></span><div><h2>Close account</h2><p>This permanently disables your Pepekart profile and revokes every browser session.</p></div></div>
+          <div className="account-delete-content"><Field label='Type DELETE to confirm' value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} hint="This cannot be undone from this screen." /><Button variant="danger" loading={busy === "delete"} disabled={deleteConfirmation !== "DELETE"} onClick={() => void deleteAccount()}>Delete account</Button></div>
+        </section>
+      </main>
+    </div>
+  </section>;
 }

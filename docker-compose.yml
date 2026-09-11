@@ -47,9 +47,10 @@ services:
 
     mongodb:
         # Default local DEV catalog database. Configure Product Service with
-        # PRODUCT_MONGODB_URI=mongodb://localhost:27017/product_db.
+        # PRODUCT_MONGODB_URI=mongodb://localhost:27017/product_db?replicaSet=pepekart-rs&directConnection=true
         image: mongo:8.0
         container_name: ecommerce-mongodb
+        command: ["mongod", "--replSet", "pepekart-rs", "--bind_ip_all"]
         restart: unless-stopped
         ports:
             - "${MONGODB_PORT:-27017}:27017"
@@ -58,7 +59,7 @@ services:
         networks:
             - ecommerce-network
         healthcheck:
-            test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand({ ping: 1 })"]
+            test: ["CMD", "mongosh", "--quiet", "--eval", "try { if (!rs.status().ok) quit(1); } catch (e) { if (e.codeName === 'NotYetInitialized') { rs.initiate({_id:'pepekart-rs',members:[{_id:0,host:'localhost:27017'}]}); quit(1); } else { throw e; } } if (!db.hello().isWritablePrimary) quit(1);"]
             interval: 10s
             timeout: 5s
             retries: 5

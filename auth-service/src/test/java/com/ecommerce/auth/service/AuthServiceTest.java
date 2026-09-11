@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.ecommerce.auth.dto.AuthResponse;
+import com.ecommerce.auth.config.BrowserSessionProperties;
 import com.ecommerce.auth.dto.LoginRequest;
 import com.ecommerce.auth.dto.RefreshRequest;
 import com.ecommerce.auth.entity.RefreshSession;
@@ -33,6 +34,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -47,6 +49,7 @@ class AuthServiceTest {
   @Mock private TokenBlacklistService blacklist;
   @Mock private AuthAuditService audit;
   @Mock private AuthAbuseProtection abuseProtection;
+  @Spy private BrowserSessionProperties browserSessionProperties = new BrowserSessionProperties();
   @InjectMocks private AuthService service;
 
   private User user;
@@ -169,6 +172,18 @@ class AuthServiceTest {
             eq(AuthAuditOutcome.DENIED),
             any(AuditRequestContext.class),
             eq(Map.of()));
+  }
+
+  @Test
+  void refreshRejectsExpiredIdleSession() throws Exception {
+    RefreshSession expiredIdle = RefreshSession.builder().id(UUID.randomUUID()).user(user)
+        .tokenHash(hash("idle-token")).tokenFamilyId(UUID.randomUUID())
+        .expiresAt(Instant.now().plusSeconds(600)).idleExpiresAt(Instant.now().minusSeconds(1)).build();
+    when(sessions.findByTokenHash(hash("idle-token"))).thenReturn(Optional.of(expiredIdle));
+
+    assertThrows(UnauthorizedException.class, () -> service.refresh(refreshRequest("idle-token")));
+
+    assertThat(expiredIdle.getRevokedAt()).isNotNull();
   }
 
   @Test

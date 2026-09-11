@@ -9,6 +9,15 @@ spring:
         import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888},optional:file:${AUTH_LOCAL_ENV_FILE:../../ecommerce-config-repo/dev/.env}[.properties]
 
 auth:
+    browser-session:
+        idle-timeout: ${AUTH_BROWSER_IDLE_TIMEOUT:PT30M}
+        absolute-timeout: ${AUTH_BROWSER_ABSOLUTE_TIMEOUT:PT168H}
+        refresh-cookie:
+            name: ${AUTH_REFRESH_COOKIE_NAME:pepekart_refresh}
+            path: ${AUTH_REFRESH_COOKIE_PATH:/api/v1/auth}
+            same-site: ${AUTH_REFRESH_COOKIE_SAME_SITE:Lax}
+            secure: ${AUTH_REFRESH_COOKIE_SECURE:false}
+            max-age: ${AUTH_REFRESH_COOKIE_MAX_AGE:PT168H}
     internal:
         service-token: ${AUTH_INTERNAL_SERVICE_TOKEN}
 

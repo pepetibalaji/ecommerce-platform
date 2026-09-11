@@ -128,6 +128,9 @@ public class Payment {
     @Column(name = "version", nullable = false)
     private Long version;
 
+    @Column(name = "last_provider_check_at")
+    private LocalDateTime lastProviderCheckAt;
+
     @Builder.Default
     @OneToMany(mappedBy = "payment", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
     @ToString.Exclude

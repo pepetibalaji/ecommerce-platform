@@ -6,8 +6,8 @@ import com.ecommerce.product.dto.UpdateProductRequest;
 import com.ecommerce.product.dto.ProductResponse;
 import com.ecommerce.product.entity.Product;
 import com.ecommerce.product.mapper.ProductMapper;
-import com.ecommerce.product.kafka.ProductEventPublisher;
 import com.ecommerce.product.repository.ProductRepository;
+import com.ecommerce.product.outbox.ProductOutboxService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,7 +20,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -40,7 +40,10 @@ class ProductServiceTest {
     private ProductMapper productMapper;
 
     @Mock
-    private ProductEventPublisher productEventPublisher;
+    private ProductOutboxService outbox;
+
+    @Mock
+    private SellerEligibilityClient sellerEligibilityClient;
 
     @InjectMocks
     private ProductService productService;
@@ -57,8 +60,8 @@ class ProductServiceTest {
                 .price(BigDecimal.valueOf(999))
                 .category("Mobile")
                 .brand("Apple")
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
                 .build();
 
         response = ProductResponse.builder()
@@ -86,7 +89,9 @@ class ProductServiceTest {
         when(productRepository.save(any(Product.class))).thenReturn(product);
         when(productMapper.toResponse(product)).thenReturn(response);
 
-        ProductResponse result = productService.createProduct(request);
+        UUID sellerId = UUID.randomUUID();
+        ProductResponse result = productService.createProduct(request, sellerId);
+        verify(sellerEligibilityClient).requireEligible(sellerId);
 
         assertNotNull(result);
         assertEquals(product.getId(), result.getId());
@@ -132,14 +137,15 @@ class ProductServiceTest {
 
         productService.deleteProduct(product.getId());
 
-        verify(productRepository).delete(product);
+        verify(productRepository).save(product);
+        assertFalse(product.isActive());
     }
 
     @Test
     void shouldReturnProductsPage() {
         Page<Product> page = new PageImpl<>(List.of(product));
 
-        when(productRepository.findPublicProducts(any(Pageable.class))).thenReturn(page);
+        when(productRepository.searchPublicProducts(any(), any(), any(), any(), any(), any(Pageable.class))).thenReturn(page);
         when(productMapper.toResponse(product)).thenReturn(response);
 
         Page<ProductResponse> result = productService.getAllProducts(0, 10, null, null, null);

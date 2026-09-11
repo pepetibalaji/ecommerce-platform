@@ -1,6 +1,9 @@
 package com.ecommerce.auth.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.ecommerce.auth.entity.AuthAuditEvent;
 import com.ecommerce.auth.entity.AuthOutboxEvent;
@@ -15,6 +18,7 @@ import com.ecommerce.auth.repository.AuthAuditEventRepository;
 import com.ecommerce.auth.repository.AuthOutboxEventRepository;
 import com.ecommerce.auth.repository.IdentityActionTokenRepository;
 import com.ecommerce.auth.repository.RefreshSessionRepository;
+import com.ecommerce.auth.repository.RoleRepository;
 import com.ecommerce.auth.repository.UserRepository;
 import com.ecommerce.auth.service.AuthOutboxService;
 import com.ecommerce.common.events.topic.KafkaTopics;
@@ -37,9 +41,11 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -49,8 +55,8 @@ import org.testcontainers.utility.DockerImageName;
 /**
  * Exercises the real Flyway schema and transactional outbox against PostgreSQL and Kafka.
  *
- * <p>The Testcontainers extension skips this class before Spring starts when Docker is not
- * available, so normal local unit-test runs do not fail on developer machines without Docker.
+ * <p>Docker is required: acceptance coverage must fail visibly instead of being silently skipped.
+ * The Kafka image can be pinned by CI through {@code -Dtest.kafka.image=...}.
  */
 @SpringBootTest(
     // Auth registers servlet SecurityFilterChains. MOCK supplies the servlet infrastructure without
@@ -67,13 +73,16 @@ import org.testcontainers.utility.DockerImageName;
       "auth.signing-key.source=GENERATED",
       "auth.signing-key.allow-ephemeral=true",
       "auth.action-token.signing-secret=auth-integration-test-action-token-secret-32-bytes",
-      "auth.internal.service-token=auth-integration-test-service-token"
+      "auth.internal.service-token=auth-integration-test-service-token",
+      "AUTH_INTERNAL_SERVICE_TOKEN=auth-integration-test-service-token"
     })
-@Testcontainers(disabledWithoutDocker = true)
+@AutoConfigureMockMvc
+@Testcontainers
 class AuthOutboxPostgresKafkaIntegrationTest {
 
   private static final DockerImageName POSTGRES_IMAGE = DockerImageName.parse("postgres:16-alpine");
-  private static final DockerImageName KAFKA_IMAGE = DockerImageName.parse("apache/kafka-native:3.8.0");
+  private static final DockerImageName KAFKA_IMAGE =
+      DockerImageName.parse(System.getProperty("test.kafka.image", "apache/kafka:4.3.0"));
 
   @Container
   static final PostgreSQLContainer<?> POSTGRES =
@@ -102,6 +111,8 @@ class AuthOutboxPostgresKafkaIntegrationTest {
   }
 
   @Autowired private UserRepository users;
+  @Autowired private RoleRepository roles;
+  @Autowired private MockMvc mvc;
   @Autowired private AuthAuditEventRepository auditEvents;
   @Autowired private IdentityActionTokenRepository identityActions;
   @Autowired private RefreshSessionRepository refreshSessions;
@@ -156,6 +167,8 @@ class AuthOutboxPostgresKafkaIntegrationTest {
                 .user(user)
                 .tokenHash("refresh-" + UUID.randomUUID())
                 .tokenFamilyId(UUID.randomUUID())
+                .sessionStartedAt(Instant.now())
+                .idleExpiresAt(Instant.now().plus(Duration.ofMinutes(30)))
                 .expiresAt(Instant.now().plus(Duration.ofHours(1)))
                 .ipAddress("192.0.2.11")
                 .build());
@@ -223,6 +236,28 @@ class AuthOutboxPostgresKafkaIntegrationTest {
       assertThat(published.getPublishedAt()).isNotNull();
       assertThat(published.getAttempts()).isZero();
     }
+  }
+
+  @Test
+  void sellerEligibilityUsesPersistedRolesAndStatusUnderTheSecurityChain() throws Exception {
+    UUID sellerId = UUID.randomUUID();
+    String email = "seller-" + sellerId + "@example.test";
+    User seller = users.saveAndFlush(User.builder().id(sellerId).name("Eligibility Integration Seller")
+        .email(email).emailNormalized(email).passwordHash("not-a-real-password")
+        .status(UserStatus.ACTIVE).emailVerifiedAt(Instant.now()).tokenVersion(0L)
+        .roles(new java.util.HashSet<>(roles.findByCodeIn(Set.of("SELLER", "CUSTOMER")))).build());
+    String path = "/internal/auth/sellers/" + sellerId + "/eligibility";
+    mvc.perform(get(path)).andExpect(status().isForbidden());
+    mvc.perform(get(path).header("X-Internal-Auth", "wrong-secret")).andExpect(status().isForbidden());
+    mvc.perform(get(path).header("X-Internal-Auth", "auth-integration-test-service-token"))
+        .andExpect(status().isOk()).andExpect(content().json("{\"eligible\":true}", true));
+    seller.setStatus(UserStatus.SUSPENDED);
+    users.saveAndFlush(seller);
+    mvc.perform(get(path).header("X-Internal-Auth", "auth-integration-test-service-token"))
+        .andExpect(status().isOk()).andExpect(content().json("{\"eligible\":false}", true));
+    mvc.perform(get("/internal/auth/sellers/" + UUID.randomUUID() + "/eligibility")
+        .header("X-Internal-Auth", "auth-integration-test-service-token"))
+        .andExpect(status().isOk()).andExpect(content().json("{\"eligible\":false}", true));
   }
 
   private Properties consumerProperties() {

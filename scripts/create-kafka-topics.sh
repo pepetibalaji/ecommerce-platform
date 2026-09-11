@@ -30,6 +30,11 @@ auth.user-email-changed.v1:3
 notification-dlq:3
 product-created:3
 product-created-dlt:3
+product.lifecycle.v1:3
+product.lifecycle.v1-retry-1000:3
+product.lifecycle.v1-retry-2000:3
+product.lifecycle.v1-retry-4000:3
+product.lifecycle.v1-dlq:3
 order-dlq:3
 "
 

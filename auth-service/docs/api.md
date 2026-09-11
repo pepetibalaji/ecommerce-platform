@@ -32,18 +32,17 @@ Use a frontend confirmation page that posts the token; do not use a state-changi
 
 | Method and path | Purpose |
 | --- | --- |
-| `POST /api/v1/auth/login` | Authenticate an active, verified user. |
-| `POST /api/v1/auth/refresh` | Rotate a refresh token and issue a new access token. |
-| `POST /api/v1/auth/logout` | Blacklist the presented access JWT and, when supplied, revoke its owned refresh session. |
+| `POST /api/v1/auth/login` | Authenticate an active, verified user, set an HTTP-only refresh cookie, and return an access token. |
+| `POST /api/v1/auth/refresh` | Rotate the HTTP-only refresh cookie and issue a new access token. No refresh secret is accepted in JSON. |
+| `POST /api/v1/auth/logout` | Blacklist the presented access JWT, revoke the refresh session from its cookie, and expire that cookie. |
 | `GET /api/v1/users/me/sessions` | List current user's active sessions. |
 | `DELETE /api/v1/users/me/sessions/{sessionId}` | Revoke one session. |
 
-Login and refresh response:
+Login and refresh response. The opaque refresh secret is delivered only in a `Secure` (outside local development), `HttpOnly`, `SameSite=Lax` cookie scoped to `/api/v1/auth`; it is never included in this JSON response.
 
 ```json
 {
   "accessToken": "jwt",
-  "refreshToken": "opaque-token",
   "tokenType": "Bearer",
   "expiresInSeconds": 1800,
   "user": { "id": "uuid", "name": "Jane Doe", "email": "jane@example.com", "role": "CUSTOMER", "status": "ACTIVE" }
@@ -116,6 +115,18 @@ Role update request:
 Every admin action writes an `auth_audit_events` row with the administrator as `actor_user_id` and the affected user as `subject_user_id`. Suspending, deleting, or changing roles revokes refresh sessions and increments `token_version`. Existing JWTs remain valid until expiry unless each resource server adopts token-version or revocation checking.
 
 Administrators must not directly set a user's password, mark an email verified, or change email addresses. Use the same verified, user-controlled recovery and email-change flows instead.
+
+## Internal seller eligibility
+
+`GET /internal/auth/sellers/{sellerId}/eligibility` is a service-to-service contract used by Product Service. Send the shared service credential in `X-Internal-Auth`; a browser access token does not authorize this call. Configure Auth with `auth.internal.service-token` / `AUTH_INTERNAL_SERVICE_TOKEN`, with the matching secret injected into Product. Stage and production refuse to start if the Auth secret is empty or unresolved. Internal paths must not be routed through the public gateway.
+
+Successful responses contain only:
+
+```json
+{ "eligible": true }
+```
+
+Eligibility requires an existing, active, email-verified account with the `SELLER` role and no deletion timestamp. Additional roles do not disqualify a seller. Missing, unverified, suspended, deleted, or non-seller accounts return HTTP 200 with `eligible: false`; no profile information is disclosed. Missing or incorrect service credentials return HTTP 403 before account lookup. Product must fail closed when Auth is unavailable or the response cannot establish eligibility.
 
 ## JWT compatibility
 

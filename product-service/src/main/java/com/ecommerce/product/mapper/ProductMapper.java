@@ -21,6 +21,7 @@ public class ProductMapper {
                 .name(product.getName())
                 .description(product.getDescription())
                 .price(product.getPrice())
+                .currency(product.getCurrency())
                 .category(product.getCategory())
                 .brand(product.getBrand())
                 .imageUrls(product.getImageUrls() == null ? List.of() : product.getImageUrls())

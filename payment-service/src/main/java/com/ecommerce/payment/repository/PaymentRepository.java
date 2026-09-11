@@ -11,6 +11,10 @@ import java.util.UUID;
 
 public interface PaymentRepository extends JpaRepository<Payment, UUID> {
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select p from Payment p where p.orderId = :orderId")
+    Optional<Payment> findByOrderIdForUpdate(@org.springframework.data.repository.query.Param("orderId") UUID orderId);
+
     Optional<Payment> findByOrderId(UUID orderId);
 
     Optional<Payment> findByIdempotencyKey(String idempotencyKey);

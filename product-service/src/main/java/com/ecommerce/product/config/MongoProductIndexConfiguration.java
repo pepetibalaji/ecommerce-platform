@@ -10,6 +10,7 @@ import org.springframework.data.domain.Sort.Direction;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.CompoundIndexDefinition;
 import org.springframework.data.mongodb.core.index.Index;
+import org.springframework.data.mongodb.core.query.Collation;
 import org.springframework.data.mongodb.core.convert.MongoCustomConversions;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.data.convert.ReadingConverter;
@@ -43,6 +44,25 @@ public class MongoProductIndexConfiguration {
             indexOperations.ensureIndex(new CompoundIndexDefinition(
                     new Document("category", 1).append("price", 1))
                     .named("category_price_idx"));
+            indexOperations.ensureIndex(new CompoundIndexDefinition(
+                    new Document("active", 1).append("category", 1).append("brand", 1).append("price", 1))
+                    .named("public_catalogue_filters_idx"));
+            Collation collation = Collation.of("en").strength(Collation.ComparisonLevel.secondary());
+            indexOperations.ensureIndex(new Index().on("active", Direction.ASC)
+                    .on("createdAt", Direction.DESC).on("_id", Direction.ASC)
+                    .collation(collation).named("catalogue_newest_idx"));
+            indexOperations.ensureIndex(new Index().on("active", Direction.ASC)
+                    .on("price", Direction.ASC).on("_id", Direction.ASC)
+                    .collation(collation).named("catalogue_price_idx"));
+            indexOperations.ensureIndex(new Index().on("active", Direction.ASC)
+                    .on("name", Direction.ASC).on("_id", Direction.ASC)
+                    .collation(collation).named("catalogue_name_idx"));
+            indexOperations.ensureIndex(new Index().on("category", Direction.ASC).on("active", Direction.ASC)
+                    .on("price", Direction.ASC).on("_id", Direction.ASC)
+                    .collation(collation).named("catalogue_category_price_idx"));
+            indexOperations.ensureIndex(new Index().on("brand", Direction.ASC).on("active", Direction.ASC)
+                    .on("price", Direction.ASC).on("_id", Direction.ASC)
+                    .collation(collation).named("catalogue_brand_price_idx"));
         };
     }
 

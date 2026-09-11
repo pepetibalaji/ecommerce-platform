@@ -6,7 +6,7 @@
 * Pessimistic row locking and transactional reservation-aware gRPC reserve/release/deduct semantics.
 * Duplicate-safe retries using stable reservation UUIDs and `RESERVED`/`RELEASED`/`DEDUCTED` states.
 * Admin and Product Service-verified seller REST management APIs.
-* Kafka `product-created` consumer that creates zero-stock records idempotently with retry/DLT.
+* Versioned `product.lifecycle.v1` consumer with atomic zero-stock provisioning, duplicate/stale-event protection, inactive-product reservation enforcement, retry/DLT, metrics, and snapshot recovery. The legacy `product-created` consumer remains for rolling upgrades.
 * gRPC error mapping, OpenAPI, Actuator, structured logs, Prometheus, and tracing dependencies.
 
 ## Important limitations

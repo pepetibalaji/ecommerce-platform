@@ -28,12 +28,14 @@ public final class KafkaTopics {
   public static final String AUTH_USER_EMAIL_CHANGED = "auth.user-email-changed.v1";
   public static final String NOTIFICATION_REQUESTED = "notification-requested";
   public static final String PRODUCT_CREATED = "product-created";
+  public static final String PRODUCT_LIFECYCLE = "product.lifecycle.v1";
 
   public static final String ORDER_DLQ = "order-dlq";
   public static final String INVENTORY_DLQ = "inventory-dlq";
   public static final String PAYMENT_DLQ = "payment-dlq";
   public static final String NOTIFICATION_DLQ = "notification-dlq";
   public static final String PRODUCT_CREATED_DLQ = "product-created-dlt";
+  public static final String PRODUCT_LIFECYCLE_DLQ = "product.lifecycle.v1-dlq";
 
   public static List<String> businessTopics() {
     return List.of(
@@ -57,10 +59,12 @@ public final class KafkaTopics {
         AUTH_EMAIL_CHANGE_REQUESTED,
         AUTH_USER_EMAIL_CHANGED,
         NOTIFICATION_REQUESTED,
-        PRODUCT_CREATED);
+        PRODUCT_CREATED,
+        PRODUCT_LIFECYCLE);
   }
 
   public static List<String> deadLetterTopics() {
-    return List.of(ORDER_DLQ, INVENTORY_DLQ, PAYMENT_DLQ, NOTIFICATION_DLQ, PRODUCT_CREATED_DLQ);
+    return List.of(ORDER_DLQ, INVENTORY_DLQ, PAYMENT_DLQ, NOTIFICATION_DLQ, PRODUCT_CREATED_DLQ,
+        PRODUCT_LIFECYCLE_DLQ);
   }
 }

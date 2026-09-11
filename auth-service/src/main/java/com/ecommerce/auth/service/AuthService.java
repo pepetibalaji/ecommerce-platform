@@ -1,5 +1,6 @@
 package com.ecommerce.auth.service;
 
+import com.ecommerce.auth.config.BrowserSessionProperties;
 import com.ecommerce.auth.dto.AuthResponse;
 import com.ecommerce.auth.dto.LoginRequest;
 import com.ecommerce.auth.dto.RefreshRequest;
@@ -13,7 +14,6 @@ import com.ecommerce.common.exception.UnauthorizedException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
@@ -38,6 +38,7 @@ public class AuthService {
   private final TokenBlacklistService blacklist;
   private final AuthAuditService audit;
   private final AuthAbuseProtection abuseProtection;
+  private final BrowserSessionProperties browserSessionProperties;
 
   @Transactional
   public AuthResponse login(LoginRequest request) {
@@ -125,7 +126,22 @@ public class AuthService {
       throw invalidRefreshToken();
     }
 
-    AuthResponse response = issue(old.getUser(), old.getTokenFamilyId(), context);
+    if (old.getIdleExpiresAt() != null && old.getIdleExpiresAt().isBefore(now)) {
+      old.setRevokedAt(now);
+      audit.recordAttempt(
+          userId,
+          userId,
+          "TOKEN_REFRESH",
+          AuthAuditOutcome.FAILURE,
+          context,
+          Map.of("reason", "idle_timeout"));
+      throw invalidRefreshToken();
+    }
+
+    Instant sessionStartedAt = old.getSessionStartedAt() != null
+        ? old.getSessionStartedAt()
+        : old.getCreatedAt() != null ? old.getCreatedAt() : now;
+    AuthResponse response = issue(old.getUser(), old.getTokenFamilyId(), context, sessionStartedAt, old.getExpiresAt());
     RefreshSession replacement =
         sessions.findByTokenHash(hash(response.getRefreshToken())).orElseThrow();
     old.setRevokedAt(now);
@@ -181,14 +197,25 @@ public class AuthService {
   }
 
   private AuthResponse issue(User user, UUID family, AuditRequestContext context) {
+    Instant now = Instant.now();
+    return issue(user, family, context, now, now.plus(browserSessionProperties.getAbsoluteTimeout()));
+  }
+
+  private AuthResponse issue(User user, UUID family, AuditRequestContext context, Instant sessionStartedAt,
+      Instant absoluteExpiresAt) {
+    Instant now = Instant.now();
     String raw = token();
     AuditRequestContext safeContext = context == null ? AuditRequestContext.empty() : context;
+    Instant idleExpiresAt = now.plus(browserSessionProperties.getIdleTimeout());
+    if (idleExpiresAt.isAfter(absoluteExpiresAt)) idleExpiresAt = absoluteExpiresAt;
     sessions.save(
         RefreshSession.builder()
             .user(user)
             .tokenHash(hash(raw))
             .tokenFamilyId(family)
-            .expiresAt(Instant.now().plus(Duration.ofDays(7)))
+            .sessionStartedAt(sessionStartedAt)
+            .expiresAt(absoluteExpiresAt)
+            .idleExpiresAt(idleExpiresAt)
             .ipAddress(safeContext.ipAddress())
             .userAgent(safeContext.userAgent())
             .build());

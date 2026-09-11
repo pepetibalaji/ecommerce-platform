@@ -89,7 +89,8 @@ class PaymentWebhookServiceImplTest {
                 mock(PaymentRefundRepository.class),
                 webhookEvents,
                 eventPublisher,
-                metrics
+                metrics,
+                mock(com.ecommerce.payment.mapper.PaymentMapper.class)
         );
     }
 }

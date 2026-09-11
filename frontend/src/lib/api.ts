@@ -1,4 +1,4 @@
-import { ApiError, type AuthSession, type Cart, type Inventory, type NotificationRecord, type Order, type Page, type Payment, type Product, type RefundResult, type Role, type ShippingAddress, type User } from "../domain";
+import { ApiError, type AuthSession, type BrowserSession, type Cart, type CatalogueFacets, type Inventory, type NotificationRecord, type Order, type Page, type Payment, type Product, type RefundResult, type Role, type ShippingAddress, type User } from "../domain";
 import { mockAdmin, mockCart, mockCustomer, mockInventory, mockNotifications, mockOrders, mockPayments, mockProducts, mockSeller, mockUsers, pageOf } from "./mock-data";
 
 const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || "http://localhost:8080";
@@ -23,7 +23,12 @@ export function configureSessionRecovery(handler: SessionRecoveryHandler | null)
 
 function fieldErrors(value: unknown): Record<string, string> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const entries = Object.entries(value).filter(([, message]) => typeof message === "string");
+  const envelope = value as Record<string, unknown>;
+  const fields = "fieldErrors" in envelope ? envelope.fieldErrors
+    : ["timestamp", "status", "error", "message", "path", "type", "title", "detail", "instance"].some(key => key in envelope)
+      ? undefined : envelope;
+  if (!fields || typeof fields !== "object" || Array.isArray(fields)) return undefined;
+  const entries = Object.entries(fields).filter(([, message]) => typeof message === "string" && message.trim());
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
@@ -113,8 +118,8 @@ export const api = {
   auth: {
     login: (email: string, password: string) => request<AuthSession>("/api/v1/auth/login", { method: "POST", body: { email, password } }),
     register: (name: string, email: string, password: string) => request<void>("/api/v1/auth/register", { method: "POST", body: { name, email, password } }),
-    refresh: (refreshToken: string) => request<AuthSession>("/api/v1/auth/refresh", { method: "POST", body: { refreshToken }, skipSessionRecovery: true }),
-    logout: (token: string, refreshToken?: string) => request<void>("/api/v1/auth/logout", { method: "POST", token, body: refreshToken ? { refreshToken } : undefined, skipSessionRecovery: true }),
+    refresh: () => request<AuthSession>("/api/v1/auth/refresh", { method: "POST", skipSessionRecovery: true }),
+    logout: (token: string | null) => request<void>("/api/v1/auth/logout", { method: "POST", token, skipSessionRecovery: true }),
     resendVerification: (email: string) => request<void>("/api/v1/auth/verification/resend", { method: "POST", body: { email } }),
     confirmVerification: (token: string) => request<void>("/api/v1/auth/verification/confirm", { method: "POST", body: { token } }),
     forgotPassword: (email: string) => request<void>("/api/v1/auth/password/forgot", { method: "POST", body: { email } }),
@@ -123,14 +128,20 @@ export const api = {
   },
   products: {
     list: (query = "") => request<Page<Product>>(`/api/v1/products${query ? `?${query}` : ""}`),
+    facets: () => request<CatalogueFacets>("/api/v1/products/facets"),
     byId: (productId: string) => request<Product>(`/api/v1/products/${productId}`),
     sellerList: (token: string, query = "page=0&size=10") => request<Page<Product>>(`/api/v1/seller/products?${query}`, { token }),
+    sellerById: (token: string, productId: string) => request<Product>(`/api/v1/seller/products/${encodeURIComponent(productId)}`, { token }),
     sellerCreate: (token: string, product: Omit<Product, "id" | "sellerId">) => request<Product>("/api/v1/seller/products", { method: "POST", token, body: product }),
+    sellerBulkCreate: (token: string, products: Array<Omit<Product, "id" | "sellerId">>) => request<Product[]>("/api/v1/seller/products/bulk", { method: "POST", token, body: products }),
     sellerUpdate: (token: string, productId: string, product: Omit<Product, "id" | "sellerId">) => request<Product>(`/api/v1/seller/products/${productId}`, { method: "PUT", token, body: product }),
-    sellerDelete: (token: string, productId: string) => request<void>(`/api/v1/seller/products/${productId}`, { method: "DELETE", token }),
+    sellerArchive: (token: string, productId: string) => request<void>(`/api/v1/seller/products/${productId}`, { method: "DELETE", token }),
+    adminById: (token: string, productId: string) => request<Product>(`/api/v1/admin/products/${encodeURIComponent(productId)}`, { token }),
     adminCreate: (token: string, sellerId: string, product: Omit<Product, "id" | "sellerId">) => request<Product>(`/api/v1/admin/products?sellerId=${encodeURIComponent(sellerId)}`, { method: "POST", token, body: product }),
     adminUpdate: (token: string, productId: string, product: Omit<Product, "id" | "sellerId">) => request<Product>(`/api/v1/admin/products/${productId}`, { method: "PUT", token, body: product }),
-    adminDelete: (token: string, productId: string) => request<void>(`/api/v1/admin/products/${productId}`, { method: "DELETE", token }),
+    adminArchive: (token: string, productId: string) => request<void>(`/api/v1/admin/products/${productId}`, { method: "DELETE", token }),
+    replayDeadLetters: (token: string) => request<void>("/api/v1/admin/products/outbox/replay-dead-letters", { method: "POST", token }),
+    reconcile: (token: string, afterId?: string) => request<{ enqueued: number; nextAfterId: string | null }>(`/api/v1/admin/products/outbox/reconcile?size=100${afterId ? `&afterId=${encodeURIComponent(afterId)}` : ""}`, { method: "POST", token }),
   },
   cart: {
     guest: () => request<Cart>("/api/v1/cart/guest"),
@@ -149,7 +160,7 @@ export const api = {
     delete: (token: string) => request<void>("/api/v1/users/me", { method: "DELETE", token }),
     requestEmailChange: (token: string, email: string) => request<void>("/api/v1/users/me/email-change", { method: "POST", token, body: { email } }),
     changePassword: (token: string, currentPassword: string, newPassword: string) => request<void>("/api/v1/users/me/password", { method: "POST", token, body: { currentPassword, newPassword } }),
-    sessions: (token: string) => request<Array<{ id: string; createdAt?: string; expiresAt?: string; userAgent?: string }>>("/api/v1/users/me/sessions", { token }),
+    sessions: (token: string) => request<BrowserSession[]>("/api/v1/users/me/sessions", { token }),
     revokeSession: (token: string, sessionId: string) => request<void>(`/api/v1/users/me/sessions/${sessionId}`, { method: "DELETE", token }),
   },
   orders: {
@@ -162,6 +173,7 @@ export const api = {
     adminUpdateStatus: (token: string, orderId: string, status: string) => request<Order>(`/api/v1/admin/orders/${orderId}/status`, { method: "PUT", token, body: { status } }),
   },
   payments: {
+    refresh: (token: string, orderId: string) => request<unknown>(`/api/v1/payments/orders/${encodeURIComponent(orderId)}/refresh`, { method: "POST", token }).then(paymentFromWire),
     byOrder: (token: string, orderId: string) => request<unknown>(`/api/v1/payments/orders/${orderId}`, { token }).then(paymentFromWire),
     checkoutSession: (token: string, orderId: string) => request<unknown>(`/api/v1/payments/orders/${orderId}/checkout-session`, { method: "POST", token }).then(paymentFromWire),
     mine: (token: string, query = "page=0&size=10") => request<unknown>(`/api/v1/payments/me?${query}`, { token }).then(paymentPageFromWire),
@@ -184,6 +196,7 @@ export const api = {
     userRoles: (token: string, userId: string, roles: Role[]) => request<User>(`/api/v1/admin/users/${userId}/roles`, { method: "PUT", token, body: { roles } }),
     deleteUser: (token: string, userId: string) => request<void>(`/api/v1/admin/users/${userId}`, { method: "DELETE", token }),
     revokeUserSessions: (token: string, userId: string) => request<void>(`/api/v1/admin/users/${userId}/sessions`, { method: "DELETE", token }),
+    replayAuthOutboxDeadLetters: (token: string) => request<{ replayed: number }>("/api/v1/admin/outbox/replay-dead-letters", { method: "POST", token }),
     failedNotifications: (token: string) => request<NotificationRecord[]>("/api/v1/notifications/admin/failed", { token }),
     notificationDeliveries: (token: string, notificationId: string) => request<NotificationRecord[]>(`/api/v1/notifications/admin/${notificationId}/deliveries`, { token }),
   },
@@ -194,6 +207,9 @@ function resolveMockUser(email: string): User {
   if (email.toLowerCase().includes("seller")) return mockSeller;
   return mockCustomer;
 }
+
+let mockBrowserUser: User | null = null;
+let mockBrowserSessions: BrowserSession[] = [];
 
 function resolveMockUserFromToken(token?: string | null): User {
   return resolveMockUser(token ?? "");
@@ -210,20 +226,39 @@ async function mockRequest<T>(path: string, options: RequestOptions): Promise<T>
 
   if (pathname === "/api/v1/auth/login" && method === "POST") {
     const user = resolveMockUser(String(body.email ?? ""));
-    return { accessToken: `mock-${user.role.toLowerCase()}-token`, refreshToken: "mock-refresh", tokenType: "Bearer", expiresInSeconds: 1800, user } as T;
+    mockBrowserUser = user;
+    mockBrowserSessions = [{ id: "session-current", createdAt: nowIso(), lastUsedAt: nowIso(), expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), deviceName: "This browser", ipAddress: "127.0.0.1", userAgent: "Pepekart demo browser" }];
+    return { accessToken: `mock-${user.role.toLowerCase()}-token`, tokenType: "Bearer", expiresInSeconds: 1800, user } as T;
   }
+  if (pathname === "/api/v1/auth/refresh" && method === "POST") {
+    if (!mockBrowserUser) throw new ApiError("Your session has ended. Please sign in again.", 401);
+    return { accessToken: `mock-${mockBrowserUser.role.toLowerCase()}-token`, tokenType: "Bearer", expiresInSeconds: 1800, user: mockBrowserUser } as T;
+  }
+  if (pathname === "/api/v1/auth/logout" && method === "POST") { mockBrowserUser = null; mockBrowserSessions = []; return undefined as T; }
   if (pathname.startsWith("/api/v1/auth/")) return undefined as T;
   if (pathname === "/api/v1/users/me" && method === "GET") return resolveMockUserFromToken(options.token) as T;
   if (pathname === "/api/v1/users/me" && method === "PUT") {
     const user = resolveMockUserFromToken(options.token);
     return { ...user, name: String(body.name ?? user.name) } as T;
   }
-  if (pathname.endsWith("/sessions") && method === "GET") return [{ id: "session-current", createdAt: nowIso(), expiresAt: "2026-09-08T18:30:00", userAgent: "Current browser" }] as T;
+  if (pathname === "/api/v1/users/me/sessions" && method === "GET") return mockBrowserSessions as T;
+  if (pathname.startsWith("/api/v1/users/me/sessions/") && method === "DELETE") {
+    const sessionId = pathname.split("/").at(-1);
+    mockBrowserSessions = mockBrowserSessions.filter((session) => session.id !== sessionId);
+    return undefined as T;
+  }
+  if (pathname === "/api/v1/admin/outbox/replay-dead-letters" && method === "POST") return { replayed: 0 } as T;
   if (pathname === "/api/v1/products") {
     const term = params.get("q")?.toLowerCase();
     const category = params.get("category");
-    const visible = mockProducts.filter((product) => product.active !== false).filter((product) => !term || `${product.name} ${product.brand}`.toLowerCase().includes(term)).filter((product) => !category || product.category === category);
+    const brand = params.get("brand"); const minPrice = Number(params.get("minPrice")?.trim() || Number.NaN); const maxPrice = Number(params.get("maxPrice")?.trim() || Number.NaN); const sort = params.get("sort") ?? "newest";
+    const visible = mockProducts.filter((product) => product.active !== false).filter((product) => !term || `${product.name} ${product.brand} ${product.description}`.toLowerCase().includes(term)).filter((product) => !category || product.category === category).filter((product) => !brand || product.brand === brand).filter((product) => !Number.isFinite(minPrice) || product.price >= minPrice).filter((product) => !Number.isFinite(maxPrice) || product.price <= maxPrice).sort((a, b) => sort === "price_asc" ? a.price - b.price : sort === "price_desc" ? b.price - a.price : sort === "name_asc" ? a.name.localeCompare(b.name) : sort === "name_desc" ? b.name.localeCompare(a.name) : 0);
     return pageOf(visible, page, size) as T;
+  }
+  if (pathname === "/api/v1/products/facets") {
+    const visible = mockProducts.filter((product) => product.active !== false);
+    const grouped = (key: "category" | "brand") => [...new Map(visible.filter((product) => product[key]).map((product) => [product[key]!, visible.filter((item) => item[key] === product[key]).length])).entries()].map(([name, count]) => ({ name, count }));
+    return { categories: grouped("category"), brands: grouped("brand"), priceRange: { min: Math.min(...visible.map((product) => product.price)), max: Math.max(...visible.map((product) => product.price)) } } as T;
   }
   if (pathname.startsWith("/api/v1/products/")) {
     const found = mockProducts.find((product) => product.id === pathname.split("/").at(-1));
@@ -282,7 +317,7 @@ async function mockRequest<T>(path: string, options: RequestOptions): Promise<T>
     return { ...payment, checkoutUrl: `${origin}/payment/return?orderId=${encodeURIComponent(orderId)}&paymentId=${encodeURIComponent(payment.id)}` } as T;
   }
   if (pathname.startsWith("/api/v1/payments/orders/")) {
-    const payment = mockPayments.find((entry) => entry.orderId === pathname.split("/").at(-1));
+    const payment = mockPayments.find((entry) => entry.orderId === pathname.split("/")[5]);
     if (!payment) throw new ApiError("Payment is still being prepared. Please refresh shortly.", 404);
     return payment as T;
   }
@@ -293,11 +328,11 @@ async function mockRequest<T>(path: string, options: RequestOptions): Promise<T>
     mockProducts.push(created);
     return created as T;
   }
-  if (pathname.startsWith("/api/v1/seller/products/")) {
+  if (pathname.startsWith("/api/v1/seller/products/") && pathname !== "/api/v1/seller/products/bulk") {
     const productId = pathname.split("/").at(-1)!;
     const product = mockProducts.find((entry) => entry.id === productId && entry.sellerId === mockSeller.id);
     if (!product) throw new ApiError("Product not found.", 404);
-    if (method === "DELETE") { product.active = false; return undefined as T; }
+    if (method === "DELETE") { product.active = false; product.updatedAt = nowIso(); return undefined as T; }
     if (method === "PUT") return Object.assign(product, body, { price: Number(body.price), updatedAt: nowIso() }) as T;
     return product as T;
   }
@@ -362,10 +397,22 @@ async function mockRequest<T>(path: string, options: RequestOptions): Promise<T>
     mockProducts.push(created);
     return created as T;
   }
+  if (pathname === "/api/v1/seller/products/bulk" && method === "POST") {
+    if (!Array.isArray(body)) throw new ApiError("Bulk product import requires an array.", 400);
+    const created = body.map((item) => ({ id: crypto.randomUUID(), sellerId: mockSeller.id, active: true, name: String(item.name), price: Number(item.price), description: String(item.description ?? ""), category: String(item.category ?? ""), brand: String(item.brand ?? ""), imageUrls: (item.imageUrls ?? []) as string[], currency: String(item.currency ?? "USD"), createdAt: nowIso(), updatedAt: nowIso() }));
+    mockProducts.push(...created); return created as T;
+  }
+  if (pathname === "/api/v1/admin/products/outbox/replay-dead-letters" && method === "POST") return undefined as T;
+  if (pathname === "/api/v1/admin/products/outbox/reconcile" && method === "POST") {
+    const afterId = params.get("afterId");
+    const products = [...mockProducts].sort((a, b) => a.id.localeCompare(b.id)).filter(product => !afterId || product.id.localeCompare(afterId) > 0);
+    const batch = products.slice(0, size);
+    return { enqueued: batch.length, nextAfterId: products.length > size ? batch.at(-1)?.id ?? null : null } as T;
+  }
   if (pathname.startsWith("/api/v1/admin/products/")) {
     const product = mockProducts.find((entry) => entry.id === pathname.split("/").at(-1));
     if (!product) throw new ApiError("Product not found.", 404);
-    if (method === "DELETE") { product.active = false; return undefined as T; }
+    if (method === "DELETE") { product.active = false; product.updatedAt = nowIso(); return undefined as T; }
     if (method === "PUT") return Object.assign(product, body, { price: Number(body.price), updatedAt: nowIso() }) as T;
     return product as T;
   }

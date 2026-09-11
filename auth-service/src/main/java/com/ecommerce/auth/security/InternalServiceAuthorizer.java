@@ -8,7 +8,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 
 /**
- * Temporary service-to-service boundary for internal delivery-token calls.
+ * Service-to-service boundary for internal Auth calls.
  * Deployments must inject a high-entropy value from the secret manager.
  */
 @Component
@@ -27,12 +27,14 @@ public class InternalServiceAuthorizer {
         runtimeServiceToken != null && !runtimeServiceToken.isBlank()
             ? runtimeServiceToken
             : configuredServiceToken;
-    if ((environment.matchesProfiles("stage", "prod"))
-        && (serviceToken == null || serviceToken.isBlank())) {
+    boolean usableSecret = serviceToken != null
+        && !serviceToken.isBlank()
+        && !serviceToken.contains("${");
+    if (environment.matchesProfiles("stage", "prod") && !usableSecret) {
       throw new IllegalStateException(
           "auth.internal.service-token must be supplied from the secret manager in stage/prod");
     }
-    this.expectedToken = serviceToken == null ? new byte[0] : serviceToken.getBytes(StandardCharsets.UTF_8);
+    this.expectedToken = usableSecret ? serviceToken.getBytes(StandardCharsets.UTF_8) : new byte[0];
   }
 
   public void requireAuthorized(String presentedToken) {

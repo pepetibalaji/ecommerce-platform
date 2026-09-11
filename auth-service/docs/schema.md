@@ -86,6 +86,8 @@ oauth2_authorization_consent(registered_client_id, principal_name, authorities, 
 
 Spring Authorization Server owns these tables. Bootstrap configuration inserts a client only when its `client_id` does not already exist; clients, authorizations, and consents survive Auth restarts.
 
+First-party browser refresh sessions are stored in `refresh_sessions`. Each row carries a fixed `session_started_at` and absolute `expires_at`, plus `idle_expires_at`. Rotating a refresh token preserves the absolute expiry, resets only the idle window, and revokes the previous row.
+
 ### `auth_outbox_events`
 
 ```text

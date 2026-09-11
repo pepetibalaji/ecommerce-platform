@@ -43,6 +43,12 @@ class ProductControllerTest {
     private ProductService productService;
 
     @MockBean
+    private com.ecommerce.product.outbox.ProductOutboxService outbox;
+
+    @MockBean
+    private com.ecommerce.product.outbox.ProductReconciliationService reconciliation;
+
+    @MockBean
     private Tracer tracer;
 
     @Test
@@ -143,7 +149,7 @@ class ProductControllerTest {
 
         Page<ProductResponse> page = new PageImpl<>(List.of(response));
 
-        when(productService.getAllProducts(anyInt(), anyInt(), any(), any(), any()))
+        when(productService.getAllProducts(anyInt(), anyInt(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(page);
 
         mockMvc.perform(get("/api/v1/products"))

@@ -4,7 +4,6 @@ import com.ecommerce.auth.dto.ActionTokenRequest;
 import com.ecommerce.auth.dto.AuthResponse;
 import com.ecommerce.auth.dto.ForgotPasswordRequest;
 import com.ecommerce.auth.dto.LoginRequest;
-import com.ecommerce.auth.dto.LogoutRequest;
 import com.ecommerce.auth.dto.RefreshRequest;
 import com.ecommerce.auth.dto.RegisterRequest;
 import com.ecommerce.auth.dto.ResendVerificationRequest;
@@ -12,10 +11,13 @@ import com.ecommerce.auth.dto.ResetPasswordRequest;
 import com.ecommerce.auth.service.ActionTokenService;
 import com.ecommerce.auth.service.AuditRequestContext;
 import com.ecommerce.auth.service.AuthService;
+import com.ecommerce.auth.service.BrowserRefreshCookieService;
 import com.ecommerce.auth.service.RegistrationService;
+import com.ecommerce.common.exception.UnauthorizedException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -35,6 +37,7 @@ public class AuthController {
   private final AuthService authService;
   private final RegistrationService registrationService;
   private final ActionTokenService actionTokenService;
+  private final BrowserRefreshCookieService refreshCookies;
 
   @PostMapping("/register")
   @Operation(summary = "Register a new user")
@@ -81,26 +84,42 @@ public class AuthController {
   }
 
   @PostMapping("/login")
-  @Operation(summary = "Login and issue tokens")
-  public AuthResponse login(
-      @Valid @RequestBody LoginRequest request, HttpServletRequest servletRequest) {
-    return authService.login(request, AuditRequestContext.from(servletRequest));
+  @Operation(summary = "Login and issue browser session")
+  public ResponseEntity<AuthResponse> login(
+      @Valid @RequestBody LoginRequest request, HttpServletRequest servletRequest, HttpServletResponse servletResponse) {
+    return issueBrowserSession(authService.login(request, AuditRequestContext.from(servletRequest)), servletResponse);
   }
 
   @PostMapping("/refresh")
-  @Operation(summary = "Refresh access token")
-  public AuthResponse refresh(
-      @Valid @RequestBody RefreshRequest request, HttpServletRequest servletRequest) {
-    return authService.refresh(request, AuditRequestContext.from(servletRequest));
+  @Operation(summary = "Rotate browser refresh cookie and issue access token")
+  public ResponseEntity<AuthResponse> refresh(HttpServletRequest servletRequest, HttpServletResponse servletResponse) {
+    RefreshRequest request = new RefreshRequest();
+    request.setRefreshToken(refreshCookies.read(servletRequest)
+        .orElseThrow(() -> new UnauthorizedException("Refresh session is missing")));
+    return issueBrowserSession(authService.refresh(request, AuditRequestContext.from(servletRequest)), servletResponse);
   }
 
   @PostMapping("/logout")
   @Operation(summary = "Logout current session")
-  public void logout(
+  public ResponseEntity<Void> logout(
       @AuthenticationPrincipal Jwt jwt,
-      @RequestBody(required = false) LogoutRequest request,
-      HttpServletRequest servletRequest) {
-    String refreshToken = request != null ? request.getRefreshToken() : null;
-    authService.logout(jwt, refreshToken, AuditRequestContext.from(servletRequest));
+      HttpServletRequest servletRequest,
+      HttpServletResponse servletResponse) {
+    try {
+      authService.logout(jwt, refreshCookies.read(servletRequest).orElse(null), AuditRequestContext.from(servletRequest));
+    } finally {
+      refreshCookies.clear(servletResponse);
+    }
+    return ResponseEntity.noContent().build();
+  }
+
+  private ResponseEntity<AuthResponse> issueBrowserSession(AuthResponse issued, HttpServletResponse response) {
+    refreshCookies.write(response, issued.getRefreshToken());
+    return ResponseEntity.ok(AuthResponse.builder()
+        .accessToken(issued.getAccessToken())
+        .tokenType(issued.getTokenType())
+        .expiresInSeconds(issued.getExpiresInSeconds())
+        .user(issued.getUser())
+        .build());
   }
 }
