@@ -2,7 +2,6 @@ package com.ecommerce.cart.controller;
 
 import com.ecommerce.cart.dto.AddCartItemRequest;
 import com.ecommerce.cart.dto.CartResponse;
-import com.ecommerce.cart.dto.MergeGuestCartRequest;
 import com.ecommerce.cart.dto.UpdateCartItemRequest;
 import com.ecommerce.cart.config.CartProperties;
 import com.ecommerce.cart.service.CartService;
@@ -11,6 +10,8 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
@@ -21,6 +22,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.util.UUID;
 
 @RestController
+@Validated
 @RequestMapping("/api/v1/cart")
 @SecurityRequirement(name = "bearerAuth")
 @Tag(name = "Cart", description = "Redis-backed shopping cart APIs")
@@ -43,11 +45,12 @@ public class CartController {
             @AuthenticationPrincipal Jwt jwt,
 
             @Valid
-            @RequestBody AddCartItemRequest request
+            @RequestBody AddCartItemRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false) @Size(max = 128) String idempotencyKey
     ) {
         String userId = getUserId(jwt);
 
-        return cartService.addItem(userId, request);
+        return cartService.addItem(userId, request, idempotencyKey);
     }
 
     @PutMapping("/{itemId}")
@@ -122,8 +125,9 @@ public class CartController {
     @PostMapping("/guest/items")
     @Operation(summary = "Add an item to the anonymous guest cart")
     public CartResponse addGuestItem(@CookieValue(value = "${cart.guest.cookie.name:guestId}", required = false) String cookieGuestId,
-                                     HttpServletResponse response, @Valid @RequestBody AddCartItemRequest request) {
-        return cartService.addGuestItem(guestId(cookieGuestId, response), request);
+                                     HttpServletResponse response, @Valid @RequestBody AddCartItemRequest request,
+                                     @RequestHeader(value = "Idempotency-Key", required = false) @Size(max = 128) String idempotencyKey) {
+        return cartService.addGuestItem(guestId(cookieGuestId, response), request, idempotencyKey);
     }
 
     @PutMapping("/guest/items/{itemId}")
@@ -151,17 +155,20 @@ public class CartController {
     @PostMapping("/merge-guest")
     @Operation(summary = "Merge the current guest cart into the authenticated customer cart")
     public CartResponse mergeGuestCart(@AuthenticationPrincipal Jwt jwt,
-                                       @CookieValue(value = "${cart.guest.cookie.name:guestId}", required = false) String cookieGuestId,
-                                       @RequestBody(required = false) MergeGuestCartRequest request) {
-        String requestedGuestId = request == null ? null : request.getGuestId();
-        if (cookieGuestId != null && requestedGuestId != null && !cookieGuestId.equals(requestedGuestId)) {
-            throw new IllegalArgumentException("guestId does not match the guest cookie");
-        }
-        String guestId = cookieGuestId != null ? cookieGuestId : requestedGuestId;
-        if (guestId == null || !isUuid(guestId)) {
+                                       @CookieValue(value = "${cart.guest.cookie.name:guestId}", required = false) String guestId,
+                                       HttpServletResponse response,
+                                       @RequestHeader(value = "Idempotency-Key", required = false) @Size(max = 128) String idempotencyKey) {
+        if (!isUuid(guestId)) {
             throw new IllegalArgumentException("A valid guest cart identity is required");
         }
-        return cartService.mergeGuestCart(getUserId(jwt), guestId);
+        CartResponse merged = cartService.mergeGuestCart(getUserId(jwt), guestId, idempotencyKey);
+        ResponseCookie.ResponseCookieBuilder expiredBuilder = ResponseCookie.from(cartProperties.getGuest().getCookie().getName(), "")
+                .httpOnly(true).secure(cartProperties.getGuest().getCookie().isSecure())
+                .sameSite(cartProperties.getGuest().getCookie().getSameSite()).path("/api/v1/cart").maxAge(0);
+        if (cartProperties.getGuest().getCookie().getDomain() != null && !cartProperties.getGuest().getCookie().getDomain().isBlank()) expiredBuilder.domain(cartProperties.getGuest().getCookie().getDomain());
+        ResponseCookie expired = expiredBuilder.build();
+        response.addHeader(HttpHeaders.SET_COOKIE, expired.toString());
+        return merged;
     }
 
     private String getUserId(Jwt jwt) {
@@ -170,10 +177,12 @@ public class CartController {
 
     private String guestId(String cookieGuestId, HttpServletResponse response) {
         String guestId = isUuid(cookieGuestId) ? cookieGuestId : UUID.randomUUID().toString();
-        ResponseCookie cookie = ResponseCookie.from(cartProperties.getGuest().getCookie().getName(), guestId)
+        ResponseCookie.ResponseCookieBuilder cookieBuilder = ResponseCookie.from(cartProperties.getGuest().getCookie().getName(), guestId)
                 .httpOnly(true).secure(cartProperties.getGuest().getCookie().isSecure())
                 .sameSite(cartProperties.getGuest().getCookie().getSameSite())
-                .path("/api/v1/cart").maxAge(cartProperties.getGuest().getTtl()).build();
+                .path("/api/v1/cart").maxAge(cartProperties.getGuest().getTtl());
+        if (cartProperties.getGuest().getCookie().getDomain() != null && !cartProperties.getGuest().getCookie().getDomain().isBlank()) cookieBuilder.domain(cartProperties.getGuest().getCookie().getDomain());
+        ResponseCookie cookie = cookieBuilder.build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
         return guestId;
     }

@@ -7,8 +7,9 @@ import { ApiError, type BrowserSession, type Order, type Payment, type Product, 
 import { api } from "../lib/api";
 import { createIdempotencyKey, formatDate, formatMoney, messageForError, toPage } from "../lib/format";
 import { useResource } from "../lib/hooks";
+import { useInfinitePage } from "../lib/useInfinitePage";
 import { pollPaymentConfirmation } from "../lib/payment-confirmation";
-import { Alert, Button, EmptyState, Field, LoadingBlock, PageError, Pagination, ProductImage, SafeLink, SelectField, StatusBadge } from "../components/ui";
+import { Alert, Button, EmptyState, Field, InfiniteListFooter, LoadingBlock, PageError, ProductImage, SafeLink, SelectField, StatusBadge } from "../components/ui";
 
 const emptyAddress: ShippingAddress = {
   recipientName: "",
@@ -226,6 +227,10 @@ export function PaymentReturnPage() {
   const needsNewCheckout = ["FAILED", "CANCELLED", "PAYMENT_EXPIRED", "EXPIRED"].includes(String(state.payment?.status ?? ""));
 
   useEffect(() => {
+    if (state.payment?.status === "SUCCESS") void refreshCart();
+  }, [refreshCart, state.payment?.status]);
+
+  useEffect(() => {
     if (needsNewCheckout) void refreshCart();
   }, [needsNewCheckout, refreshCart]);
 
@@ -253,12 +258,19 @@ const orderStatusOptions = ["", "PENDING", "CONFIRMED", "PAYMENT_FAILED", "CANCE
 export function OrdersPage() {
   const { accessToken } = useAuth();
   const [params, setParams] = useSearchParams();
-  const query = params.toString() || "page=0&size=10";
+  const filters = new URLSearchParams(params);
+  filters.delete("page"); filters.delete("size");
+  const query = filters.toString();
   const selectedStatus = params.get("status") ?? "";
-  const { data, loading, error, reload } = useResource(() => api.orders.list(accessToken ?? "", query), [accessToken, query]);
-  const page = data ? toPage<Order>(data) : null;
-  function setStatus(status: string) { const next = new URLSearchParams(params); if (status) next.set("status", status); else next.delete("status"); next.set("page", "0"); next.set("size", "10"); setParams(next); }
-  return <section className="orders-page"><div className="page-heading"><div><span className="eyebrow">Your purchases</span><h1>Orders</h1><p>Only the latest order and payment responses determine what is shown here.</p></div><SelectField label="Filter by status" value={selectedStatus} onChange={(event) => setStatus(event.target.value)}>{orderStatusOptions.map((value) => <option key={value} value={value}>{value ? value.replace(/_/g, " ") : "All statuses"}</option>)}</SelectField></div>{loading ? <LoadingBlock label="Loading your orders" /> : error ? <PageError message={error} retry={() => void reload()} /> : page?.content.length ? <><div className="order-list">{page.content.map((order) => <article className="order-card" key={order.id}><div><span className="eyebrow">{shortOrderId(order.id)} · {formatDate(order.createdAt)}</span><h2>{formatMoney(order.totalAmount, order.currency)}</h2><span>{order.items.length} item{order.items.length === 1 ? "" : "s"}</span></div><div className="order-card-actions"><StatusBadge value={order.status} /><Link className="button button-secondary" to={`/orders/${order.id}`}>View order</Link></div></article>)}</div><Pagination page={page} onPage={(nextPage) => { const next = new URLSearchParams(params); next.set("page", String(nextPage)); next.set("size", "10"); setParams(next); }} /></> : <EmptyState title={selectedStatus ? "No orders match this status" : "No orders yet"} message={selectedStatus ? "Try another order status or view all orders." : "When you complete checkout, your orders will appear here."} action={selectedStatus ? <Button onClick={() => setStatus("")}>Clear filter</Button> : <Link className="button button-primary" to="/">Browse products</Link>} />}</section>;
+  const fetchPage = useCallback((page: number) => {
+    const request = new URLSearchParams(query);
+    request.set("page", String(page)); request.set("size", "10");
+    return api.orders.list(accessToken ?? "", request.toString()).then(toPage<Order>);
+  }, [accessToken, query]);
+  const orders = useInfinitePage(fetchPage);
+  const { items, loading, error, reload } = orders;
+  function setStatus(status: string) { const next = new URLSearchParams(params); if (status) next.set("status", status); else next.delete("status"); next.delete("page"); next.delete("size"); setParams(next); }
+  return <section className="orders-page"><div className="page-heading"><div><span className="eyebrow">Your purchases</span><h1>Orders</h1><p>Only the latest order and payment responses determine what is shown here.</p></div><SelectField label="Filter by status" value={selectedStatus} onChange={(event) => setStatus(event.target.value)}>{orderStatusOptions.map((value) => <option key={value} value={value}>{value ? value.replace(/_/g, " ") : "All statuses"}</option>)}</SelectField></div>{loading ? <LoadingBlock label="Loading your orders" /> : error ? <PageError message={error} retry={() => void reload()} /> : items.length ? <><div className="order-list">{items.map((order) => <article className="order-card" key={order.id}><div><span className="eyebrow">{shortOrderId(order.id)} · {formatDate(order.createdAt)}</span><h2>{formatMoney(order.totalAmount, order.currency)}</h2><span>{order.items.length} item{order.items.length === 1 ? "" : "s"}</span></div><div className="order-card-actions"><StatusBadge value={order.status} /><Link className="button button-secondary" to={`/orders/${order.id}`}>View order</Link></div></article>)}</div><InfiniteListFooter {...orders} loadedCount={items.length} noun="orders" /></> : <EmptyState title={selectedStatus ? "No orders match this status" : "No orders yet"} message={selectedStatus ? "Try another order status or view all orders." : "When you complete checkout, your orders will appear here."} action={selectedStatus ? <Button onClick={() => setStatus("")}>Clear filter</Button> : <Link className="button button-primary" to="/">Browse products</Link>} />}</section>;
 }
 
 type OrderDetailData = { order: Order; payment: Payment | null };

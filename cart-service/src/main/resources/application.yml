@@ -11,6 +11,12 @@ spring:
 # Config Server may override these defaults per environment. TTL is refreshed
 # whenever the corresponding cart is saved; reads do not extend it.
 cart:
+    guest-allowed-origins: ${CART_GUEST_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+    idempotency:
+        ttl: ${CART_IDEMPOTENCY_TTL:24h}
+    limits:
+        max-quantity-per-item: ${CART_MAX_QUANTITY_PER_ITEM:100}
+        max-lines: ${CART_MAX_LINES:100}
     customer:
         ttl: ${CART_CUSTOMER_TTL:7d}
     guest:
@@ -19,6 +25,7 @@ cart:
             name: ${CART_GUEST_COOKIE_NAME:guestId}
             same-site: ${CART_GUEST_COOKIE_SAME_SITE:Lax}
             secure: ${CART_GUEST_COOKIE_SECURE:false}
+            domain: ${CART_GUEST_COOKIE_DOMAIN:}
 
 logging:
     structured:

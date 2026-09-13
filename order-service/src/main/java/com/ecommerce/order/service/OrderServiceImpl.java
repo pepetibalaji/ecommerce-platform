@@ -1,6 +1,10 @@
 package com.ecommerce.order.service;
 
 import com.ecommerce.common.events.order.OrderCreatedEvent;
+import com.ecommerce.common.events.order.OrderCompletedEvent;
+import com.ecommerce.common.events.order.OrderItemEvent;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import com.ecommerce.common.events.order.OrderItemEvent;
 import com.ecommerce.common.events.payment.PaymentFailedEvent;
 import com.ecommerce.common.events.payment.PaymentSuccessEvent;
@@ -253,6 +257,13 @@ public class OrderServiceImpl implements OrderService {
             order.setPaymentFailedAt(null);
             order.setPaymentFailureReason(null);
             orderRepository.save(order);
+            OrderCompletedEvent completedEvent = new OrderCompletedEvent(order.getId(), order.getUserId(),
+                    event.getPaymentId(), order.getTotalAmount(), order.getItems().stream()
+                    .map(item -> new OrderItemEvent(item.getProductId(), item.getQuantity(), item.getPrice(), item.getPrice().multiply(java.math.BigDecimal.valueOf(item.getQuantity())))).toList(),
+                    event.getCorrelationId(), event.getTraceId());
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { orderEventPublisher.publishOrderCompleted(completedEvent); }
+            });
             paymentOutcomeMetrics.orderUpdated("success");
         } else if (order.getStatus() != OrderStatus.CONFIRMED) {
             log.warn("Ignoring late payment-success event. eventId={}, orderId={}, paymentId={}, orderStatus={}",

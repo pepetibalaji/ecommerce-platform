@@ -71,10 +71,11 @@ export interface CartItem {
 }
 
 export interface Cart {
-  userId?: string;
+  ownerType: "CUSTOMER" | "GUEST";
+  ownerId: string;
   items: CartItem[];
-  version?: string | number;
-  updatedAt?: string;
+  version: number;
+  updatedAt: string;
 }
 
 export interface ShippingAddress {
@@ -175,16 +176,18 @@ export type FieldErrors = Record<string, string>;
 
 export class ApiError extends Error {
   readonly status: number;
+  readonly code?: string;
   readonly retryAfter?: number;
   readonly fields?: FieldErrors;
   readonly retryable: boolean;
 
-  constructor(message: string, status: number, options?: { retryAfter?: number; fields?: FieldErrors }) {
+  constructor(message: string, status: number, options?: { code?: string; retryAfter?: number; fields?: FieldErrors }) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.code = options?.code;
     this.retryAfter = options?.retryAfter;
     this.fields = options?.fields;
-    this.retryable = status === 0 || status === 429 || status === 503 || status === 504;
+    this.retryable = status === 0 || status === 409 || status === 429 || status === 503 || status === 504;
   }
 }

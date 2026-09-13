@@ -16,13 +16,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -60,20 +60,22 @@ class CartControllerTest {
                                 2
                         )
                 ),
-                LocalDateTime.now()
+                Instant.now(), 1
         );
 
         when(
                 cartService.addItem(
                         eq(USER_ID),
-                        any(AddCartItemRequest.class)
+                        any(AddCartItemRequest.class),
+                        isNull()
                 )
         ).thenReturn(response);
 
         CartResponse result =
                 cartController.addItem(
                         jwt(),
-                        request
+                        request,
+                        null
                 );
 
         assertThat(result.getUserId())
@@ -88,7 +90,8 @@ class CartControllerTest {
         verify(cartService)
                 .addItem(
                         eq(USER_ID),
-                        any(AddCartItemRequest.class)
+                        any(AddCartItemRequest.class),
+                        isNull()
                 );
     }
 
@@ -104,7 +107,7 @@ class CartControllerTest {
                                 2
                         )
                 ),
-                LocalDateTime.now()
+                Instant.now(), 1
         );
 
         when(cartService.getCart(USER_ID))
@@ -143,7 +146,7 @@ class CartControllerTest {
                                 5
                         )
                 ),
-                LocalDateTime.now()
+                Instant.now(), 1
         );
 
         when(
@@ -184,7 +187,7 @@ class CartControllerTest {
         CartResponse response = new CartResponse(
                 USER_ID,
                 List.of(),
-                LocalDateTime.now()
+                Instant.now(), 1
         );
 
         when(cartService.removeItem(USER_ID, ITEM_ID))

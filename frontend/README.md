@@ -57,6 +57,22 @@ Homepage photography uses HTTPS images from `images.pexels.com` and collection
 assets from `cdn.dummyjson.com`, with local UI fallbacks when an image fails.
 The living-room image is [Pexels photo 1571460](https://www.pexels.com/photo/interior-design-of-a-house-1571460/).
 
+## Cart loading and recovery
+
+Cart loading waits for authentication restoration. Requests are coordinated per
+cart owner so a guest merge, refresh, and local edits do not race each other;
+duplicate initial refresh/merge requests share their in-flight work. Opening the
+cart page refreshes its snapshot so navigation can recover an earlier load error
+and reflect server-side changes such as purchased-item removal. Responses
+from an earlier account cannot replace the currently displayed cart.
+
+Reads and idempotency-key-protected add/merge requests retry at most three attempts
+only for `409 CART_LOCK_CONTENTION`, retaining the same mutation key. Other errors
+are not blindly replayed. A successful load or edit clears an earlier load error.
+Merge failures retain a separate retry action while the customer cart is loaded;
+a failed cart load is not presented as an empty cart. The backend GET endpoints
+are read-only snapshots and do not acquire mutation locks.
+
 ## Seller and admin workspaces
 
 Both workspaces have responsive navigation, a shared table/form design, and product
@@ -69,9 +85,14 @@ labelled **Search loaded products**; refresh and successful archival restart the
 to avoid skipping records after pagination shifts. Later failures retain loaded rows
 and offer a retry. The final batch stops loading; a manual fallback remains available.
 
-Order, user and payment tables retain server pagination. Their search is labelled
-**Search this page** and filters only loaded records, not the full server catalogue.
-Empty matches offer a clear-search action; refresh reloads the current server page.
+Seller orders, admin users/orders/payments, and customer orders append server pages
+automatically on scroll. Previously loaded rows stay visible, concurrent requests
+are locked, duplicate IDs are ignored, and later failures offer an explicit retry.
+The compact footer reports loaded totals and keeps a keyboard-accessible load-more
+fallback. Workspace search is labelled **Search loaded records** (with the relevant
+record type); it filters accumulated rows, not the entire server dataset. Empty
+matches offer a clear-search action. Refresh and list mutations restart the stream
+to avoid skipping records after pagination shifts.
 Product forms keep ownership and validation rules. Refund, role, deletion and replay
 handlers retain their existing safeguards; notification content remains redacted.
 
@@ -88,11 +109,15 @@ form interactions and table scrolling before deployment.
 
 ## Stage deployment
 
-Deploy this folder as Vercel's project root. Set `VITE_API_BASE_URL` to the Gateway's public HTTPS URL and `VITE_USE_MOCKS=false`. Configure the same frontend origin in Gateway CORS, payment return configuration, and Auth email-link configuration.
+Deploy this folder as Vercel's project root. Set `VITE_API_BASE_URL` to the Gateway's public HTTPS URL, `VITE_USE_MOCKS=false`, and `VITE_CART_MAX_QUANTITY_PER_ITEM` to the Cart Service's configured per-line limit (100 by default). Configure the same frontend origin in Gateway CORS, payment return configuration, and Auth email-link configuration.
 
 Before a stage release, verify Gateway routing for public catalogue/Auth flows,
 the guest-cart cookie domain/SameSite policy, `Idempotency-Key` CORS support, and
 all `/seller/**` and `/admin/**` routes. The UI never falls back to service ports.
+
+Storefront headers, catalogue filters, and workspace topbars scroll with the page,
+so they do not cover results. Surfaces use slate neutrals, opaque white tables, and
+deep-teal accents; table overflow remains horizontally scrollable on small screens.
 
 ## Session security note
 

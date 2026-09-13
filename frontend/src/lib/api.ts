@@ -108,7 +108,8 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
           : response.status >= 500
             ? "This service is temporarily unavailable. Please try again."
             : "We could not complete that request.";
-    throw new ApiError(safeMessage(parsed, fallback), response.status, { retryAfter, fields: fieldErrors(parsed) });
+    const code = parsed && typeof parsed === "object" && "code" in parsed && typeof parsed.code === "string" ? parsed.code : undefined;
+    throw new ApiError(safeMessage(parsed, fallback), response.status, { code, retryAfter, fields: fieldErrors(parsed) });
   }
 
   return parsed as T;
@@ -285,7 +286,7 @@ async function mockRequest<T>(path: string, options: RequestOptions): Promise<T>
     mockCart.items = mockCart.items.filter((item) => item.itemId !== itemId);
     return mockCart as T;
   }
-  if (pathname === "/api/v1/cart/merge-guest") return { ...mockCart, userId: mockCustomer.id } as T;
+  if (pathname === "/api/v1/cart/merge-guest") return { ...mockCart, ownerType: "CUSTOMER", ownerId: mockCustomer.id } as T;
   if (pathname === "/api/v1/orders" && method === "GET") return pageOf(mockOrders, page, size) as T;
   if (pathname === "/api/v1/orders" && method === "POST") {
     const items = (body.items ?? []) as Array<{ productId: string; quantity: number }>;

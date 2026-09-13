@@ -192,7 +192,6 @@ export function CataloguePage() {
       {error ? <Alert tone="danger" title="We couldn’t load the collection" action={<Button variant="secondary" onClick={retry}>Try again</Button>}>{error}</Alert> : null}
       <div className="shop-product-grid" aria-busy={loading || loadingMore}>
         {loading ? <ProductSkeletons /> : products.map(product => <ShopProductCard key={product.id} product={product} />)}
-        {loadingMore ? <ProductSkeletons count={4} /> : null}
       </div>
       {!loading && !error && products.length === 0 ? <EmptyState title="Nothing here just yet." message="Try another search or loosen your filters. Your next good find could be one click away." action={<Button onClick={clearFilters}>Explore all products</Button>} /> : null}
       <div className="shop-load-zone" ref={sentinelRef}>

@@ -15,6 +15,7 @@ const mocks = {
   hooks: "export const useResource = (load) => {globalThis.fixture.loaders.push(load);return {data:globalThis.fixture.resources[globalThis.fixture.index++] ?? null,loading:globalThis.fixture.loading,error:globalThis.fixture.error,reload:async()=>{},setData:()=>{}};};",
   api: "export const api = {products:{sellerById:(...args)=>globalThis.fixture.sellerById(...args)}};",
   useSellerProducts: "export const useSellerProducts = () => ({products:globalThis.fixture.resources[0]?.content ?? [],totalElements:globalThis.fixture.resources[0]?.totalElements ?? 0,loading:globalThis.fixture.loading,error:globalThis.fixture.error,loadingMore:false,loadMoreError:null,hasMore:true,loadMore:()=>{},retry:()=>{},reload:async()=>{},sentinelRef:{current:null},...globalThis.fixture.stream});",
+  useInfinitePage: "export const useInfinitePage = load => {globalThis.fixture.loaders.push(load);const page=globalThis.fixture.resources[globalThis.fixture.index++] ?? {};return {items:page.content ?? [],totalElements:page.totalElements ?? 0,loading:globalThis.fixture.loading,error:globalThis.fixture.error,loadingMore:false,loadMoreError:null,hasMore:true,loadMore:()=>{},retry:()=>{},reload:async()=>{},sentinelRef:{current:null},...globalThis.fixture.stream};};",
 };
 const bundled = await build({
   stdin: {
@@ -24,7 +25,7 @@ const bundled = await build({
   bundle: true, write: false, platform: "node", format: "cjs", packages: "external",
   jsx: "automatic", loader: { ".css": "empty" },
   plugins: [{ name: "workspace-fixtures", setup(builder) {
-    builder.onResolve({ filter: /\/(AuthProvider|hooks|api|useSellerProducts)$/ }, args => ({ path: args.path.split("/").at(-1), namespace: "fixture" }));
+    builder.onResolve({ filter: /\/(AuthProvider|hooks|api|useSellerProducts|useInfinitePage)$/ }, args => ({ path: args.path.split("/").at(-1), namespace: "fixture" }));
     builder.onLoad({ filter: /.*/, namespace: "fixture" }, args => ({ contents: mocks[args.path], loader: "js" }));
   } }],
 });
@@ -82,6 +83,14 @@ test("seller next-batch failure preserves existing rows and retry controls", () 
   assert.ok(!html.includes("No seller products yet"));
 });
 
+test("inactive seller listings use a neutral badge instead of active success green", () => {
+  const html = render("SellerProductsPage", "seller", [page([{ ...product, active: false }])]);
+  assert.match(html, /class="status status-neutral"[^>]*><span[^>]*><\/span>INACTIVE<\/span>/);
+  assert.doesNotMatch(html, /class="status status-success"[^>]*><span[^>]*><\/span>INACTIVE<\/span>/);
+  const active = render("SellerProductsPage", "seller", [page([product])]);
+  assert.match(active, /class="status status-success"[^>]*><span[^>]*><\/span>ACTIVE<\/span>/);
+});
+
 test("seller infinite list stops loading at the final batch", () => {
   const html = render("SellerProductsPage", "seller", [page([product])], { stream: { hasMore: false } });
   assert.ok(html.includes("All products loaded."));
@@ -93,7 +102,9 @@ test("admin users retain their account links, roles and status", () => {
   assert.ok(html.includes('href="/admin/users/user-1234"'));
   assert.ok(html.includes("Example Seller"));
   assert.ok(html.includes("SELLER"));
-  assert.ok(html.includes("Search this page"));
+  assert.ok(html.includes("Search loaded users"));
+  assert.ok(!html.includes('aria-label="Pagination"'));
+  assert.ok(html.includes("More users load automatically as you scroll."));
 });
 
 test("order management retains supported transitions only", () => {

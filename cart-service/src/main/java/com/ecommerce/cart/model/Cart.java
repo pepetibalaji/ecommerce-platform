@@ -1,7 +1,8 @@
 package com.ecommerce.cart.model;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.io.Serializable;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -14,11 +15,13 @@ public class Cart implements Serializable {
 
     private String userId;
     private List<CartItem> items = new ArrayList<>();
-    private LocalDateTime updatedAt;
+    @JsonDeserialize(using = UtcInstantDeserializer.class)
+    private Instant updatedAt;
+    private long version;
 
     public Cart(String userId) {
         this.userId = userId;
         this.items = new ArrayList<>();
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = Instant.now();
     }
 }

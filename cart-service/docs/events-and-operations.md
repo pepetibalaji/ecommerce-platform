@@ -2,7 +2,7 @@
 
 ## Events and dependencies
 
-The implemented service has no Kafka producer/consumer, outbox, database, or synchronous Product/Inventory integration. Cart changes are direct HTTP-to-Redis operations. Checkout must execute its own catalog, price, and inventory validation.
+HTTP cart operations use Redis directly. An `order-completed` Kafka consumer also removes purchased quantities according to the lifecycle policy below. Cart Service has no synchronous Product/Inventory integration; checkout must execute its own catalog, price, and inventory validation.
 
 ## Configuration
 
@@ -25,10 +25,13 @@ Public endpoints are `/actuator/health`, `/actuator/info`, `/actuator/prometheus
 
 ## Failure and operation notes
 
-* Redis unavailability makes cart storage and locks fail; unhandled failures are returned as `500`.
-* TTL expiry or eviction makes a cart missing: read creates an empty cart, while item update/remove returns `404`.
-* Guest/merge lock contention becomes generic `500`; clients can retry thoughtfully.
-* Merge saves the customer cart before deleting guest. If a failure occurs after save but before guest deletion, replaying the merge before deletion can add quantities again.
+* Redis connection/resource failures return `503 CART_REDIS_UNAVAILABLE` with `Retry-After: 1`.
+* TTL expiry or eviction makes a cart missing: reads return an unpersisted empty snapshot, while item update/remove returns `404`.
+* Reads do not acquire mutation locks. Customer/guest write contention returns `409 CART_LOCK_CONTENTION`; use bounded retries and retain the same idempotency key where supported.
+* Merge commits the customer snapshot, guest deletion, and replay record in one Redis transaction.
 * For cross-site frontends, configure SameSite, Secure, and browser credential behavior deliberately.
 
 Run `mvn spring-boot:run` from `cart-service` with Redis and JWT/config dependencies available. Use [`api/cart.http`](../../api/cart.http) for local requests. Avoid production-wide Redis key scans as routine verification.
+# Cart lifecycle policy
+
+Cart Service retains carts when an order is created, when payment fails, and when an order is cancelled. On the `order-completed` event emitted after confirmed payment, Cart Service removes only the quantities present in that order. The consumer is idempotent by event ID, so duplicate Kafka deliveries do not remove items twice. The browser never clears the authoritative cart.

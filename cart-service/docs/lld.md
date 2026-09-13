@@ -12,7 +12,7 @@
 
 ## Item algorithm
 
-Add finds an existing item by `productId`: it increments if found, otherwise makes a UUID `itemId`. Update and remove find by `itemId`. Update replaces quantity. Final-item removal deletes the cart key rather than persisting an empty cart. Customer `GET` and guest create/read create an empty cart on a miss; update/remove require a cart and return `ResourceNotFoundException` when absent.
+Add finds an existing item by `productId`: it increments if found, otherwise makes a UUID `itemId`. Update and remove find by `itemId`. Update replaces quantity. Final-item removal deletes the cart key rather than persisting an empty cart. Customer and guest `GET` return a read-only snapshot, or an unpersisted empty cart on a miss; they do not acquire mutation locks or refresh the Redis TTL. Explicit guest creation persists an empty cart if needed. Update/remove require a cart and return `ResourceNotFoundException` when absent.
 
 ## Cookie and merge algorithm
 
@@ -23,16 +23,15 @@ lock cart-lock:guest:{guestId}
   lock cart-lock:customer:{userId}
     load guest; load or create customer
     for every guest item: append product or add quantity to matching product
-    save customer (with TTL)
-    delete guest
+    atomically save customer (with TTL), delete guest, and record merge response
   unlock customer
 unlock guest
 ```
 
-Guest item IDs are not retained when a new customer line is created; a fresh UUID is used. An absent/empty guest returns the customer cart unchanged. Save-before-delete enables a retry after the completed delete.
+Guest item IDs are not retained when a new customer line is created; a fresh UUID is used. An absent/empty guest returns the customer cart unchanged. The merge identity replays the recorded response without adding quantities again.
 
 ## Concurrency, serialization, and time
 
-Guest operations and merge use `DistributedLockService`, random lock tokens, `RedisKeys.cartLock`, a 15-second duration, and `finally` unlock. Lock failure throws `IllegalStateException`, currently handled as generic `500`.
+Customer and guest mutations, explicit guest creation, and merge use `DistributedLockService`, random lock tokens, `RedisKeys.cartLock`, a 15-second duration, and `finally` unlock. Lock failure returns `409 CART_LOCK_CONTENTION` with `Retry-After: 1`. Reads bypass these locks and return a committed Redis snapshot before or after a concurrent write.
 
-Customer CRUD has no equivalent lock and is therefore not atomic under concurrent requests. Redis values are read as `Cart` or converted through Jackson `ObjectMapper`. `updatedAt` uses `LocalDateTime.now()` on create/change; it does not change on an existing-cart read.
+Redis values are read as `Cart` or converted through Jackson `ObjectMapper`. `updatedAt` uses UTC `Instant` values on create/change; it does not change on an existing-cart read. Legacy timezone-free cached timestamps are handled by the cart timestamp deserializer.
