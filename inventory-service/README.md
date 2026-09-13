@@ -2,7 +2,7 @@
 
 ## What this service is
 
-Inventory Service owns stock counters and reservation state. It exposes REST on `8084` and gRPC on `9091`. Order Service uses reservation-aware gRPC commands with stable reservation IDs to reserve, release, and deduct stock safely.
+Inventory Service owns stock counters and reservation state. It exposes management REST on `8084` and protected Inventory gRPC on `9091`. Order Service uses stable reservation IDs to reserve, release, and deduct stock safely; customers never call Inventory directly.
 
 ## Technology
 
@@ -15,7 +15,7 @@ Inventory Service owns stock counters and reservation state. It exposes REST on 
 ## Data owned
 
 - Inventory quantity/availability per product.
-- Reservation ledger with idempotent reservation state.
+- Reservation ledger, expiry recovery, stock-adjustment audit ledger, and durable event outbox.
 
 ## End-to-end flow
 
@@ -29,9 +29,10 @@ Payment failure/cancellation
   -> Order release worker calls ReleaseStock with same reservationId
   -> Inventory releases stock once, even if request is repeated
 
-Product creation
-  -> Product Service emits product-created
-  -> Inventory creates a zero-stock record once, even if event delivery repeats
+Product lifecycle
+  -> Product Service emits versioned Kafka snapshots
+  -> Inventory provisions/synchronizes the row without resetting counters
+  -> scheduled Product gRPC reconciliation repairs missed or retired rows
 ```
 
 ## Run locally

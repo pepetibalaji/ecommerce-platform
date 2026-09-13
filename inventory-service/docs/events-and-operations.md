@@ -36,7 +36,13 @@ PostgreSQL, Flyway, Kafka, gRPC port, JWT, management, and tracing configuration
 * For missed records, expired broker retention, or a rebuilt consumer, call Product Service's admin `POST /api/v1/admin/products/outbox/reconcile` in bounded pages using its `afterId` cursor and `size`. This republishes current `product.reconciled` snapshots through the transactional outbox. Follow every page and monitor applied/ignored counts and consumer lag. No stock counters are copied from Product.
 * Legacy `product-created` only provisions stock. Current product state comes from `product.lifecycle.v1`; deploy the shared event contract and consumer before enabling the new producer, then reconcile existing products.
 * Product Service downtime can block non-admin seller REST authorization because ownership is checked remotely; admin routes bypass it.
-* Never retry legacy gRPC mutations without `reservationId`; they can reserve/release/deduct repeatedly.
+* All mutating gRPC requests require `reservationId`; retries must reuse it.
+
+## Current recovery and event delivery
+
+Reservation expiry, low-stock, and out-of-stock events are persisted in `inventory_event_outbox` and retried by the outbox publisher. Low/out-of-stock notices are rate-limited per product/state by `INVENTORY_LOW_STOCK_NOTIFICATION_COOLDOWN` (default `PT24H`).
+
+The scheduled reconciliation also uses Product Service `ProductSnapshotService/ListInventorySnapshots` gRPC pages. It provisions missing rows, synchronizes seller/active/version metadata, and deactivates inventory rows absent from a complete snapshot. Configure `PRODUCT_GRPC_HOST`, `PRODUCT_GRPC_PORT`, and production TLS. Monitor `inventory_reconciliation_failures_total`, `inventory_outbox_dead_total`, authorization failures, Kafka lag, and DLQs.
 
 Run `mvn spring-boot:run` from `inventory-service` with PostgreSQL, Kafka, Product Service, and JWT/config dependencies available.
 
