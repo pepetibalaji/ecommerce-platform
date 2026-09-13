@@ -11,7 +11,7 @@ public class InventoryEventOutbox {
     @Id private UUID id;
     @Column(nullable=false) private String topic;
     @Column(name="message_key", nullable=false) private String messageKey;
-    @Lob @Column(nullable=false) private String payload;
+    @Column(nullable=false, columnDefinition = "TEXT") private String payload;
     @Enumerated(EnumType.STRING) @Column(nullable=false) private Status status;
     @Column(nullable=false) private int attempts;
     private Instant nextAttemptAt; private Instant leaseUntil; private Instant publishedAt;
