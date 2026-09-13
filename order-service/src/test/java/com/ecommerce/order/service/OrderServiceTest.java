@@ -1,6 +1,7 @@
 package com.ecommerce.order.service;
 
 import com.ecommerce.common.events.order.OrderCreatedEvent;
+import com.ecommerce.common.events.order.OrderCompletedEvent;
 import com.ecommerce.common.events.payment.PaymentFailedEvent;
 import com.ecommerce.common.events.payment.PaymentSuccessEvent;
 import com.ecommerce.common.events.payment.PaymentRefundCompletedEvent;
@@ -33,6 +34,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionStatus;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -86,6 +92,11 @@ class OrderServiceTest {
 
     private UUID userId;
     private UUID productId;
+
+    // Mockito does not apply the service's @Transactional proxy. Exercise Spring's
+    // real synchronization lifecycle while keeping repository access mocked.
+    private final TransactionTemplate transactions =
+            new TransactionTemplate(new TestTransactionManager());
 
     @BeforeEach
     void setUp() {
@@ -519,13 +530,95 @@ class OrderServiceTest {
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
         when(orderProcessedEventRepository.existsByEventId(event.getEventId())).thenReturn(false);
 
-        orderService.handlePaymentSuccess(event);
+        transactions.executeWithoutResult(status -> {
+            orderService.handlePaymentSuccess(event);
+            verifyNoInteractions(orderEventPublisher);
+        });
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
         assertThat(order.getPaymentId()).isEqualTo(paymentId);
         assertThat(order.getPaymentConfirmedAt()).isNotNull();
         verify(orderRepository).save(order);
         verify(orderProcessedEventRepository).save(any());
+
+        ArgumentCaptor<OrderCompletedEvent> completed =
+                ArgumentCaptor.forClass(OrderCompletedEvent.class);
+        verify(orderEventPublisher).publishOrderCompleted(completed.capture());
+        assertThat(completed.getValue().getOrderId()).isEqualTo(orderId);
+        assertThat(completed.getValue().getUserId()).isEqualTo(userId);
+        assertThat(completed.getValue().getPaymentId()).isEqualTo(paymentId);
+        assertThat(completed.getValue().getTotalAmount()).isEqualByComparingTo("200.00");
+        assertThat(completed.getValue().getCorrelationId()).isEqualTo("correlation-1");
+        assertThat(completed.getValue().getTraceId()).isEqualTo("trace-1");
+        assertThat(completed.getValue().getItems()).singleElement().satisfies(item -> {
+            assertThat(item.getProductId()).isEqualTo(productId);
+            assertThat(item.getQuantity()).isEqualTo(2);
+            assertThat(item.getUnitPrice()).isEqualByComparingTo("100.00");
+            assertThat(item.getLineTotal()).isEqualByComparingTo("200.00");
+        });
+        assertThat(TransactionSynchronizationManager.isSynchronizationActive()).isFalse();
+        assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+    }
+
+    @Test
+    void handlePaymentSuccess_shouldNotPublishCompletedEventWhenTransactionRollsBack() {
+        UUID orderId = UUID.randomUUID();
+        PaymentSuccessEvent event = new PaymentSuccessEvent(
+                UUID.randomUUID(), orderId, userId, new BigDecimal("200.00"), "INR",
+                "SANDBOX", "transaction-1", "correlation-1", "trace-1");
+        Order order = existingOrder(orderId, OrderStatus.PENDING);
+        order.getItems().add(existingOrderItem(order));
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        transactions.executeWithoutResult(status -> {
+            orderService.handlePaymentSuccess(event);
+            verifyNoInteractions(orderEventPublisher);
+            status.setRollbackOnly();
+        });
+
+        verify(orderRepository).save(order);
+        verify(orderProcessedEventRepository).save(any());
+        verifyNoInteractions(orderEventPublisher);
+        assertThat(TransactionSynchronizationManager.isSynchronizationActive()).isFalse();
+        assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+    }
+
+    @Test
+    void handlePaymentSuccess_shouldNotPublishWhenProcessedEventPersistenceFails() {
+        UUID orderId = UUID.randomUUID();
+        PaymentSuccessEvent event = new PaymentSuccessEvent(
+                UUID.randomUUID(), orderId, userId, new BigDecimal("200.00"), "INR",
+                "SANDBOX", "transaction-1", "correlation-1", "trace-1");
+        Order order = existingOrder(orderId, OrderStatus.PENDING);
+        order.getItems().add(existingOrderItem(order));
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        IllegalStateException failure = new IllegalStateException("Processed-event storage failed");
+        doThrow(failure).when(orderProcessedEventRepository).save(any());
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                () -> transactions.executeWithoutResult(status -> orderService.handlePaymentSuccess(event)));
+
+        assertThat(thrown).isSameAs(failure);
+        verify(orderRepository).save(order);
+        verifyNoInteractions(orderEventPublisher);
+        assertThat(TransactionSynchronizationManager.isSynchronizationActive()).isFalse();
+        assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+    }
+
+    @Test
+    void handlePaymentSuccess_shouldNotRepublishForAlreadyConfirmedOrder() {
+        UUID orderId = UUID.randomUUID();
+        PaymentSuccessEvent event = new PaymentSuccessEvent(
+                UUID.randomUUID(), orderId, userId, new BigDecimal("200.00"), "INR",
+                "SANDBOX", "transaction-1", "correlation-1", "trace-1");
+        Order order = existingOrder(orderId, OrderStatus.CONFIRMED);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        transactions.executeWithoutResult(status -> orderService.handlePaymentSuccess(event));
+
+        verify(orderRepository, never()).save(any());
+        verify(orderProcessedEventRepository).save(any());
+        verifyNoInteractions(orderEventPublisher);
     }
 
     @Test
@@ -613,6 +706,7 @@ class OrderServiceTest {
         verify(orderRepository, never()).save(order);
         verifyNoInteractions(inventoryReleaseOutboxService);
         verify(orderProcessedEventRepository, never()).save(any());
+        verifyNoInteractions(orderEventPublisher);
     }
 
     @Test
@@ -651,6 +745,7 @@ class OrderServiceTest {
         verify(orderRepository, never()).save(order);
         verifyNoInteractions(inventoryReleaseOutboxService);
         verify(orderProcessedEventRepository).save(any());
+        verifyNoInteractions(orderEventPublisher);
     }
 
     @Test
@@ -791,6 +886,26 @@ class OrderServiceTest {
         order.setShippingCountry("IN");
 
         return order;
+    }
+
+    /** No database operations: the superclass supplies commit/rollback callbacks and cleanup. */
+    private static class TestTransactionManager extends AbstractPlatformTransactionManager {
+        @Override
+        protected Object doGetTransaction() {
+            return new Object();
+        }
+
+        @Override
+        protected void doBegin(Object transaction, TransactionDefinition definition) {
+        }
+
+        @Override
+        protected void doCommit(DefaultTransactionStatus status) {
+        }
+
+        @Override
+        protected void doRollback(DefaultTransactionStatus status) {
+        }
     }
 
     private OrderItem existingOrderItem(Order order) {
