@@ -1,6 +1,7 @@
 package com.ecommerce.inventory.grpc;
 
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.inventory.service.ProductServiceUnavailableException;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import net.devh.boot.grpc.server.advice.GrpcAdvice;
@@ -11,13 +12,18 @@ public class InventoryGrpcExceptionHandler {
 
     @GrpcExceptionHandler(ResourceNotFoundException.class)
     public StatusRuntimeException handleNotFound(ResourceNotFoundException exception) {
-        return Status.NOT_FOUND.withDescription(exception.getMessage()).asRuntimeException();
+        return Status.NOT_FOUND.withDescription("INVENTORY_NOT_FOUND").asRuntimeException();
     }
 
     @GrpcExceptionHandler(IllegalArgumentException.class)
     public StatusRuntimeException handleInvalidRequest(IllegalArgumentException exception) {
         return Status.FAILED_PRECONDITION
-                .withDescription(exception.getMessage())
+                .withDescription("INVENTORY_PRECONDITION_FAILED")
                 .asRuntimeException();
+    }
+
+    @GrpcExceptionHandler(ProductServiceUnavailableException.class)
+    public StatusRuntimeException handleDependency(ProductServiceUnavailableException exception) {
+        return Status.UNAVAILABLE.withDescription("PRODUCT_SERVICE_UNAVAILABLE").asRuntimeException();
     }
 }

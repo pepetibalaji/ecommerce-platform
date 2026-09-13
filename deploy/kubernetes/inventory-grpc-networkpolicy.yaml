@@ -1,0 +1,22 @@
+# Apply in staging/production after replacing namespaces/labels for the platform cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: inventory-grpc-internal-only
+  namespace: ecommerce
+spec:
+  podSelector:
+    matchLabels:
+      app: inventory-service
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ecommerce
+          podSelector:
+            matchLabels:
+              app: order-service
+      ports:
+        - protocol: TCP
+          port: 9091

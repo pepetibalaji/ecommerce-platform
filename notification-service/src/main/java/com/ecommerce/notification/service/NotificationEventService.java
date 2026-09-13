@@ -87,7 +87,7 @@ public class NotificationEventService {
   }
 
   private JsonNode recipientNode(JsonNode event, String topic) {
-    if ("low-inventory".equals(topic))
+    if ("low-inventory".equals(topic) || "out-of-stock".equals(topic))
       return event.hasNonNull("sellerUserId")
           ? event.get("sellerUserId")
           : event.get("adminUserId");
@@ -104,6 +104,7 @@ public class NotificationEventService {
       case "order-shipped" -> "ORDER_SHIPPED";
       case "order-delivered" -> "ORDER_DELIVERED";
       case "low-inventory" -> "LOW_STOCK_WARNING";
+      case "out-of-stock" -> "OUT_OF_STOCK_WARNING";
       case "seller-order-paid" -> "SELLER_NEW_ORDER";
       default -> null;
     };

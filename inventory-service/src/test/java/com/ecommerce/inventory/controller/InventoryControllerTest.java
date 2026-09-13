@@ -2,8 +2,10 @@ package com.ecommerce.inventory.controller;
 
 import com.ecommerce.inventory.dto.CreateInventoryRequest;
 import com.ecommerce.inventory.dto.InventoryResponse;
+import com.ecommerce.inventory.dto.StockAdjustmentRequest;
 import com.ecommerce.inventory.dto.UpdateInventoryRequest;
 import com.ecommerce.inventory.service.InventoryService;
+import com.ecommerce.inventory.service.InventoryOutboxService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
@@ -45,6 +47,9 @@ class InventoryControllerTest {
 
     @MockBean
     private InventoryService inventoryService;
+
+    @MockBean
+    private InventoryOutboxService inventoryOutboxService;
 
     @MockBean
     private Tracer tracer;
@@ -132,14 +137,14 @@ class InventoryControllerTest {
     }
 
     @Test
-    void shouldUpdateInventory() throws Exception {
+    void shouldAdjustInventory() throws Exception {
 
         UUID productId = UUID.randomUUID();
 
-        UpdateInventoryRequest request =
-                new UpdateInventoryRequest();
+        StockAdjustmentRequest request = new StockAdjustmentRequest();
 
-        request.setAvailableStock(200);
+        request.setAdjustment(100);
+        request.setReason(com.ecommerce.inventory.entity.StockAdjustmentReason.STOCK_RECEIVED);
 
         InventoryResponse response =
                 InventoryResponse.builder()
@@ -149,15 +154,15 @@ class InventoryControllerTest {
                         .build();
 
         when(
-                inventoryService.updateInventory(
+                inventoryService.adjustStock(
                         eq(productId),
-                        any(UpdateInventoryRequest.class)
+                        any(StockAdjustmentRequest.class), eq("admin")
                 )
         ).thenReturn(response);
 
         mockMvc.perform(
-                        put(
-                                "/api/v1/admin/inventory/{productId}",
+                        post(
+                                "/api/v1/admin/inventory/{productId}/adjustments",
                                 productId
                         )
                                 .contentType(MediaType.APPLICATION_JSON)

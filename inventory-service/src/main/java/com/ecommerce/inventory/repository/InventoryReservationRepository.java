@@ -8,6 +8,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public interface InventoryReservationRepository extends JpaRepository<InventoryReservation, UUID> {
@@ -15,4 +17,7 @@ public interface InventoryReservationRepository extends JpaRepository<InventoryR
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select reservation from InventoryReservation reservation where reservation.id = :reservationId")
     Optional<InventoryReservation> findByIdForUpdate(@Param("reservationId") UUID reservationId);
+
+    @Query("select reservation from InventoryReservation reservation where reservation.status = 'RESERVED' and reservation.expiresAt <= :now")
+    List<InventoryReservation> findExpiredReserved(@Param("now") Instant now);
 }

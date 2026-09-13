@@ -4,6 +4,7 @@ import com.ecommerce.common.exception.ResourceNotFoundException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 import java.util.UUID;
 
@@ -17,8 +18,13 @@ class HttpProductOwnershipVerifier implements ProductOwnershipVerifier {
 
     @Override
     public void assertOwnedBy(UUID productId, UUID sellerId) {
-        ProductOwner product = restClient.get().uri("/api/v1/products/{productId}", productId)
-                .retrieve().body(ProductOwner.class);
+        ProductOwner product;
+        try {
+            product = restClient.get().uri("/api/v1/products/{productId}", productId)
+                    .retrieve().body(ProductOwner.class);
+        } catch (RestClientException exception) {
+            throw new ProductServiceUnavailableException(exception);
+        }
         if (product == null || !sellerId.equals(product.sellerId())) {
             throw new ResourceNotFoundException("Product not found");
         }

@@ -3,6 +3,7 @@ package com.ecommerce.inventory.controller;
 import com.ecommerce.inventory.dto.*;
 
 import com.ecommerce.inventory.service.InventoryService;
+import com.ecommerce.inventory.service.InventoryOutboxService;
 
 import jakarta.validation.Valid;
 
@@ -18,6 +19,7 @@ import java.util.UUID;
 public class InventoryController {
 
     private final InventoryService inventoryService;
+    private final InventoryOutboxService inventoryOutboxService;
 
     @PostMapping
     public InventoryResponse createInventory(
@@ -31,19 +33,16 @@ public class InventoryController {
         );
     }
 
-    @PutMapping("/{productId}")
-    public InventoryResponse updateInventory(
+    @PostMapping("/{productId}/adjustments")
+    public InventoryResponse adjustInventory(
             @PathVariable UUID productId,
 
             @Valid
             @RequestBody
-            UpdateInventoryRequest request
+            StockAdjustmentRequest request
     ) {
 
-        return inventoryService.updateInventory(
-                productId,
-                request
-        );
+        return inventoryService.adjustStock(productId, request, "admin");
     }
 
     @GetMapping("/{productId}")
@@ -54,5 +53,10 @@ public class InventoryController {
         return inventoryService.getInventory(
                 productId
         );
+    }
+
+    @GetMapping("/operations")
+    public InventoryOperationsResponse operations() {
+        return inventoryOutboxService.operations();
     }
 }

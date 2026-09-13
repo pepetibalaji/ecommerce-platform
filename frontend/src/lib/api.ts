@@ -185,10 +185,11 @@ export const api = {
   inventory: {
     sellerCreate: (token: string, productId: string, availableStock: number) => request<Inventory>("/api/v1/seller/inventory", { method: "POST", token, body: { productId, availableStock } }),
     sellerGet: (token: string, productId: string) => request<Inventory>(`/api/v1/seller/inventory/${productId}`, { token }),
-    sellerUpsert: (token: string, productId: string, availableStock: number) => request<Inventory>(`/api/v1/seller/inventory/${productId}`, { method: "PUT", token, body: { availableStock } }),
+    sellerAdjust: (token: string, productId: string, body: { adjustment: number; reason: string; referenceId?: string }) => request<Inventory>(`/api/v1/seller/inventory/${productId}/adjustments`, { method: "POST", token, body }),
     adminCreate: (token: string, productId: string, availableStock: number) => request<Inventory>("/api/v1/admin/inventory", { method: "POST", token, body: { productId, availableStock } }),
     adminGet: (token: string, productId: string) => request<Inventory>(`/api/v1/admin/inventory/${productId}`, { token }),
-    adminUpsert: (token: string, productId: string, availableStock: number) => request<Inventory>(`/api/v1/admin/inventory/${productId}`, { method: "PUT", token, body: { availableStock } }),
+    adminAdjust: (token: string, productId: string, body: { adjustment: number; reason: string; referenceId?: string }) => request<Inventory>(`/api/v1/admin/inventory/${productId}/adjustments`, { method: "POST", token, body }),
+    adminOperations: (token: string) => request<{ pendingOutboxEvents: number; deadOutboxEvents: number; generatedAt: string }>("/api/v1/admin/inventory/operations", { token }),
   },
   admin: {
     users: (token: string, query = "page=0&size=10") => request<Page<User>>(`/api/v1/admin/users?${query}`, { token }),
@@ -346,10 +347,16 @@ async function mockRequest<T>(path: string, options: RequestOptions): Promise<T>
     return inventory as T;
   }
   if (pathname.startsWith("/api/v1/seller/inventory/")) {
-    const productId = pathname.split("/").at(-1)!;
+    const segments = pathname.split("/");
+    const productId = segments[5]!;
     const inventory = mockInventory.find((entry) => entry.productId === productId);
     if (!inventory) throw new ApiError("Inventory not found.", 404);
-    if (method === "PUT") inventory.availableStock = Number(body.availableStock);
+    if (method === "POST" && pathname.endsWith("/adjustments")) {
+      const adjustment = Number(body.adjustment);
+      if (!Number.isInteger(adjustment) || adjustment === 0) throw new ApiError("Adjustment must be a non-zero whole number.", 400);
+      if (inventory.availableStock + adjustment < 0) throw new ApiError("Adjustment would make available stock negative.", 409);
+      inventory.availableStock += adjustment;
+    }
     return inventory as T;
   }
   if (pathname === "/api/v1/admin/users") return pageOf(mockUsers, page, size) as T;
@@ -387,10 +394,17 @@ async function mockRequest<T>(path: string, options: RequestOptions): Promise<T>
     return inventory as T;
   }
   if (pathname.startsWith("/api/v1/admin/inventory/")) {
-    const productId = pathname.split("/").at(-1)!;
+    if (pathname === "/api/v1/admin/inventory/operations") return { pendingOutboxEvents: 0, deadOutboxEvents: 0, generatedAt: nowIso() } as T;
+    const segments = pathname.split("/");
+    const productId = segments[5]!;
     const inventory = mockInventory.find((entry) => entry.productId === productId);
     if (!inventory) throw new ApiError("Inventory not found.", 404);
-    if (method === "PUT") inventory.availableStock = Number(body.availableStock);
+    if (method === "POST" && pathname.endsWith("/adjustments")) {
+      const adjustment = Number(body.adjustment);
+      if (!Number.isInteger(adjustment) || adjustment === 0) throw new ApiError("Adjustment must be a non-zero whole number.", 400);
+      if (inventory.availableStock + adjustment < 0) throw new ApiError("Adjustment would make available stock negative.", 409);
+      inventory.availableStock += adjustment;
+    }
     return inventory as T;
   }
   if (pathname === "/api/v1/admin/products" && method === "POST") {

@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 
 import lombok.*;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -43,5 +43,11 @@ public class Inventory {
     private Integer reservedStock;
 
     @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
+
+    @Column(name = "low_stock_event_level")
+    private String lowStockEventLevel;
+
+    @Column(name = "low_stock_event_at")
+    private Instant lowStockEventAt;
 }

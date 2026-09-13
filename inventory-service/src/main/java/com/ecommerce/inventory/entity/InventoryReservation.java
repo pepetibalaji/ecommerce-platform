@@ -9,7 +9,7 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -32,28 +32,32 @@ public class InventoryReservation {
     private InventoryReservationStatus status;
 
     @Column(name = "created_at", nullable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
-    public InventoryReservation(UUID id, UUID productId, Integer quantity) {
-        LocalDateTime now = LocalDateTime.now();
+    @Column(name = "expires_at", nullable = false)
+    private Instant expiresAt;
+
+    public InventoryReservation(UUID id, UUID productId, Integer quantity, Instant expiresAt) {
+        Instant now = Instant.now();
         this.id = id;
         this.productId = productId;
         this.quantity = quantity;
         this.status = InventoryReservationStatus.RESERVED;
         this.createdAt = now;
         this.updatedAt = now;
+        this.expiresAt = expiresAt;
     }
 
     public void release() {
         status = InventoryReservationStatus.RELEASED;
-        updatedAt = LocalDateTime.now();
+        updatedAt = Instant.now();
     }
 
     public void deduct() {
         status = InventoryReservationStatus.DEDUCTED;
-        updatedAt = LocalDateTime.now();
+        updatedAt = Instant.now();
     }
 }
