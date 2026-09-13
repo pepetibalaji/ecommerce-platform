@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 public interface InventoryRepository
@@ -22,6 +23,8 @@ public interface InventoryRepository
     Optional<Inventory> findByProductIdForUpdate(@Param("productId") UUID productId);
 
     boolean existsByProductId(UUID productId);
+
+    List<Inventory> findByAvailableStockLessThanEqualAndProductActiveTrue(int threshold);
 
     /** PostgreSQL arbitrates concurrent provisioning, including legacy and lifecycle consumers. */
     @Modifying

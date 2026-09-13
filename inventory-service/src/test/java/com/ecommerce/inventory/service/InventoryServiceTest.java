@@ -7,6 +7,8 @@ import com.ecommerce.inventory.entity.InventoryReservationStatus;
 import com.ecommerce.inventory.mapper.InventoryMapper;
 import com.ecommerce.inventory.repository.InventoryRepository;
 import com.ecommerce.inventory.repository.InventoryReservationRepository;
+import com.ecommerce.inventory.repository.InventoryStockLedgerRepository;
+import com.ecommerce.inventory.repository.InventoryReservationAuditRepository;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,7 +17,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -42,6 +44,9 @@ class InventoryServiceTest {
 
     @Mock
     private ProductOwnershipVerifier productOwnershipVerifier;
+    @Mock private InventoryStockLedgerRepository stockLedgerRepository;
+    @Mock private InventoryReservationAuditRepository reservationAuditRepository;
+    @Mock private InventoryEventPublisher inventoryEventPublisher;
 
     @InjectMocks
     private InventoryService inventoryService;
@@ -57,7 +62,7 @@ class InventoryServiceTest {
                 .productId(productId)
                 .availableStock(100)
                 .reservedStock(0)
-                .updatedAt(LocalDateTime.now())
+                .updatedAt(Instant.now())
                 .build();
     }
 
@@ -103,7 +108,8 @@ class InventoryServiceTest {
         when(inventoryRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(inventoryMapper.toResponse(any())).thenReturn(response(95, 5));
 
-        InventoryResponse result = inventoryService.reserveStock(productId, 5);
+        when(inventoryReservationRepository.findByIdForUpdate(any())).thenReturn(Optional.empty());
+        InventoryResponse result = inventoryService.reserveStock(productId, 5, UUID.randomUUID());
 
         assertEquals(95, result.getAvailableStock());
         assertEquals(5, result.getReservedStock());
@@ -117,7 +123,6 @@ class InventoryServiceTest {
         when(inventoryRepository.findByProductIdForUpdate(productId)).thenReturn(Optional.of(inventory));
         when(inventoryReservationRepository.findByIdForUpdate(any())).thenReturn(Optional.empty());
 
-        assertThrows(IllegalArgumentException.class, () -> inventoryService.reserveStock(productId, 5));
         assertThrows(IllegalArgumentException.class,
                 () -> inventoryService.reserveStock(productId, 5, UUID.randomUUID()));
         assertEquals(100, inventory.getAvailableStock());
@@ -132,7 +137,7 @@ class InventoryServiceTest {
         inventory.setReservedStock(5);
         when(inventoryRepository.findByProductIdForUpdate(productId)).thenReturn(Optional.of(inventory));
         when(inventoryReservationRepository.findByIdForUpdate(reservationId))
-                .thenReturn(Optional.of(new InventoryReservation(reservationId, productId, 5)));
+                .thenReturn(Optional.of(new InventoryReservation(reservationId, productId, 5, Instant.now().plusSeconds(60))));
         when(inventoryMapper.toResponse(inventory)).thenReturn(response(95, 5));
 
         assertEquals(95, inventoryService.reserveStock(productId, 5, reservationId).getAvailableStock());
@@ -148,7 +153,9 @@ class InventoryServiceTest {
         when(inventoryRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(inventoryMapper.toResponse(any())).thenReturn(response(100, 0));
 
-        InventoryResponse result = inventoryService.releaseStock(productId, 5);
+        UUID reservationId = UUID.randomUUID();
+        when(inventoryReservationRepository.findByIdForUpdate(reservationId)).thenReturn(Optional.of(new InventoryReservation(reservationId, productId, 5, Instant.now().plusSeconds(60))));
+        InventoryResponse result = inventoryService.releaseStock(productId, 5, reservationId);
 
         assertEquals(100, result.getAvailableStock());
         assertEquals(0, result.getReservedStock());
@@ -165,7 +172,9 @@ class InventoryServiceTest {
         when(inventoryRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(inventoryMapper.toResponse(any())).thenReturn(response(95, 0));
 
-        InventoryResponse result = inventoryService.deductStock(productId, 5);
+        UUID reservationId = UUID.randomUUID();
+        when(inventoryReservationRepository.findByIdForUpdate(reservationId)).thenReturn(Optional.of(new InventoryReservation(reservationId, productId, 5, Instant.now().plusSeconds(60))));
+        InventoryResponse result = inventoryService.deductStock(productId, 5, reservationId);
 
         assertEquals(95, result.getAvailableStock());
         assertEquals(0, result.getReservedStock());
@@ -176,7 +185,7 @@ class InventoryServiceTest {
     @Test
     void reservationAwareReserve_shouldBeIdempotent() {
         UUID reservationId = UUID.randomUUID();
-        InventoryReservation reservation = new InventoryReservation(reservationId, productId, 5);
+        InventoryReservation reservation = new InventoryReservation(reservationId, productId, 5, Instant.now().plusSeconds(60));
 
         when(inventoryRepository.findByProductIdForUpdate(productId)).thenReturn(Optional.of(inventory));
         when(inventoryReservationRepository.findByIdForUpdate(reservationId))
@@ -197,7 +206,7 @@ class InventoryServiceTest {
     @Test
     void reservationAwareRelease_shouldBeIdempotent() {
         UUID reservationId = UUID.randomUUID();
-        InventoryReservation reservation = new InventoryReservation(reservationId, productId, 5);
+        InventoryReservation reservation = new InventoryReservation(reservationId, productId, 5, Instant.now().plusSeconds(60));
         inventory.setAvailableStock(95);
         inventory.setReservedStock(5);
 
@@ -219,7 +228,7 @@ class InventoryServiceTest {
     @Test
     void reservationAwareRelease_shouldRejectReservationDetailsThatDoNotMatch() {
         UUID reservationId = UUID.randomUUID();
-        InventoryReservation reservation = new InventoryReservation(reservationId, UUID.randomUUID(), 5);
+        InventoryReservation reservation = new InventoryReservation(reservationId, UUID.randomUUID(), 5, Instant.now().plusSeconds(60));
         inventory.setAvailableStock(95);
         inventory.setReservedStock(5);
 

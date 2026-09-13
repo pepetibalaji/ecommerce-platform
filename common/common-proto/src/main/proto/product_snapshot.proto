@@ -1,0 +1,10 @@
+syntax = "proto3";
+option java_multiple_files = true;
+option java_package = "com.ecommerce.proto.product";
+
+service ProductSnapshotService {
+  rpc ListInventorySnapshots(ProductSnapshotRequest) returns (ProductSnapshotPage);
+}
+message ProductSnapshotRequest { int32 page = 1; int32 size = 2; }
+message ProductSnapshot { string product_id = 1; string seller_id = 2; bool active = 3; int64 version = 4; }
+message ProductSnapshotPage { repeated ProductSnapshot products = 1; bool has_next = 2; int32 next_page = 3; }

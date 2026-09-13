@@ -12,13 +12,13 @@ REST base path: `/api/v1`. All REST routes require a bearer JWT. Admin endpoints
 
 `productId` is required and `availableStock` is required and at least zero. A created row begins with `reservedStock: 0`.
 
-### Update inventory
+### Stock adjustment
 
 ```json
-{ "availableStock": 25 }
+{ "adjustment": 25, "reason": "STOCK_RECEIVED", "referenceId": "optional UUID" }
 ```
 
-This replaces the available counter directly. It requires a non-negative value and does not reconcile or modify `reservedStock`; management clients must avoid violating business expectations around outstanding reservations.
+`adjustment` must be non-zero. Supported reasons are `STOCK_RECEIVED`, `STOCK_CORRECTION`, `DAMAGE`, `RETURN`, and `MANUAL_RECONCILIATION`. The new available counter cannot become negative; every accepted change is recorded in the immutable adjustment ledger.
 
 ### Inventory response
 
@@ -38,12 +38,12 @@ Seller ID, database row ID, and timestamps are intentionally not returned.
 | --- | --- | --- | --- |
 | `POST /admin/inventory` | ADMIN | Creates an inventory row for a product. This is a manual/legacy operation. | `200` inventory |
 | `GET /admin/inventory/{productId}` | ADMIN | Reads any row. | `200` inventory |
-| `PUT /admin/inventory/{productId}` | ADMIN | Directly replaces available stock for any row. | `200` inventory |
+| `POST /admin/inventory/{productId}/adjustments` | ADMIN | Applies an audited delta without modifying reserved stock. | `200` inventory |
 | `POST /seller/inventory` | SELLER, ADMIN | Non-admin seller must own the product according to Product Service; admin bypasses verification. | `200` inventory |
 | `GET /seller/inventory/{productId}` | SELLER, ADMIN | Non-admin seller ownership is verified through Product Service before read. | `200` inventory |
-| `PUT /seller/inventory/{productId}` | SELLER, ADMIN | Non-admin seller ownership is verified before direct available-stock update. | `200` inventory |
+| `POST /seller/inventory/{productId}/adjustments` | SELLER, ADMIN | Applies an audited delta after non-admin ownership verification. | `200` inventory |
 
-A seller create uses the generic creation path, which stores `seller_id` as null; seller ownership is enforced through Product Service rather than from the inventory row. Admin creation likewise stores null seller ID. Kafka provisioning is the only creation path that stores event `sellerId` in the inventory row.
+A seller create persists the verified seller ID. Admin creation has no seller identity unless provisioned from product lifecycle events.
 
 ## gRPC contract
 
@@ -52,15 +52,15 @@ The gRPC service is `InventoryService` (normally port `9091`). It is intended fo
 | RPC | Request | Result |
 | --- | --- | --- |
 | `GetInventory` | `productId` | `InventoryDetails { productId, availableStock, reservedStock }` |
-| `ReserveStock` | `productId`, positive `quantity`, optional `reservationId` | `{ success: true, message }` |
+| `ReserveStock` | `productId`, positive `quantity`, required UUID `reservationId` | `{ success: true, message }` |
 | `ReleaseStock` | same | `{ success: true, message }` |
 | `DeductStock` | same | `{ success: true, message }` |
 
-For every mutating RPC, callers should always provide a stable UUID `reservationId` and reuse it on retry. With an ID, reservation is created once; duplicate reserve while `RESERVED`, duplicate release after `RELEASED`, and duplicate deduct after `DEDUCTED` are no-ops. An omitted/blank ID invokes legacy quantity-only behavior, which mutates on every retry and is not idempotent.
+For every mutating RPC, callers must provide a stable UUID `reservationId` and reuse it on retry. Reservation identity should be derived from `orderId + orderLineId`. Duplicate reserve while `RESERVED`, duplicate release after `RELEASED`, and duplicate deduct after `DEDUCTED` are no-ops. Missing or blank IDs are rejected; legacy quantity-only mutation behavior has been removed.
 
 State rules: only `RESERVED` can release or deduct. `RELEASED` cannot deduct; `DEDUCTED` cannot release; re-reserving an existing released/deducted ID fails. A reused ID must have the same product and quantity.
 
-gRPC maps missing inventory to `NOT_FOUND` and invalid business preconditions (including insufficient stock) to `FAILED_PRECONDITION`.
+gRPC maps missing inventory to `NOT_FOUND` and invalid business preconditions (including insufficient stock) to `FAILED_PRECONDITION`. Callers must send the allow-listed `x-internal-caller` identity; staging/production additionally require mTLS (`INVENTORY_GRPC_REQUIRE_MTLS=true`).
 
 ## REST errors
 

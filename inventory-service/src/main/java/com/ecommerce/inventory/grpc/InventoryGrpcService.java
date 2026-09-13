@@ -45,13 +45,8 @@ public class InventoryGrpcService extends InventoryServiceGrpc.InventoryServiceI
             StreamObserver<InventoryResponse> responseObserver
     ) {
         UUID productId = UUID.fromString(request.getProductId());
-        UUID reservationId = optionalReservationId(request.getReservationId());
-
-        if (reservationId == null) {
-            inventoryService.reserveStock(productId, request.getQuantity());
-        } else {
-            inventoryService.reserveStock(productId, request.getQuantity(), reservationId);
-        }
+        UUID reservationId = requiredReservationId(request.getReservationId());
+        inventoryService.reserveStock(productId, request.getQuantity(), reservationId);
 
         respond(responseObserver, "Stock reserved successfully");
     }
@@ -62,13 +57,8 @@ public class InventoryGrpcService extends InventoryServiceGrpc.InventoryServiceI
             StreamObserver<InventoryResponse> responseObserver
     ) {
         UUID productId = UUID.fromString(request.getProductId());
-        UUID reservationId = optionalReservationId(request.getReservationId());
-
-        if (reservationId == null) {
-            inventoryService.releaseStock(productId, request.getQuantity());
-        } else {
-            inventoryService.releaseStock(productId, request.getQuantity(), reservationId);
-        }
+        UUID reservationId = requiredReservationId(request.getReservationId());
+        inventoryService.releaseStock(productId, request.getQuantity(), reservationId);
 
         respond(responseObserver, "Stock released successfully");
     }
@@ -79,19 +69,17 @@ public class InventoryGrpcService extends InventoryServiceGrpc.InventoryServiceI
             StreamObserver<InventoryResponse> responseObserver
     ) {
         UUID productId = UUID.fromString(request.getProductId());
-        UUID reservationId = optionalReservationId(request.getReservationId());
-
-        if (reservationId == null) {
-            inventoryService.deductStock(productId, request.getQuantity());
-        } else {
-            inventoryService.deductStock(productId, request.getQuantity(), reservationId);
-        }
+        UUID reservationId = requiredReservationId(request.getReservationId());
+        inventoryService.deductStock(productId, request.getQuantity(), reservationId);
 
         respond(responseObserver, "Stock deducted successfully");
     }
 
-    private UUID optionalReservationId(String value) {
-        return value == null || value.isBlank() ? null : UUID.fromString(value);
+    private UUID requiredReservationId(String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("reservationId is required and must be a UUID");
+        }
+        return UUID.fromString(value);
     }
 
     private void respond(StreamObserver<InventoryResponse> responseObserver, String message) {

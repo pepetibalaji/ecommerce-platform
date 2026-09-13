@@ -77,20 +77,7 @@ class InventoryGrpcServiceTest {
     }
 
     @Test
-    void shouldReserveStock() {
-
-        when(
-                inventoryService.reserveStock(
-                        any(UUID.class),
-                        eq(5)
-                )
-        ).thenReturn(
-                InventoryResponse.builder()
-                        .productId(productId)
-                        .availableStock(95)
-                        .reservedStock(5)
-                        .build()
-        );
+    void shouldRejectReserveWithoutReservationId() {
 
         ReserveStockRequest request =
                 ReserveStockRequest.newBuilder()
@@ -98,20 +85,8 @@ class InventoryGrpcServiceTest {
                         .setQuantity(5)
                         .build();
 
-        inventoryGrpcService.reserveStock(
-                request,
-                responseObserver
-        );
-
-        verify(responseObserver)
-                .onNext(
-                        any(
-                                com.ecommerce.proto.inventory.InventoryResponse.class
-                        )
-                );
-
-        verify(responseObserver)
-                .onCompleted();
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> inventoryGrpcService.reserveStock(request, responseObserver));
     }
 
     @Test
@@ -138,20 +113,7 @@ class InventoryGrpcServiceTest {
     }
 
     @Test
-    void shouldReleaseStock() {
-
-        when(
-                inventoryService.releaseStock(
-                        any(UUID.class),
-                        eq(5)
-                )
-        ).thenReturn(
-                InventoryResponse.builder()
-                        .productId(productId)
-                        .availableStock(100)
-                        .reservedStock(0)
-                        .build()
-        );
+    void shouldRejectReleaseWithoutReservationId() {
 
         ReleaseStockRequest request =
                 ReleaseStockRequest.newBuilder()
@@ -159,37 +121,12 @@ class InventoryGrpcServiceTest {
                         .setQuantity(5)
                         .build();
 
-        inventoryGrpcService.releaseStock(
-                request,
-                responseObserver
-        );
-
-        verify(responseObserver)
-                .onNext(
-                        any(
-                                com.ecommerce.proto.inventory.InventoryResponse.class
-                        )
-                );
-
-        verify(responseObserver)
-                .onCompleted();
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> inventoryGrpcService.releaseStock(request, responseObserver));
     }
 
     @Test
-    void shouldDeductStock() {
-
-        when(
-                inventoryService.deductStock(
-                        any(UUID.class),
-                        eq(5)
-                )
-        ).thenReturn(
-                InventoryResponse.builder()
-                        .productId(productId)
-                        .availableStock(95)
-                        .reservedStock(0)
-                        .build()
-        );
+    void shouldRejectDeductWithoutReservationId() {
 
         DeductStockRequest request =
                 DeductStockRequest.newBuilder()
@@ -197,19 +134,7 @@ class InventoryGrpcServiceTest {
                         .setQuantity(5)
                         .build();
 
-        inventoryGrpcService.deductStock(
-                request,
-                responseObserver
-        );
-
-        verify(responseObserver)
-                .onNext(
-                        any(
-                                com.ecommerce.proto.inventory.InventoryResponse.class
-                        )
-                );
-
-        verify(responseObserver)
-                .onCompleted();
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> inventoryGrpcService.deductStock(request, responseObserver));
     }
 }

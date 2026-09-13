@@ -2,7 +2,7 @@ package com.ecommerce.inventory.controller;
 
 import com.ecommerce.inventory.dto.CreateInventoryRequest;
 import com.ecommerce.inventory.dto.InventoryResponse;
-import com.ecommerce.inventory.dto.UpdateInventoryRequest;
+import com.ecommerce.inventory.dto.StockAdjustmentRequest;
 import com.ecommerce.inventory.service.InventoryService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -30,12 +30,15 @@ public class SellerInventoryController {
         return inventoryService.getSellerInventory(productId, userId(jwt), isAdmin(jwt));
     }
 
-    @PutMapping("/{productId}")
-    public InventoryResponse update(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID productId,
-            @Valid @RequestBody UpdateInventoryRequest request) {
-        return inventoryService.updateSellerInventory(productId, request, userId(jwt), isAdmin(jwt));
+    @PostMapping("/{productId}/adjustments")
+    public InventoryResponse adjust(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID productId,
+            @Valid @RequestBody StockAdjustmentRequest request) {
+        return inventoryService.adjustSellerStock(productId, request, userId(jwt), isAdmin(jwt));
     }
 
     private UUID userId(Jwt jwt) { return UUID.fromString(jwt.getClaimAsString("userId")); }
-    private boolean isAdmin(Jwt jwt) { return "ADMIN".equals(jwt.getClaimAsString("role")); }
+    private boolean isAdmin(Jwt jwt) {
+        return jwt.getClaimAsStringList("roles") != null && jwt.getClaimAsStringList("roles").contains("ADMIN")
+                || "ADMIN".equals(jwt.getClaimAsString("role"));
+    }
 }

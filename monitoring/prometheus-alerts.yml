@@ -123,3 +123,31 @@ groups:
         annotations:
           summary: "Notification Service consumer lag is high"
           description: "Notification Service has more than 100 unprocessed notification events for ten minutes."
+
+  - name: ecommerce-inventory-reliability
+    rules:
+      - alert: InventoryOutboxDeadLetter
+        expr: sum(increase(inventory_outbox_dead_total[5m])) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "Inventory event outbox exhausted delivery retries"
+          description: "Inspect inventory_event_outbox DEAD records and Kafka availability."
+      - alert: InventoryGrpcAuthorizationFailures
+        expr: sum(increase(inventory_grpc_authorization_failures_total[5m])) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "Inventory rejected an internal gRPC caller"
+          description: "Check mTLS identity, x-internal-caller, and network policy."
+      - alert: InventoryReservationExpirySpike
+        expr: sum(increase(inventory_reservations_expired_released_total[15m])) > 20
+        labels: { severity: warning }
+        annotations:
+          summary: "Inventory reservation expiry rate is elevated"
+          description: "Investigate checkout/payment completion latency."
+      - alert: InventoryLifecycleConsumerLag
+        expr: sum(kafka_consumergroup_lag{consumergroup="inventory-product-lifecycle",topic="product.lifecycle.v1"}) > 100
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Inventory product lifecycle consumer lag is high"
+          description: "Inventory lifecycle synchronization is delayed."

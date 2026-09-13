@@ -274,6 +274,9 @@ function InventoryWorkspace({ area }: { area: InventoryArea }) {
   const [productId, setProductId] = useState(routeProductId ?? params.get("productId") ?? "");
   const [inventory, setInventory] = useState<Inventory | null>(null);
   const [availableStock, setAvailableStock] = useState("");
+  const [adjustment, setAdjustment] = useState("");
+  const [adjustmentReason, setAdjustmentReason] = useState("STOCK_RECEIVED");
+  const [referenceId, setReferenceId] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -288,7 +291,7 @@ function InventoryWorkspace({ area }: { area: InventoryArea }) {
       const result = isSeller
         ? await api.inventory.sellerGet(token, productId.trim())
         : await api.inventory.adminGet(token, productId.trim());
-      setInventory(result); setAvailableStock(String(result.availableStock));
+      setInventory(result); setAvailableStock(String(result.availableStock)); setAdjustment("");
       setParams({ productId: productId.trim() }, { replace: true });
     } catch (caught) {
       setInventory(null);
@@ -299,9 +302,11 @@ function InventoryWorkspace({ area }: { area: InventoryArea }) {
     } finally { setBusy(false); }
   }
 
-  async function save(mode: "create" | "update") {
+  async function save(mode: "create" | "adjust") {
     const stock = Number(availableStock);
-    if (!productId.trim() || !Number.isInteger(stock) || stock < 0) { setError("Use a product ID and a whole, non-negative stock value."); return; }
+    const delta = Number(adjustment);
+    if (!productId.trim() || (mode === "create" && (!Number.isInteger(stock) || stock < 0))) { setError("Use a product ID and a whole, non-negative initial stock value."); return; }
+    if (mode === "adjust" && (!Number.isInteger(delta) || delta === 0)) { setError("Enter a non-zero whole-number adjustment."); return; }
     setBusy(true); setError(null); setMessage(null);
     try {
       const token = accessTokenOrThrow(accessToken);
@@ -310,9 +315,9 @@ function InventoryWorkspace({ area }: { area: InventoryArea }) {
           ? await api.inventory.sellerCreate(token, productId.trim(), stock)
           : await api.inventory.adminCreate(token, productId.trim(), stock)
         : isSeller
-          ? await api.inventory.sellerUpsert(token, productId.trim(), stock)
-          : await api.inventory.adminUpsert(token, productId.trim(), stock);
-      setInventory(result); setAvailableStock(String(result.availableStock)); setMessage(mode === "create" ? "Initial inventory allocation created." : "Inventory updated.");
+          ? await api.inventory.sellerAdjust(token, productId.trim(), { adjustment: delta, reason: adjustmentReason, ...(referenceId.trim() ? { referenceId: referenceId.trim() } : {}) })
+          : await api.inventory.adminAdjust(token, productId.trim(), { adjustment: delta, reason: adjustmentReason, ...(referenceId.trim() ? { referenceId: referenceId.trim() } : {}) });
+      setInventory(result); setAvailableStock(String(result.availableStock)); setAdjustment(""); setReferenceId(""); setMessage(mode === "create" ? "Initial inventory allocation created." : "Stock adjustment recorded.");
     } catch (caught) { setError(messageForError(caught)); }
     finally { setBusy(false); }
   }
@@ -320,11 +325,17 @@ function InventoryWorkspace({ area }: { area: InventoryArea }) {
   return <section className="backoffice-page">
     <div className="page-heading"><div><span className="eyebrow">{isSeller ? "Seller stock" : "Platform stock"}</span><h1>Inventory</h1><p>Stock controls operate on one known product at a time.</p></div>{isSeller ? <Link className="button button-secondary" to="/seller/products">Find a product ID</Link> : null}</div>
     <ContractNote>Neither role has an inventory-list or product-search endpoint. This screen intentionally does not invent a stock directory. Enter a known product ID from an authorised workflow.</ContractNote>
-    <form className="panel form-stack" onSubmit={(event) => void findInventory(event)}><Field label="Product ID" value={productId} onChange={(event) => setProductId(event.target.value)} placeholder="UUID or product identifier" required /><div className="action-row"><Button type="submit" variant="secondary" loading={busy}>Find inventory</Button></div>{inventory ? <div className="inventory-readout"><div><span>Available stock</span><strong>{inventory.availableStock}</strong></div><div><span>Reserved stock</span><strong>{inventory.reservedStock}</strong></div></div> : null}<Field label="Available stock" type="number" min="0" step="1" value={availableStock} onChange={(event) => setAvailableStock(event.target.value)} hint="Only whole, non-negative units are accepted." />{error ? <Alert tone="danger">{error}</Alert> : null}{message ? <Alert tone="success">{message}</Alert> : null}<div className="action-row"><Button type="button" loading={busy} disabled={!productId.trim() || !availableStock} onClick={() => void save(inventory ? "update" : "create")}>{inventory ? "Update stock" : "Create initial stock"}</Button></div></form>
+    <form className="panel form-stack" onSubmit={(event) => void findInventory(event)}><Field label="Product ID" value={productId} onChange={(event) => setProductId(event.target.value)} placeholder="UUID or product identifier" required /><div className="action-row"><Button type="submit" variant="secondary" loading={busy}>Find inventory</Button></div>{inventory ? <><div className="inventory-readout"><div><span>Available stock</span><strong>{inventory.availableStock}</strong></div><div><span>Reserved stock</span><strong>{inventory.reservedStock}</strong></div></div><Field label="Stock adjustment" type="number" step="1" value={adjustment} onChange={(event) => setAdjustment(event.target.value)} hint="Use a positive value for received/returned stock and a negative value for damage or corrections." /><SelectField label="Adjustment reason" value={adjustmentReason} onChange={(event) => setAdjustmentReason(event.target.value)}><option value="STOCK_RECEIVED">Stock received</option><option value="STOCK_CORRECTION">Stock correction</option><option value="DAMAGE">Damage</option><option value="RETURN">Return</option><option value="MANUAL_RECONCILIATION">Manual reconciliation</option></SelectField><Field label="Reference ID (optional)" value={referenceId} onChange={(event) => setReferenceId(event.target.value)} placeholder="Order, shipment, or audit UUID" /></> : <Field label="Initial available stock" type="number" min="0" step="1" value={availableStock} onChange={(event) => setAvailableStock(event.target.value)} hint="Only whole, non-negative units are accepted." />}{error ? <Alert tone="danger">{error}</Alert> : null}{message ? <Alert tone="success">{message}</Alert> : null}<div className="action-row"><Button type="button" loading={busy} disabled={!productId.trim() || (inventory ? !adjustment : !availableStock)} onClick={() => void save(inventory ? "adjust" : "create")}>{inventory ? "Record stock adjustment" : "Create initial stock"}</Button></div></form>
   </section>;
 }
 
 export function SellerInventoryPage() { return <InventoryWorkspace area="seller" />; }
+
+function InventoryOperationsPanel() {
+  const { accessToken } = useAuth();
+  const { data, loading, error, reload } = useResource(() => api.inventory.adminOperations(accessTokenOrThrow(accessToken)), [accessToken]);
+  return <section className="panel form-stack" aria-label="Inventory operations"><div className="bo-panel-heading"><div><span className="eyebrow">Operations</span><h2>Inventory event delivery</h2></div><Button variant="secondary" loading={loading} onClick={() => void reload()}>Refresh</Button></div>{loading ? <LoadingBlock label="Loading inventory operations" /> : error ? <PageError message={messageForError(error)} retry={() => void reload()} /> : data ? <><div className="inventory-readout"><div><span>Pending outbox events</span><strong>{data.pendingOutboxEvents}</strong></div><div><span>Dead outbox events</span><strong>{data.deadOutboxEvents}</strong></div></div>{data.deadOutboxEvents > 0 ? <Alert tone="danger" title="Operator action required">Event delivery has exhausted retries. Inspect the Inventory outbox and Kafka health before replaying records.</Alert> : <Alert tone="success">No dead Inventory outbox events.</Alert>}<p className="muted">Snapshot generated {formatDate(data.generatedAt)}. Reconciliation and authorization alerts are monitored in the platform dashboard.</p></> : null}</section>;
+}
 
 export function SellerOrdersPage() {
   const { accessToken } = useAuth();
@@ -545,7 +556,7 @@ function ProductDeliveryRecovery() {
   </section>;
 }
 
-export function AdminInventoryPage() { return <InventoryWorkspace area="admin" />; }
+export function AdminInventoryPage() { return <><InventoryWorkspace area="admin" /><InventoryOperationsPanel /></>; }
 
 function allowedTransitions(order: Order): Array<"CONFIRMED" | "CANCELLED"> {
   if (order.status === "PENDING") return ["CONFIRMED", "CANCELLED"];

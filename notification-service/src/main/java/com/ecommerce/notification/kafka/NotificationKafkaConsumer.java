@@ -32,6 +32,7 @@ public class NotificationKafkaConsumer {
         KafkaTopics.ORDER_SHIPPED,
         KafkaTopics.ORDER_DELIVERED,
         KafkaTopics.LOW_INVENTORY,
+        KafkaTopics.OUT_OF_STOCK,
         KafkaTopics.SELLER_ORDER_PAID
       },
       groupId = "${notification.kafka.consumer-group:notification-service}")

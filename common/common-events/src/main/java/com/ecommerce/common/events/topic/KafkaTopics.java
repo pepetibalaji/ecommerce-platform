@@ -18,6 +18,7 @@ public final class KafkaTopics {
   public static final String ORDER_SHIPPED = "order-shipped";
   public static final String ORDER_DELIVERED = "order-delivered";
   public static final String LOW_INVENTORY = "low-inventory";
+  public static final String OUT_OF_STOCK = "out-of-stock";
   public static final String SELLER_ORDER_PAID = "seller-order-paid";
   public static final String USER_CONTACT_UPDATED = "user-contact-updated";
   public static final String AUTH_USER_VERIFICATION_REQUESTED =
@@ -51,6 +52,7 @@ public final class KafkaTopics {
         ORDER_SHIPPED,
         ORDER_DELIVERED,
         LOW_INVENTORY,
+        OUT_OF_STOCK,
         SELLER_ORDER_PAID,
         USER_CONTACT_UPDATED,
         AUTH_USER_VERIFICATION_REQUESTED,

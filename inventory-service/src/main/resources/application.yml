@@ -19,6 +19,30 @@ spring:
             key-serializer: org.apache.kafka.common.serialization.StringSerializer
             value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
+inventory:
+    reservation:
+        ttl: ${INVENTORY_RESERVATION_TTL:PT15M}
+        expiry-scan-delay: ${INVENTORY_RESERVATION_EXPIRY_SCAN_DELAY:30000}
+    grpc:
+        # Production overlays must enable mTLS and inject certificates through the platform secret store.
+        require-mtls: ${INVENTORY_GRPC_REQUIRE_MTLS:false}
+        allowed-callers: ${INVENTORY_GRPC_ALLOWED_CALLERS:order-service}
+    low-stock:
+        default-threshold: ${INVENTORY_LOW_STOCK_THRESHOLD:5}
+        notification-cooldown: ${INVENTORY_LOW_STOCK_NOTIFICATION_COOLDOWN:PT24H}
+    reconciliation:
+        delay: ${INVENTORY_RECONCILIATION_DELAY:300000}
+    outbox:
+        poll-delay: ${INVENTORY_OUTBOX_POLL_DELAY:1000}
+
+grpc:
+    clients:
+        product-snapshot:
+            host: ${PRODUCT_GRPC_HOST:localhost}
+            port: ${PRODUCT_GRPC_PORT:9092}
+            deadline-ms: ${PRODUCT_GRPC_DEADLINE_MS:5000}
+            plaintext: ${PRODUCT_GRPC_PLAINTEXT:true}
+
 logging:
     structured:
         format:
