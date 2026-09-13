@@ -18,7 +18,9 @@ export const mockAdmin: User = { id: "admin-001", name: "Platform Admin", email:
 export const mockUsers: User[] = [mockCustomer, mockSeller, mockAdmin, { id: "customer-002", name: "Dev Kumar", email: "dev@example.com", role: "CUSTOMER", roles: ["CUSTOMER"], status: "SUSPENDED" }];
 
 export let mockCart: Cart = {
-  userId: "guest-session",
+  ownerType: "GUEST",
+  ownerId: "33333333-3333-3333-3333-333333333333",
+  version: 1,
   updatedAt: now,
   items: [
     { itemId: "cart-line-001", productId: mockProducts[0].id, quantity: 1 },

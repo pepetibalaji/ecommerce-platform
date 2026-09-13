@@ -25,7 +25,7 @@
   background: #174d38;
 }
 .storefront-v2 .sf-skip-link:focus { transform: translateY(0); }
-.storefront-v2 :is(a, button, summary, input):focus-visible { outline: 2px solid #668943; outline-offset: 4px; }
+.storefront-v2 :is(a, button, summary, input, select, textarea):focus-visible { outline: 2px solid #668943; outline-offset: 4px; }
 
 .storefront-v2 .sf-announcement {
   display: flex;
@@ -212,4 +212,95 @@
 
 @media (prefers-reduced-motion: reduce) {
   .storefront-v2 .sf-footer-links a svg { transition: none; }
+}
+
+/* Storefront finish: clear content surfaces, teal accents, and natural page scrolling. */
+.storefront-v2.app-shell {
+  --store-header-offset: 0px;
+  --ink: #172b36;
+  --muted: #516371;
+  --subtle: #627380;
+  --canvas: #f3f5f7;
+  --green: #115e59;
+  --green-dark: #134e4a;
+  --green-pale: #e6f3f0;
+  --line: #dbe3e8;
+  --glass-line: #dbe3e8;
+  --glass-surface: #ffffff;
+  --glass-strong: #f8fafb;
+  --glass-shadow: 0 8px 28px rgb(23 43 54 / 6%), 0 1px 3px rgb(23 43 54 / 3%);
+  position: relative;
+  background: linear-gradient(180deg, #eaf2f2 0, #f7f8fa 400px, #f3f5f7 100%);
+}
+.storefront-v2 :is(a, button, summary, input, select, textarea):focus-visible { outline: 3px solid #0f766e; outline-offset: 3px; }
+.storefront-v2 .sf-header { position: relative; top: auto; z-index: 40; border-color: var(--line); background: rgb(255 255 255 / 92%); box-shadow: 0 3px 16px rgb(23 43 54 / 4%); }
+.storefront-v2 .sf-announcement { color: #eaf5f4; background: #173b43; font-size: 11px; }
+.storefront-v2 .sf-announcement a { color: #d1eae5; }
+.storefront-v2 .sf-header-inner { min-height: 80px; }
+.storefront-v2 .sf-wordmark { color: #173b43; }
+.storefront-v2 .sf-wordmark > span { color: #0f766e; }
+.storefront-v2 :is(.sf-desktop-nav, .sf-mobile-categories) a { color: #405563; font-size: 13px; font-weight: 600; }
+.storefront-v2 :is(.sf-desktop-nav, .sf-mobile-categories) a.is-current { color: #115e59; }
+.storefront-v2 .sf-search { min-height: 44px; border-color: #c8d5de; border-radius: 12px; background: #f5f8fa; }
+.storefront-v2 .sf-search input { font-size: 13px; color: var(--ink); }
+.storefront-v2 .sf-search button { height: 42px; width: 42px; color: var(--green); }
+.storefront-v2 .sf-search:focus-within { outline: 3px solid rgb(15 118 110 / 20%); border-color: #0f766e; }
+.storefront-v2 .sf-bag-count { color: #fff; background: #115e59; box-shadow: none; }
+.storefront-v2 :is(.sf-account-link, .sf-bag-link, .sf-account-menu summary) { color: var(--ink); font-size: 13px; font-weight: 600; }
+.storefront-v2 .sf-account-popover { border-color: var(--line); border-radius: 14px; background: #fff; box-shadow: 0 16px 40px rgb(23 43 54 / 14%); }
+.storefront-v2 .sf-account-popover :is(a, button) { min-height: 44px; color: #354b59; font-size: 14px; }
+.storefront-v2 .sf-account-popover :is(a, button):hover { background: #eef5f5; }
+.storefront-v2 .store-main { min-height: calc(100vh - 300px); }
+.storefront-v2 :is(.summary-card, .panel, .detail-card, .checkout-form, .payment-page, .route-message, .order-card, .cart-line, .account-setting-card, .account-rail, .auth-page, .account-protection-card, .empty-state) {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--glass-surface);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.storefront-v2 :is(.page-heading, .account-hero-card, .auth-card) h1 { color: var(--ink); }
+.storefront-v2 :is(.page-heading p, .account-card-heading p, .auth-card > p, .order-card p) { color: var(--muted); font-size: 15px; line-height: 1.65; }
+.storefront-v2 :is(.order-card, .cart-line):hover { border-color: #b6cbd0; box-shadow: var(--glass-shadow); transform: none; }
+.storefront-v2 .button { min-height: 44px; border-radius: 10px; font-size: 14px; font-weight: 650; letter-spacing: 0; }
+.storefront-v2 .button-primary { color: #fff; border-color: #115e59; background: linear-gradient(135deg, #115e59, #136b64); box-shadow: 0 4px 10px rgb(17 94 89 / 15%); }
+.storefront-v2 .button-primary:hover:not(:disabled) { border-color: #134e4a; background: #134e4a; box-shadow: 0 5px 14px rgb(17 94 89 / 18%); }
+.storefront-v2 .button-secondary { color: #284452; background: #fff; border-color: #bfcdd7; box-shadow: 0 1px 2px rgb(23 43 54 / 4%); }
+.storefront-v2 .button-secondary:hover:not(:disabled) { color: #134e4a; background: #edf5f4; border-color: #8fb9b4; }
+.storefront-v2 .button-ghost { color: #315865; }
+.storefront-v2 .button-ghost:hover:not(:disabled) { color: #134e4a; background: #e8f2f1; }
+.storefront-v2 .input { min-height: 46px; color: var(--ink); border: 1px solid #bfcdd7; border-radius: 10px; background: #fff; font-size: 15px; box-shadow: inset 0 1px 2px rgb(23 43 54 / 3%); }
+.storefront-v2 .input:focus { border-color: #0f766e; box-shadow: 0 0 0 3px rgb(15 118 110 / 14%); }
+.storefront-v2 .input.input-error { border-color: #b42335; }
+.storefront-v2 .field-label { color: #344c5b; font-size: 13px; font-weight: 650; }
+.storefront-v2 :is(.field-hint, .summary-card p, .cart-line-info span, .account-session-meta, .account-readonly-field small, .account-rail-heading small) { color: #516371; font-size: 13px; line-height: 1.6; }
+.storefront-v2 .eyebrow { color: #356a68; }
+.storefront-v2 :is(.summary-card h2, .detail-card h2, .checkout-form h2, .account-card-heading h2) { color: var(--ink); }
+.storefront-v2 .quantity-control { background: #f4f7f9; border-color: var(--line); }
+.storefront-v2 .quantity-control .button { width: 40px; min-height: 40px; font-size: 20px; }
+.storefront-v2 .account-hero-card { border-color: #c9dddd; border-radius: 20px; background: linear-gradient(120deg, #f8fcfb, #e9f2f3); box-shadow: var(--glass-shadow); }
+.storefront-v2 .account-hero-card h1 em { color: #115e59; }
+.storefront-v2 .account-hero-card p { color: var(--muted); font-size: 14px; }
+.storefront-v2 .account-avatar-large { color: #fff; background: #173b43; border-radius: 18px; }
+.storefront-v2 :is(.account-protection-icon, .account-card-icon, .account-session-icon, .empty-icon, .loading-icon) { color: #115e59; background: #e9f4f1; border-color: #cbdfd9; border-radius: 12px; box-shadow: none; }
+.storefront-v2 .account-card-icon-danger { color: #a32d3a; background: #fff0f1; }
+.storefront-v2 :is(.account-readonly-field, .order-status-grid > div) { border: 1px solid var(--line); border-radius: 12px; background: #f6f8fa; box-shadow: none; }
+.storefront-v2 .account-delete-card { border-color: #efd2d6; background: #fffafb; }
+.storefront-v2 .auth-page { overflow: hidden; }
+.storefront-v2 .auth-aside { background: linear-gradient(135deg, #173b43, #115e59); }
+.storefront-v2 .auth-aside p { color: #daeeeb; }
+.storefront-v2 .auth-aside .eyebrow { color: #bde3dd; }
+.storefront-v2 .empty-state { border-style: dashed; }
+.storefront-v2 .sf-footer { color: #f5f9fa; background: #182f39; box-shadow: none; }
+.storefront-v2 .sf-footer .sf-wordmark > span { color: #91c7bf; }
+.storefront-v2 :is(.sf-footer-intro > span, .sf-footer-links h2, .sf-footer-bottom) { color: #c1d1d8; }
+.storefront-v2 .sf-footer-links h2 { font-size: 11px; font-weight: 650; }
+.storefront-v2 .sf-footer-links a { font-size: 14px; }
+.storefront-v2 .sf-footer-bottom { border-color: #3b515c; font-size: 12px; }
+@media (max-width: 600px) {
+  .storefront-v2.app-shell { --store-header-offset: 0px; }
+  .storefront-v2 .sf-header-inner { min-height: 0; }
+  .storefront-v2 .sf-search input, .storefront-v2 .input { font-size: 16px; }
+  .storefront-v2 .sf-mobile-categories a { min-height: 40px; font-size: 12px; }
+  .storefront-v2 :is(.summary-card, .panel, .detail-card, .checkout-form, .payment-page, .route-message, .order-card, .cart-line, .account-setting-card, .account-rail) { border-radius: 14px; }
 }

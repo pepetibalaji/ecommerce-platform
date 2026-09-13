@@ -44,3 +44,17 @@ test("generic error envelopes are not mistaken for field validation", async cont
     return true;
   });
 });
+
+test("cart contention preserves the machine-readable code and retry delay", async context => {
+  context.mock.method(globalThis, "fetch", async () => Response.json({
+    status: 409, error: "Conflict", message: "Cart is busy", code: "CART_LOCK_CONTENTION",
+  }, { status: 409, headers: { "Retry-After": "2" } }));
+  await assert.rejects(api.cart.addGuest("product-1", 1, "cart-operation-1"), error => {
+    assert.equal(error.status, 409);
+    assert.equal(error.code, "CART_LOCK_CONTENTION");
+    assert.equal(error.retryAfter, 2);
+    assert.equal(error.fields, undefined);
+    assert.equal(messageForError(error), "Cart is busy");
+    return true;
+  });
+});

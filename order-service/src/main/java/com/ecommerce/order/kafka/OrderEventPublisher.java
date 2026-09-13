@@ -1,6 +1,7 @@
 package com.ecommerce.order.kafka;
 
 import com.ecommerce.common.events.order.OrderCreatedEvent;
+import com.ecommerce.common.events.order.OrderCompletedEvent;
 import com.ecommerce.common.events.topic.KafkaTopics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,7 +17,7 @@ import java.util.concurrent.CompletableFuture;
 @RequiredArgsConstructor
 public class OrderEventPublisher {
 
-    private final KafkaTemplate<String, OrderCreatedEvent> kafkaTemplate;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
 
     public void publishOrderCreated(OrderCreatedEvent event) {
         Objects.requireNonNull(event, "OrderCreatedEvent must not be null");
@@ -25,7 +26,7 @@ public class OrderEventPublisher {
         String topic = KafkaTopics.ORDER_CREATED;
         String key = event.getOrderId().toString();
 
-        CompletableFuture<SendResult<String, OrderCreatedEvent>> future =
+        CompletableFuture<SendResult<String, Object>> future =
                 kafkaTemplate.send(topic, key, event);
 
         future.whenComplete((result, exception) -> {
@@ -63,5 +64,9 @@ public class OrderEventPublisher {
                     event.getTraceId()
             );
         });
+    }
+
+    public void publishOrderCompleted(OrderCompletedEvent event) {
+        kafkaTemplate.send(KafkaTopics.ORDER_COMPLETED, event.getOrderId().toString(), event);
     }
 }

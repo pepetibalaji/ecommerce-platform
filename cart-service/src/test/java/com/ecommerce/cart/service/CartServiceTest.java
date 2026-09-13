@@ -5,19 +5,21 @@ import com.ecommerce.cart.dto.CartResponse;
 import com.ecommerce.cart.dto.UpdateCartItemRequest;
 import com.ecommerce.cart.model.Cart;
 import com.ecommerce.cart.model.CartItem;
+import com.ecommerce.cart.model.IdempotencyRecord;
 import com.ecommerce.cart.repository.CartRedisRepository;
+import com.ecommerce.cart.config.CartProperties;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.common.redis.lock.DistributedLockService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -33,7 +35,8 @@ class CartServiceTest {
     @Mock
     private DistributedLockService distributedLockService;
 
-    @InjectMocks
+    private CartProperties cartProperties = new CartProperties();
+
     private CartService cartService;
 
     private final String userId = "user-123";
@@ -42,10 +45,12 @@ class CartServiceTest {
     @BeforeEach
     void setUp() {
         reset(cartRedisRepository, distributedLockService);
+        cartService = new CartService(cartRedisRepository, distributedLockService, cartProperties);
     }
 
     @Test
     void addItem_shouldCreateCartWhenMissing() {
+        allowMutationLock();
         AddCartItemRequest request = new AddCartItemRequest();
         request.setProductId(productId);
         request.setQuantity(2);
@@ -64,6 +69,7 @@ class CartServiceTest {
 
     @Test
     void addItem_shouldIncreaseQuantityForExistingProduct() {
+        allowMutationLock();
         Cart cart = new Cart(userId);
         cart.getItems().add(new CartItem("item-1", productId, 2));
 
@@ -85,6 +91,7 @@ class CartServiceTest {
 
     @Test
     void updateItem_shouldUpdateQuantity() {
+        allowMutationLock();
         Cart cart = new Cart(userId);
         cart.getItems().add(new CartItem("item-1", productId, 2));
 
@@ -120,6 +127,7 @@ class CartServiceTest {
 
     @Test
     void removeItem_shouldDeleteCartWhenLastItemRemoved() {
+        allowMutationLock();
         Cart cart = new Cart(userId);
         cart.getItems().add(new CartItem("item-1", productId, 2));
 
@@ -135,6 +143,7 @@ class CartServiceTest {
 
     @Test
     void removeItem_shouldThrowWhenItemMissing() {
+        allowMutationLock();
         Cart cart = new Cart(userId);
         cart.getItems().add(new CartItem("item-1", productId, 2));
 
@@ -146,13 +155,14 @@ class CartServiceTest {
 
     @Test
     void clearCart_shouldDeleteCart() {
+        allowMutationLock();
         cartService.clearCart(userId);
 
         verify(cartRedisRepository).deleteByUserId(userId);
     }
 
     @Test
-    void mergeGuestCart_shouldAddQuantitiesSaveCustomerThenDeleteGuest() {
+    void mergeGuestCart_shouldAddQuantitiesAndPersistAtomically() {
         String guestId = "guest-123";
         Cart guestCart = new Cart(guestId);
         guestCart.getItems().add(new CartItem("guest-item", productId, 2));
@@ -166,8 +176,11 @@ class CartServiceTest {
         CartResponse response = cartService.mergeGuestCart(userId, guestId);
 
         assertThat(response.getItems()).singleElement().extracting("quantity").isEqualTo(5);
-        verify(cartRedisRepository).save(customerCart);
-        verify(cartRedisRepository).deleteByGuestId(guestId);
+        verify(cartRedisRepository).mergeAtomically(eq(customerCart), eq(guestId),
+                eq("cart-idempotency:customer:" + userId + ":merge:guest-" + guestId),
+                any(IdempotencyRecord.class), eq(cartProperties.getIdempotency().getTtl()));
+        verify(cartRedisRepository, never()).save(any(Cart.class));
+        verify(cartRedisRepository, never()).deleteByGuestId(guestId);
     }
 
     @Test
@@ -184,5 +197,9 @@ class CartServiceTest {
 
         assertThat(response.getItems()).singleElement().extracting("quantity").isEqualTo(5);
         verify(cartRedisRepository, never()).deleteByGuestId(guestId);
+    }
+
+    private void allowMutationLock() {
+        when(distributedLockService.tryLock(anyString(), anyString(), any())).thenReturn(true);
     }
 }

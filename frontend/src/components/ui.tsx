@@ -1,4 +1,4 @@
-import { useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import { useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type RefObject, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Info, LoaderCircle, PackageOpen, TriangleAlert } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { Page, Product } from "../domain";
@@ -38,7 +38,7 @@ export function Alert({ tone = "info", title, children, action }: { tone?: "info
 
 export function StatusBadge({ value }: { value?: string | null }) {
   const normalized = (value ?? "unknown").toLowerCase().replace(/_/g, "-");
-  const tone = /success|confirmed|active|completed/.test(normalized) ? "success" : /failed|cancelled|suspended|deleted|refund-failed/.test(normalized) ? "danger" : /pending|processing|requires|requested|review/.test(normalized) ? "warning" : "neutral";
+  const tone = normalized === "inactive" ? "neutral" : /success|confirmed|active|completed/.test(normalized) ? "success" : /failed|cancelled|suspended|deleted|refund-failed/.test(normalized) ? "danger" : /pending|processing|requires|requested|review/.test(normalized) ? "warning" : "neutral";
   return <span className={`status status-${tone}`}><span className="status-dot" aria-hidden="true" />{value?.replace(/_/g, " ") ?? "Unknown"}</span>;
 }
 
@@ -66,6 +66,21 @@ export function PageError({ message, retry }: { message: string; retry?: () => v
 export function Pagination<T>({ page, onPage }: { page: Page<T>; onPage: (next: number) => void }) {
   if (page.totalPages <= 1) return null;
   return <nav className="pagination" aria-label="Pagination"><Button variant="secondary" disabled={page.number <= 0} onClick={() => onPage(page.number - 1)}><ChevronLeft size={16} aria-hidden="true" />Previous</Button><span className="pagination-position">Page <strong>{page.number + 1}</strong> of {page.totalPages}</span><Button variant="secondary" disabled={page.number + 1 >= page.totalPages} onClick={() => onPage(page.number + 1)}>Next<ChevronRight size={16} aria-hidden="true" /></Button></nav>;
+}
+
+export function InfiniteListFooter({ loadedCount, totalElements, loadingMore, loadMoreError, hasMore, loadMore, retry, sentinelRef, noun = "records" }: {
+  loadedCount: number; totalElements: number; loadingMore: boolean; loadMoreError: string | null; hasMore: boolean;
+  loadMore: () => void | Promise<void>; retry: () => void | Promise<void>; sentinelRef: RefObject<HTMLDivElement | null>; noun?: string;
+}) {
+  return <div className="infinite-list-footer" aria-label={`${noun} loading`}>
+    <div className="infinite-list-status" role="status" aria-live="polite">
+      <strong>{loadedCount} of {totalElements} {noun} loaded</strong>
+      <span>{loadingMore ? `Loading more ${noun}…` : loadMoreError ? "Automatic loading paused. Retry when you’re ready." : hasMore ? `More ${noun} load automatically as you scroll.` : `All ${noun} loaded.`}</span>
+    </div>
+    {loadMoreError ? <div className="infinite-list-error"><span role="alert">Couldn’t load more {noun}. {loadMoreError}</span><Button variant="secondary" onClick={() => void retry()}>Retry loading</Button></div>
+      : hasMore ? <Button variant="secondary" loading={loadingMore} onClick={() => void loadMore()}>Load more {noun}</Button> : null}
+    <div ref={sentinelRef} className="infinite-list-sentinel" aria-hidden="true" />
+  </div>;
 }
 
 export function SafeLink({ to, children, className = "" }: { to: string; children: ReactNode; className?: string }) {

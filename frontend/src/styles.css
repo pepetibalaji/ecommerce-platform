@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Playfair+Display:opsz,wght@9..120,600;9..120,700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Playfair+Display:opsz,wght@9..120,400;9..120,600;9..120,700&display=swap");
 @import "tailwindcss";
 
 @theme {
@@ -15,22 +15,22 @@
 :root {
   color-scheme: light;
   font-family: "DM Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #19251e;
-  background: #f8f7f2;
+  color: #172b36;
+  background: #f3f5f7;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  --ink: #19251e;
-  --muted: #627067;
-  --subtle: #879087;
+  --ink: #172b36;
+  --muted: #516371;
+  --subtle: #627380;
   --paper: #ffffff;
-  --canvas: #f8f7f2;
-  --line: #e2e3dc;
-  --line-strong: #c9cec5;
-  --green: #1d6b4f;
-  --green-dark: #14513c;
-  --green-pale: #e4f1e9;
+  --canvas: #f3f5f7;
+  --line: #dbe3e8;
+  --line-strong: #c8d5de;
+  --green: #115e59;
+  --green-dark: #134e4a;
+  --green-pale: #e6f3f0;
   --orange: #e37738;
   --orange-pale: #fbeddf;
   --red: #b83437;
@@ -1211,4 +1211,26 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .loading-block { min-height: 170px; }
   .pagination { gap: 2px; margin-top: 26px; }
   .pagination-position { font-size: .64rem; }
+}
+
+/* Shared progress and utility surfaces stay compact and readable. */
+.infinite-list-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; width: 100%; min-height: 64px; margin-top: 16px; padding: 16px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+.infinite-list-status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+.infinite-list-status strong { color: var(--ink); }
+.infinite-list-error { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; color: #9c303e; overflow-wrap: anywhere; }
+.infinite-list-error > span { flex: 1 1 240px; }
+.infinite-list-sentinel { flex-basis: 100%; width: 100%; height: 1px; pointer-events: none; }
+.storefront-v2 .status { padding: 5px 9px; font-size: 12px; font-weight: 700; letter-spacing: .01em; }
+.storefront-v2 .alert { font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
+.storefront-v2 .account-rail { top: 16px; }
+.route-message.page-container {
+  border-color: var(--line);
+  background: #fff;
+  box-shadow: 0 8px 28px rgb(23 43 54 / 6%);
+}
+.session-expiry-backdrop { background: rgb(18 36 47 / 60%); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); }
+.session-expiry-dialog {
+  border-color: var(--line);
+  background: #fff;
+  box-shadow: 0 24px 70px rgb(18 36 47 / 24%);
 }
