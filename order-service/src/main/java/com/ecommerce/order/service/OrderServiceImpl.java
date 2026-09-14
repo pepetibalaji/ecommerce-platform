@@ -5,10 +5,10 @@ import com.ecommerce.common.events.order.OrderCompletedEvent;
 import com.ecommerce.common.events.order.OrderItemEvent;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import com.ecommerce.common.events.order.OrderItemEvent;
 import com.ecommerce.common.events.payment.PaymentFailedEvent;
 import com.ecommerce.common.events.payment.PaymentSuccessEvent;
 import com.ecommerce.common.events.payment.PaymentRefundCompletedEvent;
+import com.ecommerce.common.events.payment.PaymentRefundRequestRejectedEvent;
 import com.ecommerce.common.exception.BadRequestException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.order.dto.CreateOrderItemRequest;
@@ -31,15 +31,28 @@ import com.ecommerce.order.observability.PaymentOutcomeMetrics;
 import com.ecommerce.order.catalog.ProductSellerClient;
 import com.ecommerce.order.config.CheckoutProperties;
 import com.ecommerce.order.dto.SellerOrderResponse;
+import com.ecommerce.order.api.OrderApiException;
+import com.ecommerce.order.idempotency.OrderIdempotencyRecord;
+import com.ecommerce.order.idempotency.OrderIdempotencyService;
+import com.ecommerce.common.grpc.exception.GrpcClientException;
+import org.springframework.http.HttpStatus;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.Clock;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -59,6 +72,13 @@ public class OrderServiceImpl implements OrderService {
     private final InventoryReleaseOutboxService inventoryReleaseOutboxService;
     private final ProductSellerClient productSellerClient;
     private final CheckoutProperties checkoutProperties;
+    private final Clock clock;
+    private final OrderCreatedOutboxService orderCreatedOutboxService;
+    private final CheckoutCompensationService checkoutCompensationService;
+    private final OrderIdempotencyService orderIdempotencyService;
+    private final PlatformTransactionManager transactionManager;
+    private final OrderRefundRequestService orderRefundRequestService;
+    private final OrderLifecycleAuditService lifecycleAuditService;
 
     @Value("${order.default-currency:INR}")
     private String defaultCurrency;
@@ -71,7 +91,14 @@ public class OrderServiceImpl implements OrderService {
             PaymentOutcomeMetrics paymentOutcomeMetrics,
             InventoryReleaseOutboxService inventoryReleaseOutboxService,
             ProductSellerClient productSellerClient,
-            CheckoutProperties checkoutProperties
+            CheckoutProperties checkoutProperties,
+            Clock clock,
+            OrderCreatedOutboxService orderCreatedOutboxService,
+            CheckoutCompensationService checkoutCompensationService,
+            OrderIdempotencyService orderIdempotencyService,
+            PlatformTransactionManager transactionManager,
+            OrderRefundRequestService orderRefundRequestService,
+            OrderLifecycleAuditService lifecycleAuditService
     ) {
         this.orderRepository = orderRepository;
         this.inventoryGrpcClient = inventoryGrpcClient;
@@ -81,24 +108,124 @@ public class OrderServiceImpl implements OrderService {
         this.inventoryReleaseOutboxService = inventoryReleaseOutboxService;
         this.productSellerClient = productSellerClient;
         this.checkoutProperties = checkoutProperties;
+        this.clock = clock;
+        this.orderCreatedOutboxService = orderCreatedOutboxService;
+        this.checkoutCompensationService = checkoutCompensationService;
+        this.orderIdempotencyService = orderIdempotencyService;
+        this.transactionManager = transactionManager;
+        this.orderRefundRequestService = orderRefundRequestService;
+        this.lifecycleAuditService = lifecycleAuditService;
     }
 
     @Override
     public OrderResponse createOrder(UUID userId, CreateOrderRequest request) {
-        return createOrder(userId, request, null);
+        // Compatibility for legacy internal callers. HTTP checkout always uses the keyed overload.
+        validateCreateOrderRequest(request);
+        return createOrderInTransaction(userId, request, null, null, null);
     }
 
     @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public OrderResponse createOrder(UUID userId, CreateOrderRequest request, String idempotencyKey) {
         validateCreateOrderRequest(request);
 
         String normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
-        if (normalizedIdempotencyKey != null) {
-            var existing = orderRepository.findByUserIdAndIdempotencyKey(userId, normalizedIdempotencyKey);
-            if (existing.isPresent()) {
-                return toResponse(existing.get());
-            }
+        if (normalizedIdempotencyKey == null) {
+            throw new OrderApiException("IDEMPOTENCY_KEY_REQUIRED", HttpStatus.BAD_REQUEST,
+                    "Idempotency-Key is required.", false, List.of());
         }
+        String requestHash = requestHash(request);
+
+        // The short claim commits before any remote call. Every same-key request subsequently
+        // locks it in the checkout transaction, so only one node can reserve inventory.
+        orderIdempotencyService.claim(
+                userId,
+                normalizedIdempotencyKey,
+                requestHash,
+                checkoutProperties.getIdempotencyRetention());
+
+        try {
+            return checkoutTransaction().execute(status -> {
+                OrderIdempotencyRecord record = orderIdempotencyService.lock(
+                        userId, normalizedIdempotencyKey, requestHash);
+
+                if (record.getOrderId() != null) {
+                    return responseForCompletedIdempotencyRecord(record);
+                }
+
+                // Supports records produced immediately before this dedicated claim table was
+                // introduced, while still serializing all new requests before reservation.
+                var legacyOrder = orderRepository.findByUserIdAndIdempotencyKey(userId, normalizedIdempotencyKey);
+                if (legacyOrder.isPresent()) {
+                    ensureSameIdempotencyRequest(legacyOrder.get(), requestHash);
+                    record.complete(legacyOrder.get().getId());
+                    return toResponse(legacyOrder.get());
+                }
+
+                return createOrderInTransaction(userId, request, normalizedIdempotencyKey, requestHash, record);
+            });
+        } catch (RuntimeException exception) {
+            // saveAndFlush can still hit the legacy unique index during a rolling deployment.
+            // This happens after the transaction is rolled back; reload the winner in a fresh
+            // transaction and return it instead of surfacing a spurious 500 to a safe retry.
+            OrderResponse recovered = recoverOriginalOrder(userId, normalizedIdempotencyKey, requestHash);
+            if (recovered != null) {
+                return recovered;
+            }
+
+            try {
+                orderIdempotencyService.releaseIfIncomplete(userId, normalizedIdempotencyKey, requestHash);
+            } catch (RuntimeException cleanupFailure) {
+                log.error("Could not release incomplete idempotency claim. userId={}, idempotencyKey={}",
+                        userId, normalizedIdempotencyKey, cleanupFailure);
+            }
+            throw exception;
+        }
+    }
+
+    private TransactionTemplate checkoutTransaction() {
+        return new TransactionTemplate(transactionManager);
+    }
+
+    private OrderResponse responseForCompletedIdempotencyRecord(OrderIdempotencyRecord record) {
+        Order order = orderRepository.findById(record.getOrderId())
+                .orElseThrow(() -> new IllegalStateException("Completed idempotency record references a missing order"));
+        return toResponse(order);
+    }
+
+    private OrderResponse recoverOriginalOrder(UUID userId, String idempotencyKey, String requestHash) {
+        try {
+            return checkoutTransaction().execute(status -> {
+                var existing = orderRepository.findByUserIdAndIdempotencyKey(userId, idempotencyKey);
+                if (existing.isEmpty()) {
+                    return null;
+                }
+                ensureSameIdempotencyRequest(existing.get(), requestHash);
+                OrderIdempotencyRecord record = orderIdempotencyService.lock(userId, idempotencyKey, requestHash);
+                record.complete(existing.get().getId());
+                return toResponse(existing.get());
+            });
+        } catch (DataIntegrityViolationException ignored) {
+            // The original exception remains more useful if the recovery query itself races with
+            // an unrelated rolling-deployment constraint change.
+            return null;
+        }
+    }
+
+    private void ensureSameIdempotencyRequest(Order existing, String requestHash) {
+        if (!requestHash.equals(existing.getIdempotencyRequestHash())) {
+            throw new OrderApiException("IDEMPOTENCY_KEY_REUSED", HttpStatus.CONFLICT,
+                    "Idempotency-Key was already used with a different checkout request.", false, List.of());
+        }
+    }
+
+    private OrderResponse createOrderInTransaction(
+            UUID userId,
+            CreateOrderRequest request,
+            String normalizedIdempotencyKey,
+            String requestHash,
+            OrderIdempotencyRecord idempotencyRecord
+    ) {
 
         List<OrderItem> reservedItems = new ArrayList<>();
 
@@ -106,12 +233,15 @@ public class OrderServiceImpl implements OrderService {
             Order order = new Order();
             order.setUserId(userId);
             order.setIdempotencyKey(normalizedIdempotencyKey);
+            order.setIdempotencyRequestHash(requestHash);
+            Clock effectiveClock = clock == null ? Clock.systemUTC() : clock;
+            order.setIdempotencyExpiresAt(Instant.now(effectiveClock).plus(checkoutProperties.getIdempotencyRetention()));
+            order.setPaymentExpiresAt(Instant.now(effectiveClock).plus(checkoutProperties.getPendingPaymentExpiry()));
             order.setCurrency(resolveCurrency(request.getCurrency()));
             order.setStatus(OrderStatus.PENDING);
 
             applyShippingAddress(
                     order,
-                    request.getShippingAddressId(),
                     request.getShippingAddress()
             );
 
@@ -144,12 +274,23 @@ public class OrderServiceImpl implements OrderService {
 
             order.setTotalAmount(totalAmount);
 
-            Order saved = orderRepository.save(order);
+            Order saved = normalizedIdempotencyKey == null
+                    ? orderRepository.save(order)
+                    : orderRepository.saveAndFlush(order);
 
-            publishOrderCreatedEvent(saved);
+            if (normalizedIdempotencyKey == null) {
+                // Deprecated internal path only; public checkout always takes the durable path.
+                publishOrderCreatedEvent(saved);
+            } else {
+                idempotencyRecord.complete(saved.getId());
+                orderCreatedOutboxService.enqueue(saved);
+            }
 
             return toResponse(saved);
         } catch (RuntimeException ex) {
+            // A reservation can commit even if the client call times out. Persist compensation in
+            // its own transaction before the checkout transaction rolls back, then attempt release.
+            if (!reservedItems.isEmpty()) checkoutCompensationService.enqueue(reservedItems);
             releaseReservedStock(reservedItems);
             throw ex;
         }
@@ -173,10 +314,10 @@ public class OrderServiceImpl implements OrderService {
     @Transactional(readOnly = true)
     public OrderResponse getOrderById(UUID userId, UUID orderId) {
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+                .orElseThrow(() -> orderNotFound(orderId));
 
         if (!order.getUserId().equals(userId)) {
-            throw new ResourceNotFoundException("Order not found: " + orderId);
+            throw orderNotFound(orderId);
         }
 
         return toResponse(order);
@@ -184,20 +325,53 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public OrderResponse cancelOrder(UUID userId, UUID orderId) {
+        return cancelOrder(userId, orderId, null);
+    }
+
+    @Override
+    public OrderResponse cancelOrder(UUID userId, UUID orderId, String reason) {
         Order order = orderRepository.findByIdForUpdate(orderId)
-                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+                .orElseThrow(() -> orderNotFound(orderId));
 
         if (!order.getUserId().equals(userId)) {
-            throw new ResourceNotFoundException("Order not found: " + orderId);
+            throw orderNotFound(orderId);
         }
 
-        validateStatusTransition(order.getStatus(), OrderStatus.CANCELLED);
+        if (order.getStatus() == OrderStatus.PENDING) {
+            inventoryReleaseOutboxService.enqueueFor(order, InventoryReleaseReason.CANCELLED);
+            order.setStatus(OrderStatus.CANCELLED);
+            audit(order.getId(), "CUSTOMER_CANCELLATION_COMPLETED", userId,
+                    "CUSTOMER", reason, null);
+            return toResponse(orderRepository.save(order));
+        }
 
-        inventoryReleaseOutboxService.enqueueFor(order, InventoryReleaseReason.CANCELLED);
+        if (order.getStatus() == OrderStatus.CONFIRMED) {
+            requestFullRefund(order, userId, "CUSTOMER", reason);
+            return toResponse(orderRepository.save(order));
+        }
 
-        order.setStatus(OrderStatus.CANCELLED);
+        if (order.getStatus() == OrderStatus.REFUND_REQUESTED) {
+            // A retry after a browser timeout must not enqueue another provider refund.
+            return toResponse(order);
+        }
 
-        return toResponse(orderRepository.save(order));
+        throw cancellationNotAllowed(order);
+    }
+
+    @Override
+    public OrderResponse requestRefund(UUID adminId, UUID orderId, String reason) {
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> orderNotFound(orderId));
+
+        if (order.getStatus() == OrderStatus.CONFIRMED) {
+            requestFullRefund(order, adminId, "ADMIN", reason);
+            return toResponse(orderRepository.save(order));
+        }
+        if (order.getStatus() == OrderStatus.REFUND_REQUESTED) {
+            return toResponse(order);
+        }
+        throw new OrderApiException("ORDER_STATE_CONFLICT", HttpStatus.CONFLICT,
+                "A refund can only be requested for a confirmed order.", false, List.of());
     }
 
     @Override
@@ -253,7 +427,7 @@ public class OrderServiceImpl implements OrderService {
         if (order.getStatus() == OrderStatus.PENDING) {
             order.setStatus(OrderStatus.CONFIRMED);
             order.setPaymentId(event.getPaymentId());
-            order.setPaymentConfirmedAt(LocalDateTime.now());
+            order.setPaymentConfirmedAt(now());
             order.setPaymentFailedAt(null);
             order.setPaymentFailureReason(null);
             orderRepository.save(order);
@@ -295,7 +469,7 @@ public class OrderServiceImpl implements OrderService {
             inventoryReleaseOutboxService.enqueueFor(order, InventoryReleaseReason.PAYMENT_FAILED);
             order.setStatus(OrderStatus.PAYMENT_FAILED);
             order.setPaymentId(event.getPaymentId());
-            order.setPaymentFailedAt(LocalDateTime.now());
+            order.setPaymentFailedAt(now());
             order.setPaymentFailureReason(event.getFailureReason());
             orderRepository.save(order);
             paymentOutcomeMetrics.orderUpdated("failure");
@@ -320,23 +494,78 @@ public class OrderServiceImpl implements OrderService {
             paymentOutcomeMetrics.duplicateIgnored();
             return;
         }
+        OrderStatus statusBeforeOutcome = order.getStatus();
         if (!event.isFullRefund()) {
             if (order.getStatus() == OrderStatus.CONFIRMED) {
                 order.setStatus(OrderStatus.PARTIALLY_REFUNDED);
                 orderRepository.save(order);
+                audit(order.getId(), "REFUND_PARTIALLY_COMPLETED", null,
+                        "PAYMENT_SYSTEM", null, event.getRefundId());
+            } else if (order.getStatus() == OrderStatus.REFUND_REQUESTED) {
+                // A cancellation requests the complete payment amount. A partial outcome cannot
+                // release the reservation and is surfaced for an operations decision.
+                order.setStatus(OrderStatus.REFUND_REQUIRES_FULFILMENT_REVIEW);
+                orderRepository.save(order);
+                audit(order.getId(), "REFUND_PARTIAL_OUTCOME_REQUIRES_REVIEW", null,
+                        "PAYMENT_SYSTEM", null, event.getRefundId());
             }
-        } else if (order.getStatus() == OrderStatus.CONFIRMED || order.getStatus() == OrderStatus.PARTIALLY_REFUNDED) {
+        } else if (order.getStatus() == OrderStatus.CONFIRMED
+                || order.getStatus() == OrderStatus.REFUND_REQUESTED
+                || order.getStatus() == OrderStatus.PARTIALLY_REFUNDED) {
             inventoryReleaseOutboxService.enqueueFor(order, InventoryReleaseReason.FULL_REFUND);
             order.setStatus(OrderStatus.REFUNDED);
             orderRepository.save(order);
+            audit(order.getId(), "REFUND_COMPLETED", null,
+                    "PAYMENT_SYSTEM", null, event.getRefundId());
         } else {
             // A shipped/deducted order must be handled by fulfilment; it is never compensated here.
             order.setStatus(OrderStatus.REFUND_REQUIRES_FULFILMENT_REVIEW);
             orderRepository.save(order);
+            audit(order.getId(), "REFUND_OUTCOME_REQUIRES_FULFILMENT_REVIEW", null,
+                    "PAYMENT_SYSTEM", null, event.getRefundId());
             log.warn("Full refund requires fulfilment review; release not queued. orderId={}, orderStatus={}",
-                    order.getId(), order.getStatus());
+                    order.getId(), statusBeforeOutcome);
         }
         recordProcessedEvent(event.getEventId(), event.getEventType(), event.getOrderId());
+    }
+
+    @Override
+    public void handleRefundRequestRejected(PaymentRefundRequestRejectedEvent event) {
+        validatePaymentEvent(event == null ? null : event.getEventId(),
+                event == null ? null : event.getOrderId(), event == null ? null : event.getPaymentId());
+        Order order = orderRepository.findByIdForUpdate(event.getOrderId()).orElseThrow(() ->
+                new ResourceNotFoundException("Order not found for refund rejection event: " + event.getOrderId()));
+        if (orderProcessedEventRepository.existsByEventId(event.getEventId())) {
+            paymentOutcomeMetrics.duplicateIgnored();
+            return;
+        }
+        if (order.getStatus() == OrderStatus.REFUND_REQUESTED) {
+            order.setStatus(OrderStatus.REFUND_REQUIRES_FULFILMENT_REVIEW);
+            orderRepository.save(order);
+            audit(order.getId(), "REFUND_REQUEST_REJECTED", null,
+                    "PAYMENT_SYSTEM", event.getReason(), event.getRefundRequestId());
+            paymentOutcomeMetrics.refundRequestRejected();
+        } else {
+            log.warn("Ignoring refund-request rejection for order outside refund-request workflow. orderId={}, status={}",
+                    order.getId(), order.getStatus());
+            paymentOutcomeMetrics.lateEventIgnored("refund_request_rejected");
+        }
+        recordProcessedEvent(event.getEventId(), event.getEventType(), event.getOrderId());
+    }
+
+    private void requestFullRefund(Order order, UUID actorId, String actorType, String reason) {
+        if (order.getPaymentId() == null) {
+            throw new OrderApiException("ORDER_STATE_CONFLICT", HttpStatus.CONFLICT,
+                    "A confirmed order cannot be cancelled until its payment reference is available.", false, List.of());
+        }
+        orderRefundRequestService.enqueueFullRefund(order, actorId, actorType, reason);
+        order.setStatus(OrderStatus.REFUND_REQUESTED);
+    }
+
+    private OrderApiException cancellationNotAllowed(Order order) {
+        return new OrderApiException("ORDER_CANCELLATION_NOT_ALLOWED", HttpStatus.CONFLICT,
+                "This order cannot be cancelled in its current lifecycle state.", false,
+                List.of(Map.of("orderId", order.getId(), "status", order.getStatus().name())));
     }
 
     private void validatePaymentEvent(UUID eventId, UUID orderId, UUID paymentId) {
@@ -351,27 +580,34 @@ public class OrderServiceImpl implements OrderService {
 
     private void validateCreateOrderRequest(CreateOrderRequest request) {
         if (request == null) {
-            throw new BadRequestException("Order request is required");
+            throw checkoutError("CHECKOUT_REQUEST_INVALID", HttpStatus.BAD_REQUEST,
+                    "An order request is required.", false, Map.of());
         }
 
         if (request.getItems() == null || request.getItems().isEmpty()) {
-            throw new BadRequestException("Order must contain at least one item");
+            throw checkoutError("CHECKOUT_REQUEST_INVALID", HttpStatus.BAD_REQUEST,
+                    "Your order must contain at least one item.", false, Map.of());
         }
 
         if (request.getShippingAddress() == null) {
-            throw new BadRequestException("Shipping address is required");
+            throw checkoutError("CHECKOUT_REQUEST_INVALID", HttpStatus.BAD_REQUEST,
+                    "A shipping address is required.", false, Map.of());
         }
 
         for (CreateOrderItemRequest item : request.getItems()) {
             if (item == null) {
-                throw new BadRequestException("Order items must not be null");
+                throw checkoutError("CHECKOUT_REQUEST_INVALID", HttpStatus.BAD_REQUEST,
+                        "Order items must not be null.", false, Map.of());
             }
             if (item.getProductId() == null) {
-                throw new BadRequestException("Product id is required");
+                throw checkoutError("CHECKOUT_REQUEST_INVALID", HttpStatus.BAD_REQUEST,
+                        "Each order item needs a product ID.", false, Map.of());
             }
 
             if (item.getQuantity() == null || item.getQuantity() <= 0) {
-                throw new BadRequestException("Quantity must be greater than zero");
+                throw checkoutError("CHECKOUT_ITEM_INVALID_QUANTITY", HttpStatus.BAD_REQUEST,
+                        "Each order item needs a positive quantity.", false,
+                        Map.of("productId", item.getProductId()));
             }
 
         }
@@ -385,7 +621,8 @@ public class OrderServiceImpl implements OrderService {
         resolved = resolved.trim().toUpperCase();
 
         if (!resolved.matches("^[A-Z]{3}$")) {
-            throw new BadRequestException("Currency must be a 3-letter uppercase ISO code, for example INR or USD");
+            throw checkoutError("CHECKOUT_REQUEST_INVALID", HttpStatus.BAD_REQUEST,
+                    "Currency must be a three-letter ISO code, for example INR or USD.", false, Map.of());
         }
 
         return resolved;
@@ -397,17 +634,16 @@ public class OrderServiceImpl implements OrderService {
         }
         String normalized = idempotencyKey.trim();
         if (normalized.length() > 100) {
-            throw new BadRequestException("Idempotency-Key must not exceed 100 characters");
+            throw new OrderApiException("IDEMPOTENCY_KEY_INVALID", HttpStatus.BAD_REQUEST,
+                    "Idempotency-Key must not exceed 100 characters.", false, List.of());
         }
         return normalized;
     }
 
     private void applyShippingAddress(
             Order order,
-            UUID shippingAddressId,
             ShippingAddressRequest address
     ) {
-        order.setShippingAddressId(shippingAddressId);
         order.setShippingRecipientName(address.getRecipientName());
         order.setShippingPhone(address.getPhone());
         order.setShippingLine1(address.getLine1());
@@ -416,6 +652,21 @@ public class OrderServiceImpl implements OrderService {
         order.setShippingState(address.getState());
         order.setShippingPostalCode(address.getPostalCode());
         order.setShippingCountry(address.getCountry().trim().toUpperCase());
+    }
+
+    private String requestHash(CreateOrderRequest request) {
+        String address = request.getShippingAddress().getRecipientName() + "|" + request.getShippingAddress().getPhone()
+                + "|" + request.getShippingAddress().getLine1() + "|" + request.getShippingAddress().getLine2()
+                + "|" + request.getShippingAddress().getCity() + "|" + request.getShippingAddress().getState()
+                + "|" + request.getShippingAddress().getPostalCode() + "|" + request.getShippingAddress().getCountry();
+        String items = request.getItems().stream().sorted(java.util.Comparator.comparing(CreateOrderItemRequest::getProductId))
+                .map(i -> i.getProductId() + ":" + i.getQuantity()).collect(java.util.stream.Collectors.joining(","));
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest((resolveCurrency(request.getCurrency()) + "|" + address + "|" + items).getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is not available", exception);
+        }
     }
 
     private void publishOrderCreatedEvent(Order saved) {
@@ -450,20 +701,25 @@ public class OrderServiceImpl implements OrderService {
                 totalQuantity = Math.addExact(totalQuantity, item.getQuantity());
                 quantitiesByProduct.merge(item.getProductId(), item.getQuantity(), Math::addExact);
             } catch (ArithmeticException exception) {
-                throw new BadRequestException("CHECKOUT_ITEM_INVALID_QUANTITY productId=" + item.getProductId());
+                throw checkoutError("CHECKOUT_ITEM_INVALID_QUANTITY", HttpStatus.BAD_REQUEST,
+                        "An item quantity is too large.", false, Map.of("productId", item.getProductId()));
             }
         }
         if (totalQuantity > checkoutProperties.getMaxTotalQuantity()) {
-            throw new BadRequestException("CHECKOUT_ORDER_QUANTITY_LIMIT requested=" + totalQuantity
-                    + " maximum=" + checkoutProperties.getMaxTotalQuantity());
+            throw checkoutError("CHECKOUT_ORDER_QUANTITY_LIMIT", HttpStatus.BAD_REQUEST,
+                    "Your order exceeds the allowed total quantity.", false,
+                    Map.of("requestedQuantity", totalQuantity,
+                            "maximumQuantity", checkoutProperties.getMaxTotalQuantity()));
         }
 
         List<CreateOrderItemRequest> aggregatedItems = new ArrayList<>();
         quantitiesByProduct.forEach((productId, quantity) -> {
             int maximum = checkoutProperties.maximumQuantityFor(productId);
             if (maximum <= 0 || quantity > maximum) {
-                throw new BadRequestException("CHECKOUT_ITEM_QUANTITY_LIMIT productId=" + productId
-                        + " requested=" + quantity + " maximum=" + maximum);
+                throw checkoutError("CHECKOUT_ITEM_QUANTITY_LIMIT", HttpStatus.BAD_REQUEST,
+                        "One or more items exceed the allowed quantity.", false,
+                        Map.of("productId", productId, "requestedQuantity", quantity,
+                                "maximumQuantity", maximum));
             }
             CreateOrderItemRequest aggregated = new CreateOrderItemRequest();
             aggregated.setProductId(productId);
@@ -475,12 +731,14 @@ public class OrderServiceImpl implements OrderService {
 
     private void validateStockAvailability(List<CreateOrderItemRequest> items) {
         for (CreateOrderItemRequest itemRequest : items) {
-            var inventory = inventoryGrpcClient.getInventory(itemRequest.getProductId());
+            var inventory = inventoryForCheckout(itemRequest.getProductId());
 
             if (inventory.getAvailableStock() < itemRequest.getQuantity()) {
-                throw new BadRequestException("CHECKOUT_ITEM_INSUFFICIENT_STOCK productId="
-                        + itemRequest.getProductId() + " requested=" + itemRequest.getQuantity()
-                        + " available=" + inventory.getAvailableStock());
+                throw checkoutError("CHECKOUT_ITEM_INSUFFICIENT_STOCK", HttpStatus.CONFLICT,
+                        "One or more items are no longer available in the requested quantity.", false,
+                        Map.of("productId", itemRequest.getProductId(),
+                                "requestedQuantity", itemRequest.getQuantity(),
+                                "availableQuantity", inventory.getAvailableStock()));
             }
         }
     }
@@ -490,12 +748,53 @@ public class OrderServiceImpl implements OrderService {
             // Add before the remote call: the Inventory service may commit while this client times
             // out, and the catch block must still be able to compensate that reservation id.
             reservedItems.add(item);
-            inventoryGrpcClient.reserveStock(
-                    item.getProductId(),
-                    item.getQuantity(),
-                    item.getInventoryReservationId()
-            );
+            try {
+                inventoryGrpcClient.reserveStock(
+                        item.getProductId(),
+                        item.getQuantity(),
+                        item.getInventoryReservationId()
+                );
+            } catch (GrpcClientException exception) {
+                throw inventoryUnavailable(item.getProductId());
+            } catch (BadRequestException exception) {
+                // Availability can change after the pre-flight read. Inventory intentionally does
+                // not leak its internal error text through the browser-facing checkout contract.
+                throw checkoutError("CHECKOUT_ITEM_INSUFFICIENT_STOCK", HttpStatus.CONFLICT,
+                        "One or more items are no longer available in the requested quantity.", false,
+                        Map.of("productId", item.getProductId(),
+                                "requestedQuantity", item.getQuantity()));
+            }
         }
+    }
+
+    private com.ecommerce.proto.inventory.InventoryDetails inventoryForCheckout(UUID productId) {
+        try {
+            return inventoryGrpcClient.getInventory(productId);
+        } catch (GrpcClientException exception) {
+            throw inventoryUnavailable(productId);
+        }
+    }
+
+    private OrderApiException inventoryUnavailable(UUID productId) {
+        return checkoutError("CHECKOUT_INVENTORY_UNAVAILABLE", HttpStatus.SERVICE_UNAVAILABLE,
+                "Inventory is temporarily unavailable. Please retry this checkout.", true,
+                Map.of("productId", productId));
+    }
+
+    private OrderApiException orderNotFound(UUID orderId) {
+        return new OrderApiException("ORDER_NOT_FOUND", HttpStatus.NOT_FOUND,
+                "Order not found.", false, List.of(Map.of("orderId", orderId)));
+    }
+
+    private OrderApiException checkoutError(
+            String code,
+            HttpStatus status,
+            String message,
+            boolean retryable,
+            Map<String, ?> details
+    ) {
+        return new OrderApiException(code, status, message, retryable,
+                details.isEmpty() ? List.of() : List.of(details));
     }
 
     private void releaseReservedStock(List<OrderItem> reservedItems) {
@@ -537,9 +836,9 @@ public class OrderServiceImpl implements OrderService {
                     );
                 }
             }
-            case PARTIALLY_REFUNDED, REFUNDED, REFUND_REQUIRES_FULFILMENT_REVIEW -> throw new BadRequestException(
+            case REFUND_REQUESTED, PARTIALLY_REFUNDED, REFUNDED, REFUND_REQUIRES_FULFILMENT_REVIEW -> throw new BadRequestException(
                     "Refunded orders require fulfilment/manual reconciliation before state changes");
-            case PAYMENT_FAILED -> throw new BadRequestException(
+            case PAYMENT_FAILED, PAYMENT_EXPIRED -> throw new BadRequestException(
                     "Payment failed orders cannot change state"
             );
             case CANCELLED -> throw new BadRequestException(
@@ -553,10 +852,18 @@ public class OrderServiceImpl implements OrderService {
                 .map(item -> new OrderItemResponse(
                         item.getId(),
                         item.getProductId(),
-                        item.getQuantity(),
-                        item.getPrice()
+                        item.getProductName(), item.getQuantity(), item.getPrice(),
+                        item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity()))
                 ))
                 .toList();
+
+        boolean cancellationAllowed = order.getStatus() == OrderStatus.PENDING
+                || order.getStatus() == OrderStatus.CONFIRMED;
+        String cancellationReasonCode = cancellationAllowed
+                ? null
+                : order.getStatus() == OrderStatus.REFUND_REQUESTED
+                        ? "REFUND_IN_PROGRESS"
+                        : "ORDER_CANCELLATION_NOT_ALLOWED";
 
         return new OrderResponse(
                 order.getId(),
@@ -568,6 +875,8 @@ public class OrderServiceImpl implements OrderService {
                 order.getPaymentConfirmedAt(),
                 order.getPaymentFailedAt(),
                 order.getPaymentFailureReason(),
+                cancellationAllowed,
+                cancellationReasonCode,
                 order.getCreatedAt(),
                 order.getUpdatedAt(),
                 toShippingAddressResponse(order),
@@ -577,7 +886,6 @@ public class OrderServiceImpl implements OrderService {
 
     private ShippingAddressResponse toShippingAddressResponse(Order order) {
         return new ShippingAddressResponse(
-                order.getShippingAddressId(),
                 order.getShippingRecipientName(),
                 order.getShippingPhone(),
                 order.getShippingLine1(),
@@ -592,12 +900,23 @@ public class OrderServiceImpl implements OrderService {
     private SellerOrderResponse toSellerResponse(Order order, UUID sellerId) {
         List<OrderItemResponse> items = order.getItems().stream()
                 .filter(item -> sellerId.equals(item.getSellerId()))
-                .map(item -> new OrderItemResponse(item.getId(), item.getProductId(), item.getQuantity(), item.getPrice()))
+                .map(item -> new OrderItemResponse(item.getId(), item.getProductId(), item.getProductName(), item.getQuantity(), item.getPrice(), item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity()))))
                 .toList();
         BigDecimal sellerTotal = items.stream()
-                .map(item -> item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
+                .map(OrderItemResponse::getLineTotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         return new SellerOrderResponse(order.getId(), order.getStatus(), order.getCreatedAt(),
-                toShippingAddressResponse(order), sellerTotal, items);
+                toShippingAddressResponse(order), order.getCurrency(), sellerTotal, items);
+    }
+
+    private Instant now() {
+        return Instant.now(clock == null ? Clock.systemUTC() : clock);
+    }
+
+    /** Allows legacy isolated unit tests to omit the optional audit collaborator. */
+    private void audit(UUID orderId, String action, UUID actorId, String actorType, String reason, UUID refundRequestId) {
+        if (lifecycleAuditService != null) {
+            lifecycleAuditService.record(orderId, action, actorId, actorType, reason, refundRequestId);
+        }
     }
 }

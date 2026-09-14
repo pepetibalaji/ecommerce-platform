@@ -2,24 +2,37 @@
 
 ## Components
 
-| Component | Role |
+| Component | Responsibility |
 | --- | --- |
-| Controllers | Customer ownership validation, admin status management, seller-filtered views. |
-| `ProductSellerClient` | Timed Product Service read; rejects missing/inactive/incomplete catalog product. |
-| `InventoryGrpcClient` | Availability/reserve/release calls, mapping gRPC failures to application errors. |
-| `OrderServiceImpl` | Checkout orchestration, status transitions, payment-event dedupe. |
-| `OrderEventPublisher` | Async `order-created` send after persistence. |
-| Payment consumer | Reads success/failure/refund Kafka topics. |
-| Release outbox service/processor | Durable, idempotent deferred Inventory releases. |
+| Customer, seller, and admin controllers | JWT ownership/role boundary; exposes command-oriented lifecycle endpoints rather than generic status mutation. |
+| `OrderIdempotencyService` and repository | Claims `(userId, key)`, compares normalized request hashes, locks/replays existing work, and recovers uniqueness races. |
+| `ProductSellerClient` | Bounded Product Service read; maps missing, unavailable, and dependency failures to stable checkout codes. |
+| `InventoryGrpcClient` | Availability, reserve, and reservation-aware release calls. |
+| `OrderServiceImpl` | Checkout orchestration, state transitions, immutable response mapping, and payment-event deduplication. |
+| Order-created/refund outbox services and processors | Transactional Kafka hand-off, leased publishing, retry/backoff, and terminal-failure visibility. |
+| Checkout-compensation and inventory-release processors | Durable release of uncertain/failed reservations using original reservation IDs. |
+| Pending-payment expiry processor | Locks overdue pending orders, transitions them to `PAYMENT_EXPIRED`, and queues releases. |
+| Payment outcome consumer | Consumes success, failure, refund completion, and refund rejection events into the persistent inbox. |
+| Lifecycle audit and reconciliation services | Persist support evidence and return read-only outbox state counts. |
 
-## Checkout and compensation
+## Checkout transaction and compensation
 
-`createOrder` builds items with a UUID reservation ID before remote reserve. It records each item in an attempted-reservations list **before** its gRPC call; if the client times out after Inventory commits, compensation still has the ID to release. The order is only saved after all reservations succeed. Catalog timeouts default to 1s connect/2s read. The order-created Kafka send is asynchronous after save and is not a transactional outbox.
+The checkout request is normalized and hashed before remote work. The service claims the idempotency row first. A completed matching row returns its saved order; a changed hash raises `IDEMPOTENCY_KEY_REUSED`; a concurrent claim is recovered through the database unique constraint and row lock.
 
-## State and idempotency
+For each item, the service records the intended reservation ID before the gRPC reserve call. This covers the uncertainty where Inventory commits but the client receives a timeout. Once all reservations succeed, the order and `order_created_outbox` entry commit atomically. Kafka publication never participates in that database transaction.
 
-Payment consumers lock the order by ID, first check `order_processed_events.event_id`, and record each handled event. Duplicate IDs are ignored. Late events that do not match the expected active state are logged/recorded without changing state. Customer/admin cancellation locks the order and inserts release work, protected by unique reservation ID.
+If checkout throws after reservation attempts, `CheckoutCompensationService` runs in `REQUIRES_NEW` and persists one deduplicated release command per reservation. A best-effort immediate release may still happen, but correctness relies on the durable row. The processor locks eligible pending rows and retries failed releases up to the configured terminal bound.
 
-The release worker runs every 5 seconds by default, locks eligible pending rows, and calls reservation-aware Inventory release. Success becomes `COMPLETED`; failures schedule exponential retry (default max 8). A release rejected because reservation was already deducted becomes `MANUAL_REVIEW`; exhausted retries become `FAILED`.
+## Lifecycle rules
 
-Seller query selects orders by matching seller ID and filters each response to that seller's lines, calculating a seller-only subtotal. An ADMIN using this route is still scoped to their JWT `userId`, not a platform-wide seller list.
+- Only a `PENDING` order accepts payment success/failure or expiry.
+- Customer cancellation of `PENDING` queues `CANCELLED` release work. Cancellation of `CONFIRMED` requests a full refund and moves to `REFUND_REQUESTED`.
+- An admin refund request is full-payment only, requires a reason, and uses the same durable request/audit path. The Payment Service outcome—not Kafka publish success—decides the final refund state.
+- A full refund completion queues an Inventory release only while the reservation remains releasable. A rejected, partial, or already-deducted result routes to `REFUND_REQUIRES_FULFILMENT_REVIEW` as needed.
+- Payment consumers check `order_processed_events` first and lock the order. They record handled event IDs, including ignored late outcomes, so repeated delivery cannot overwrite state.
+
+## Scheduling, locking, and time
+
+Outbox repositories use database row leasing (`FOR UPDATE SKIP LOCKED`) so several Order Service instances can work safely. Publisher failures retain error text, attempt count, and next attempt timestamp; terminal rows stay visible for reconciliation. All entities/events use UTC `Instant` semantics, and the database migration converts legacy Order timestamps to `TIMESTAMP WITH TIME ZONE` using UTC.
+
+Customer order pages are validated (`page >= 0`, `1 <= size <= 50`) and always sorted by `createdAt,desc`; callers cannot choose unbounded or nondeterministic customer history ordering.

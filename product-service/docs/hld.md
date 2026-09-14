@@ -12,7 +12,8 @@ Product is the catalogue and list-price boundary. It owns identity, eligible sel
 | SellerEligibilityClient / Auth | Secured eligible-seller lookup; unavailable Auth fails closed. |
 | ProductRepository / MongoTemplate | Authoritative products, indexed filtering/ranking/facets and optimistic concurrency. |
 | Mongo transactions / ProductOutboxService | Atomic product plus immutable event persistence, durable delivery state and worker claims. |
-| Kafka / Inventory consumer | Versioned lifecycle snapshots, idempotent metadata updates and downstream recovery. |
+| Kafka / Inventory consumer | Versioned lifecycle snapshots; Inventory applies metadata without resetting stock. |
+| `ProductSnapshotService` gRPC | Internal paginated authoritative snapshot source for Inventory reconciliation. |
 | Reconciliation / metrics | Bounded current-state republishing and delivery failure visibility. |
 
 ## Mutation and delivery flow
@@ -23,6 +24,8 @@ Product is the catalogue and list-price boundary. It owns identity, eligible sel
 4. Return the committed product or archival response.
 5. A separate worker leases pending events, publishes keyed lifecycle snapshots and marks them delivered only after Kafka acknowledgement.
 6. Inventory accepts newer product versions, preserving stock. Retries, duplicates and reordered events converge to current metadata.
+
+When Kafka delivery is insufficient for recovery, Inventory calls `ListInventorySnapshots(page, size)` over internal gRPC. It provisions missing inventory rows, syncs seller/active/version metadata, and retires inventory rows absent from a completed snapshot. This endpoint is internal-only: production requires mTLS, Inventory service identity, and network policy.
 
 Bulk creation uses one transaction for every product/event in the submitted batch. Deactivation and archival retain products and hide them publicly; they prevent new inventory reservations once propagated. Existing carts/orders require authoritative checkout validation.
 

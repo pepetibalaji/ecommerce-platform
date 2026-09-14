@@ -181,11 +181,12 @@ backend's responsibility.
 3. Catalogue and inventory management require a known product ID because the
    current API has no administrative listing/search contract. The UI must make
    that limitation explicit instead of pretending to query all products.
-4. Admin order status controls present only backend-valid transitions. The current
-   workflow supports `PENDING → CONFIRMED` or `CANCELLED`, and `CONFIRMED →
-   CANCELLED`; it is not a fulfilment console.
-5. Payment pages use safe status/amount/order data and a confirmed refund request;
-   they never render raw provider identifiers or failure payloads. Notification
+4. The admin order list is read-only. It shows authoritative lifecycle and refund
+   outcomes but has no generic status-transition control or fulfilment console.
+5. Payment pages use safe status/amount/order data. An administrator requests an
+   Order-linked full refund through `POST /api/v1/admin/orders/{id}/refund-requests`
+   with a reason; the acknowledgement is not proof of provider refund completion.
+   They never render raw provider identifiers or failure payloads. Notification
    diagnostics are operator-only, read-only, and must not expose raw payloads.
 
 ## 5. Information architecture and page inventory
@@ -329,12 +330,13 @@ backend's responsibility.
 - Admin inventory is also known-product-ID-only. `POST` creates a row and `PUT`
   replaces `availableStock`; no list, safe stock delta, reservation reconciliation,
   or history is available.
-- Use the admin order list and render only server-valid transitions: `PENDING`
-  to `CONFIRMED`/`CANCELLED`, and `CONFIRMED` to `CANCELLED`. There is no admin
-  order-detail, fulfilment, tracking, or general status-management contract.
-- List/read admin payments and submit a confirmed refund with a stable
-  idempotency key. A refund request is not proof of completion. Restrict provider
-  fields to minimal safe display and never show raw provider failure payloads.
+- Use the admin order list as a read-only lifecycle view. There is no generic
+  admin status-management, fulfilment, or tracking contract. Inspect a payment
+  before submitting a full refund request through the Order command endpoint.
+- List/read admin payments and submit a confirmed Order-linked refund request
+  with a required reason. A request is not proof of completion: refresh the
+  authoritative Order/Payment state and restrict provider fields to minimal safe
+  display. Never show raw provider failure payloads.
 - Failed-notification diagnostics remain read-only and operator-only. Redact
   recipient/message/payload data. The separate confirmed Auth outbox replay action
   requeues terminal Auth deliveries; Product replay/reconciliation lives in admin

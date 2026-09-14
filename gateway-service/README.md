@@ -2,13 +2,13 @@
 
 ## What this service is
 
-API Gateway is the public HTTP entry point. It runs on port `8080`, routes externally configured paths to the owning service, applies CORS/security policy, validates JWTs before protected requests, and can support Redis-backed route rate limiting and circuit-breaker fallbacks.
+API Gateway is the public HTTP entry point. It runs on port `8080`, routes externally configured paths to the owning service, applies CORS/security policy, validates JWTs before protected requests, and applies configured Redis-backed route rate limits and circuit-breaker fallbacks.
 
 ## Technology
 
 - Java 21, Spring Boot, Spring Cloud Gateway (reactive/WebFlux)
 - Spring Security OAuth2 Resource Server
-- Redis capability for rate limiting
+- Redis-backed route rate limiting
 - Actuator, OpenAPI aggregation, structured logs
 
 ## End-to-end flow
@@ -37,6 +37,7 @@ mvn spring-boot:run
 - Service URIs and public routes.
 - Auth issuer/JWK settings.
 - CORS origin settings.
+- Redis plus checkout/cancellation rate-limit quotas from `ecommerce-config-repo`.
 
 ## Documentation
 

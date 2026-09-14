@@ -147,6 +147,16 @@ public class PaymentRefundServiceImpl implements PaymentRefundService {
                     idempotencyKey
             );
 
+            // The command consumer can be retried after an outcome-send failure. Re-emitting the
+            // same refund id is safe because Order Service deduplicates refund-completed events.
+            if (existingRefund.getStatus() == RefundStatus.REFUNDED) {
+                paymentEventPublisher.publishRefundCompleted(
+                        payment,
+                        existingRefund,
+                        totalSuccessfulRefunds(payment)
+                );
+            }
+
             return toAdminRefundResponse(existingRefund);
         }
 

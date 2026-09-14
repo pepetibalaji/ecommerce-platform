@@ -1,6 +1,6 @@
 import type { Cart, Inventory, NotificationRecord, Order, Page, Payment, Product, User } from "../domain";
 
-const now = "2026-09-08T10:30:00";
+const now = "2026-09-08T10:30:00Z";
 
 export const mockProducts: Product[] = [
   { id: "0f17887c-468b-43ce-a01a-8e0941f9dd01", sellerId: "seller-001", name: "Linen Everyday Shirt", description: "A breathable, easy-fit linen shirt for workdays and weekends.", price: 1899, currency: "INR", category: "Apparel", brand: "Northline", imageUrls: [], active: true, createdAt: now, updatedAt: now },
@@ -29,20 +29,22 @@ export let mockCart: Cart = {
 };
 
 export const mockOrders: Order[] = [
-  { id: "e0a10000-0000-4000-8000-000000000001", userId: "customer-001", totalAmount: 4398, currency: "INR", status: "PENDING", createdAt: now, updatedAt: now, cancelAllowed: true, shippingAddress: { recipientName: "Asha Rao", phone: "+919999999999", line1: "10 Market Road", city: "Bengaluru", state: "Karnataka", postalCode: "560001", country: "IN" }, items: [{ id: "order-line-1", productId: mockProducts[0].id, productName: mockProducts[0].name, quantity: 1, price: 1899, lineTotal: 1899 }, { id: "order-line-2", productId: mockProducts[1].id, productName: mockProducts[1].name, quantity: 1, price: 2499, lineTotal: 2499 }] },
-  { id: "e0a10000-0000-4000-8000-000000000002", userId: "customer-001", totalAmount: 1499, currency: "INR", status: "CONFIRMED", createdAt: "2026-09-01T10:30:00", updatedAt: now, cancelAllowed: true, shippingAddress: { recipientName: "Asha Rao", phone: "+919999999999", line1: "10 Market Road", city: "Bengaluru", state: "Karnataka", postalCode: "560001", country: "IN" }, items: [{ id: "order-line-3", productId: mockProducts[2].id, productName: mockProducts[2].name, quantity: 1, price: 1499, lineTotal: 1499 }] },
+  { id: "e0a10000-0000-4000-8000-000000000001", userId: "customer-001", totalAmount: 4398, currency: "INR", status: "PENDING", createdAt: now, updatedAt: now, cancelAllowed: true, shippingAddress: { recipientName: "Asha Rao", phone: "+919999999999", line1: "10 Market Road", city: "Bengaluru", state: "Karnataka", postalCode: "560001", country: "IN" }, items: [{ id: "order-line-1", productId: mockProducts[0].id, productName: mockProducts[0].name, quantity: 1, unitPrice: 1899, lineTotal: 1899 }, { id: "order-line-2", productId: mockProducts[1].id, productName: mockProducts[1].name, quantity: 1, unitPrice: 2499, lineTotal: 2499 }] },
+  { id: "e0a10000-0000-4000-8000-000000000002", userId: "customer-001", totalAmount: 1499, currency: "INR", status: "REFUND_REQUESTED", paymentId: "payment-002", paymentConfirmedAt: "2026-09-01T10:35:00Z", createdAt: "2026-09-01T10:30:00Z", updatedAt: now, cancelAllowed: false, cancellationReasonCode: "REFUND_IN_PROGRESS", shippingAddress: { recipientName: "Asha Rao", phone: "+919999999999", line1: "10 Market Road", city: "Bengaluru", state: "Karnataka", postalCode: "560001", country: "IN" }, items: [{ id: "order-line-3", productId: mockProducts[2].id, productName: mockProducts[2].name, quantity: 1, unitPrice: 1499, lineTotal: 1499 }] },
+  { id: "e0a10000-0000-4000-8000-000000000003", userId: "customer-001", totalAmount: 3299, currency: "INR", status: "CONFIRMED", paymentId: "payment-003", paymentConfirmedAt: "2026-08-28T10:35:00Z", createdAt: "2026-08-28T10:30:00Z", updatedAt: now, cancelAllowed: true, shippingAddress: { recipientName: "Asha Rao", phone: "+919999999999", line1: "10 Market Road", city: "Bengaluru", state: "Karnataka", postalCode: "560001", country: "IN" }, items: [{ id: "order-line-4", productId: mockProducts[3].id, productName: mockProducts[3].name, quantity: 1, unitPrice: 3299, lineTotal: 3299 }] },
 ];
 
 export const mockPayments: Payment[] = [
-  { id: "payment-001", orderId: mockOrders[0].id, amount: 4398, currency: "INR", provider: "Stripe", status: "REQUIRES_CUSTOMER_ACTION", expiresAt: "2026-09-08T11:00:00", createdAt: now },
-  { id: "payment-002", orderId: mockOrders[1].id, amount: 1499, currency: "INR", provider: "Stripe", status: "SUCCESS", createdAt: "2026-09-01T10:30:00" },
+  { id: "payment-001", orderId: mockOrders[0].id, amount: 4398, currency: "INR", provider: "Stripe", status: "REQUIRES_CUSTOMER_ACTION", expiresAt: "2026-09-08T11:00:00Z", createdAt: now },
+  { id: "payment-002", orderId: mockOrders[1].id, amount: 1499, currency: "INR", provider: "Stripe", status: "REFUND_PROCESSING", createdAt: "2026-09-01T10:30:00Z" },
+  { id: "payment-003", orderId: mockOrders[2].id, amount: 3299, currency: "INR", provider: "Stripe", status: "SUCCESS", createdAt: "2026-08-28T10:30:00Z" },
 ];
 
 export const mockInventory: Inventory[] = mockProducts.map((product, index) => ({ productId: product.id, availableStock: 20 + index * 4, reservedStock: index % 3 }));
 
 export const mockNotifications: NotificationRecord[] = [
   { id: "notification-001", status: "FAILED", type: "PAYMENT_SUCCESSFUL", recipientId: "customer-001", message: "Delivery requires review", createdAt: now },
-  { id: "notification-002", status: "FAILED", type: "ORDER_CANCELLED", recipientId: "customer-002", message: "Delivery requires review", createdAt: "2026-09-07T08:00:00" },
+  { id: "notification-002", status: "FAILED", type: "ORDER_CANCELLED", recipientId: "customer-002", message: "Delivery requires review", createdAt: "2026-09-07T08:00:00Z" },
 ];
 
 export function pageOf<T>(items: T[], page = 0, size = 10): Page<T> {

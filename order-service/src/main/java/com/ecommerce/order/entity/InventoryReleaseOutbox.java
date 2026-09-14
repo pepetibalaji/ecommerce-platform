@@ -9,7 +9,7 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -51,16 +51,16 @@ public class InventoryReleaseOutbox {
     private String lastError;
 
     @Column(name = "next_attempt_at", nullable = false)
-    private LocalDateTime nextAttemptAt;
+    private Instant nextAttemptAt;
 
     @Column(name = "created_at", nullable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     @Column(name = "completed_at")
-    private LocalDateTime completedAt;
+    private Instant completedAt;
 
     public InventoryReleaseOutbox(
             UUID orderId,
@@ -70,7 +70,7 @@ public class InventoryReleaseOutbox {
             Integer quantity,
             InventoryReleaseReason reason
     ) {
-        LocalDateTime now = LocalDateTime.now();
+        Instant now = Instant.now();
         this.id = UUID.randomUUID();
         this.orderId = orderId;
         this.orderItemId = orderItemId;
@@ -85,14 +85,14 @@ public class InventoryReleaseOutbox {
         this.updatedAt = now;
     }
 
-    public void markCompleted(LocalDateTime now) {
+    public void markCompleted(Instant now) {
         status = InventoryReleaseStatus.COMPLETED;
         lastError = null;
         completedAt = now;
         updatedAt = now;
     }
 
-    public void recordFailure(String error, LocalDateTime nextAttemptAt, int maxAttempts, LocalDateTime now) {
+    public void recordFailure(String error, Instant nextAttemptAt, int maxAttempts, Instant now) {
         attemptCount++;
         lastError = truncate(error);
         updatedAt = now;
@@ -104,7 +104,7 @@ public class InventoryReleaseOutbox {
         }
     }
 
-    public void markManualReview(String error, LocalDateTime now) {
+    public void markManualReview(String error, Instant now) {
         status = InventoryReleaseStatus.MANUAL_REVIEW;
         lastError = truncate(error);
         updatedAt = now;

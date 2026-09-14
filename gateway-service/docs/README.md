@@ -1,6 +1,6 @@
 # Gateway Service documentation
 
-Gateway Service is the reactive edge entry point. It owns route dispatch, gateway-level JWT authorization, CORS, optional Redis rate-limit keys, dependency fallback responses, and edge observability. It owns no business data or business workflow.
+Gateway Service is the reactive edge entry point. It owns route dispatch, gateway-level JWT authorization, CORS, configured Redis rate-limit keys, dependency fallback responses, and edge observability. It owns no business data or business workflow.
 
 | Document | Purpose |
 | --- | --- |

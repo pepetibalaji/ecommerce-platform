@@ -18,7 +18,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -146,8 +146,7 @@ class AdminOrderControllerTest {
             UUID orderId,
             OrderStatus status
     ) {
-        LocalDateTime now =
-                LocalDateTime.now();
+        Instant now = Instant.now();
 
         return new OrderResponse(
                 orderId,

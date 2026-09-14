@@ -23,3 +23,7 @@ The outbox claims one due pending or expired processing record atomically, incre
 Retries use exponential backoff and terminal DEAD records. Administrative replay resets dead delivery state. Reconciliation scans products in bounded ID-cursor batches and enqueues current product.reconciled snapshots without changing revisions. Legacy payloadless outbox records are repaired at delivery. Version-aware consumers ignore stale/duplicate snapshots and recover missing rows without resetting stock.
 
 See [API](api.md), [schema](schema.md) and [lifecycle operations](lifecycle-operations.md) for limits, fields, lease timing, metrics and exact operator commands.
+
+## Internal Inventory snapshot gRPC
+
+`ProductSnapshotGrpcService` reads MongoDB in bounded pages (maximum 500 products) and returns product ID, seller ID, active state, and lifecycle version. Inventory calls it only for reconciliation; it must not be exposed via Gateway or frontend. The Product gRPC authorization interceptor allows only `x-internal-caller: inventory-service` and production enables `PRODUCT_GRPC_REQUIRE_MTLS=true`.

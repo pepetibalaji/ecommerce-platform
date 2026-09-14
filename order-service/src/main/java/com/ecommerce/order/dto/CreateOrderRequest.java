@@ -8,7 +8,6 @@ import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.util.List;
-import java.util.UUID;
 
 @Data
 public class CreateOrderRequest {
@@ -19,13 +18,6 @@ public class CreateOrderRequest {
             message = "Currency must be a 3-letter ISO code, for example INR or USD"
     )
     private String currency;
-
-    /*
-     * Optional for now.
-     * Later, when Address Service exists, frontend can send only addressId,
-     * and Order Service can fetch + validate the address through gRPC.
-     */
-    private UUID shippingAddressId;
 
     @Valid
     @NotNull(message = "Shipping address is required")

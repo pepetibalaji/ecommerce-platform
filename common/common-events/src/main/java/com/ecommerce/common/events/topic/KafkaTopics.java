@@ -12,6 +12,10 @@ public final class KafkaTopics {
   public static final String PAYMENT_SUCCESS = "payment-success";
   public static final String PAYMENT_FAILED = "payment-failed";
   public static final String PAYMENT_REFUND_COMPLETED = "payment-refund-completed";
+  /** Command from Order Service to Payment Service. Not a notification broadcast topic. */
+  public static final String PAYMENT_REFUND_REQUESTED = "payment-refund-requested";
+  /** Terminal business rejection sent back to Order Service. */
+  public static final String PAYMENT_REFUND_REQUEST_REJECTED = "payment-refund-request-rejected";
   public static final String ORDER_COMPLETED = "order-completed";
   public static final String ORDER_CANCELLED = "order-cancelled";
   public static final String SHIPMENT_CREATED = "shipment-created";

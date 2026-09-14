@@ -12,7 +12,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -36,6 +36,15 @@ public class Order {
     @Column(name = "idempotency_key", length = 100)
     private String idempotencyKey;
 
+    @Column(name = "idempotency_request_hash", length = 64)
+    private String idempotencyRequestHash;
+
+    @Column(name = "idempotency_expires_at")
+    private Instant idempotencyExpiresAt;
+
+    @Column(name = "payment_expires_at")
+    private Instant paymentExpiresAt;
+
     @Column(name = "total_amount", nullable = false)
     private BigDecimal totalAmount;
 
@@ -47,16 +56,16 @@ public class Order {
     private UUID paymentId;
 
     @Column(name = "payment_confirmed_at")
-    private LocalDateTime paymentConfirmedAt;
+    private Instant paymentConfirmedAt;
 
     @Column(name = "payment_failed_at")
-    private LocalDateTime paymentFailedAt;
+    private Instant paymentFailedAt;
 
     @Column(name = "payment_failure_reason", columnDefinition = "TEXT")
     private String paymentFailureReason;
 
     @Column(name = "created_at", nullable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @Builder.Default
     @OneToMany(
@@ -109,19 +118,19 @@ public class Order {
 
     @NotNull(message = "Updated timestamp is required")
     @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     @PrePersist
     public void prePersist() {
 
-        LocalDateTime now = LocalDateTime.now();
+        Instant now = Instant.now();
 
         if (id == null) {
             id = UUID.randomUUID();
         }
 
         if (createdAt == null) {
-            createdAt = LocalDateTime.now();
+            createdAt = now;
         }
 
         if (updatedAt == null) {
@@ -135,6 +144,6 @@ public class Order {
     
     @PreUpdate
     void preUpdate() {
-        updatedAt = LocalDateTime.now();
+        updatedAt = Instant.now();
     }
 }

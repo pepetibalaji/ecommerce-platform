@@ -58,3 +58,44 @@ test("cart contention preserves the machine-readable code and retry delay", asyn
     return true;
   });
 });
+
+test("structured checkout errors preserve server retryability, line details, and trace ID", async context => {
+  context.mock.method(globalThis, "fetch", async () => Response.json({
+    code: "IDEMPOTENCY_KEY_REUSED",
+    message: "This key belongs to a different checkout request.",
+    retryable: false,
+    details: [{ productId: "product-1", requestedQuantity: 2, availableQuantity: 1 }],
+    traceId: "trace-checkout-123",
+  }, { status: 409 }));
+
+  await assert.rejects(
+    api.orders.create("test-access", [{ productId: "product-1", quantity: 2 }], {
+      recipientName: "Asha", phone: "+919999999999", line1: "10 Market Road", city: "Bengaluru",
+      state: "Karnataka", postalCode: "560001", country: "IN",
+    }, "INR", "checkout-key-1"),
+    error => {
+      assert.equal(error.code, "IDEMPOTENCY_KEY_REUSED");
+      assert.equal(error.retryable, false);
+      assert.deepEqual(error.details, [{ productId: "product-1", requestedQuantity: 2, availableQuantity: 1 }]);
+      assert.equal(error.traceId, "trace-checkout-123");
+      assert.equal(error.fields, undefined);
+      return true;
+    },
+  );
+});
+
+test("admin refund requests use the audited Order Service command", async context => {
+  const calls = [];
+  context.mock.method(globalThis, "fetch", async (url, options) => {
+    calls.push({ url, options });
+    return Response.json({ id: "order-1", totalAmount: 999, currency: "INR", status: "REFUND_REQUESTED", items: [] });
+  });
+
+  const order = await api.orders.adminRequestRefund("admin-access", "order-1", "Customer cancellation approved");
+  assert.equal(order.status, "REFUND_REQUESTED");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://gateway.test/api/v1/admin/orders/order-1/refund-requests");
+  assert.equal(calls[0].options.method, "POST");
+  assert.equal(calls[0].options.headers.get("Authorization"), "Bearer admin-access");
+  assert.equal(calls[0].options.body, JSON.stringify({ reason: "Customer cancellation approved" }));
+});

@@ -11,9 +11,11 @@ Gateway has no Kafka producer/consumer. Its operation is route/configuration dri
 | `GATEWAY_RESPONSE_TIMEOUT` | `5s` | Downstream HTTP response bound. |
 | `GATEWAY_CORS_ALLOWED_ORIGINS` | localhost ports 3000/4200/5173 | Comma-separated exact browser origins. |
 | `GATEWAY_TRUST_FORWARDED_FOR` | `false` | Trust proxy client-IP headers for rate-limit keys. |
+| `GATEWAY_ORDER_CHECKOUT_RATE_LIMIT_PER_SECOND` / `GATEWAY_ORDER_CHECKOUT_RATE_LIMIT_BURST` | `2` / `5` | IP-based quota for `POST /api/v1/orders`. |
+| `GATEWAY_ORDER_CANCEL_RATE_LIMIT_PER_SECOND` / `GATEWAY_ORDER_CANCEL_RATE_LIMIT_BURST` | `2` / `5` | IP-based quota for `PUT /api/v1/orders/*/cancel`. |
 | `OBSERVABILITY_LOG_FILE` | `../logs/gateway-service.json` | Structured log file. |
 
-Also supply route definitions, backend URIs, JWT issuer/JWK configuration, and Redis connection/quota policy when rate limiting is enabled. Validate route predicates and public-path alignment in each deployed environment; they are not visible in the module source tree.
+Also supply route definitions, backend URIs, JWT issuer/JWK configuration, and Redis connection/quota policy when rate limiting is enabled. The checkout and cancellation routes are intentionally defined before the catch-all Order route in the external Config Server files so their rate-limit filters take effect. Validate route predicates and public-path alignment in each deployed environment; they are not visible in the module source tree.
 
 ## Monitoring and recovery
 

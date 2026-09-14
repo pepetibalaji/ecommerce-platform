@@ -3,6 +3,7 @@ name: CI Pipeline
 on:
     push:
         branches:
+            - main
             - develop
             - "feature/**"
             - "feat/**"
@@ -19,11 +20,12 @@ on:
             - "order-service/**"
             - "payment-service/**"
             - "notification-service/**"
+            - "frontend/**"
             - "docker-compose.yml"
             - "scripts/create-kafka-topics.sh"
             - "monitoring/**"
             - "docs/**"
-            - ".github/workflows/ci.yml"
+            - ".github/**"
 
     pull_request:
         branches:
@@ -41,11 +43,12 @@ on:
             - "order-service/**"
             - "payment-service/**"
             - "notification-service/**"
+            - "frontend/**"
             - "docker-compose.yml"
             - "scripts/create-kafka-topics.sh"
             - "monitoring/**"
             - "docs/**"
-            - ".github/workflows/ci.yml"
+            - ".github/**"
 
 permissions:
     contents: read
@@ -193,6 +196,55 @@ jobs:
 
                   MANAGEMENT_TRACING_ENABLED: "false"
                   OTEL_TRACES_ENDPOINT: http://localhost:4318/v1/traces
+
+            - name: Upload JVM test reports
+              if: failure()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: jvm-test-reports
+                  if-no-files-found: ignore
+                  path: |
+                      **/target/surefire-reports/**
+                      **/target/failsafe-reports/**
+
+            - name: Show Kafka logs on failure
+              if: failure()
+              run: docker logs ecommerce-ci-kafka
+
+            - name: Stop CI Kafka
+              if: always()
+              run: docker rm -f ecommerce-ci-kafka || true
+
+    frontend:
+        name: frontend
+        runs-on: ubuntu-latest
+
+        defaults:
+            run:
+                working-directory: frontend
+
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@v4
+
+            - name: Set up Node 22
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "22"
+                  cache: npm
+                  cache-dependency-path: frontend/package-lock.json
+
+            - name: Install dependencies
+              run: npm ci
+
+            - name: Typecheck
+              run: npm run typecheck
+
+            - name: Run frontend tests
+              run: npm test
+
+            - name: Build frontend
+              run: npm run build
 
     docker-build:
         name: docker-build

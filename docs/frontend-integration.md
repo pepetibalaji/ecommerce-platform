@@ -19,9 +19,9 @@ Only public frontend values belong in the frontend environment/build configurati
 1. Browse `GET /api/v1/products`; list responses exclude inactive products.
 2. Use `/api/v1/cart/guest/**` before authentication. After login, call `POST /api/v1/cart/merge-guest` with browser credentials.
 3. Send bearer token on authenticated requests.
-4. For every checkout intent, create a UUID in the browser and send it as `Idempotency-Key` on `POST /api/v1/orders`. Reuse that key only when retrying the same action.
-   Only send `productId` and `quantity` for each item. `price` is accepted temporarily for legacy clients but ignored. The successful order response contains the authoritative item prices and total.
-   If checkout returns a `CHECKOUT_ITEM_*` error (unavailable product, quantity limit, or insufficient stock), refresh the cart's product display and ask the customer to review the identified item before retrying.
+4. For every checkout intent, create a UUID in the browser and send it as `Idempotency-Key` on `POST /api/v1/orders`. Reuse that key only for a retry of the exact same action. Send only `productId` and `quantity` for each item; a legacy `price` field may be tolerated during rollout but is ignored. The successful Order response contains the authoritative snapshot prices and total.
+   A network failure or a structured error with `retryable: true` retains the exact key and payload. A changed cart, currency, or address must create a new checkout intent/key. `409 IDEMPOTENCY_KEY_REUSED` is never automatic-retryable: explain the conflict and require a deliberate new attempt.
+   Checkout business errors include stable `code`, `retryable`, `details`, and `traceId` fields. For `CHECKOUT_ITEM_*` errors, refresh the cart/catalogue display and ask the customer to review the identified item before starting a new attempt. `CHECKOUT_CATALOG_UNAVAILABLE` and `CHECKOUT_INVENTORY_UNAVAILABLE` are the retryable dependency failures.
 5. Payment preparation follows asynchronous `order-created`. After checkout, poll `GET /api/v1/payments/orders/{orderId}` briefly; `404` can mean the payment is not prepared yet. Once it exists, call `POST /api/v1/payments/orders/{orderId}/checkout-session`.
 6. Provider browser return pages are informational. Poll payment/order status; verified webhooks are authoritative.
 
@@ -60,9 +60,12 @@ via `/api/v1/admin/products/outbox/**`; no refresh secret or internal Auth token
 is exposed by these actions.
 
 Payment Service serializes payment identity as `paymentId`; the frontend client
-normalizes that wire field internally and must send an admin refund idempotency
-key in the JSON body (and may send the standard header). Admin user status PATCH
-returns no body, so refresh the known user record after a successful update.
+normalizes that wire field internally. For an Order-linked administrative refund,
+the browser must call `POST /api/v1/admin/orders/{orderId}/refund-requests` with
+a required human reason, not the direct Payment refund endpoint. The Order command
+creates the lifecycle audit entry and durable Payment refund request; a request is
+not proof that the provider refund completed. Admin user status PATCH returns no
+body, so refresh the known user record after a successful update.
 
 ## API client rules
 
@@ -71,6 +74,7 @@ returns no body, so refresh the known user record after a successful update.
 * On authenticated `401`, attempt one shared cookie-backed refresh and one retry; failed refresh clears the session and sign-in is required. On `403`, show access denied. On `429`, respect `Retry-After` and prevent repeated submission. On retryable Gateway `503`/`504`, preserve safe input and provide bounded retry without exposing internal-service details.
 * Never derive price, stock, or authorization from cart data in the browser; Product/Order/Payment responses are authoritative.
 * Checkout limits default to 100 units per product and 500 total units. Operations can override them with `order.checkout.max-quantity-per-product`, `order.checkout.max-total-quantity`, and `order.checkout.product-maximum-quantities.<product-uuid>`.
+* Render `PAYMENT_EXPIRED` as terminal for its checkout intent and `REFUND_REQUESTED` as in-progress. Refresh the authoritative Order/Payment state; never infer completion from a provider return page, refund-request acknowledgement, or a browser timer.
 
 ## Required deployment variables
 
@@ -79,5 +83,6 @@ returns no body, so refresh the known user record after a successful update.
 | Dev | `VITE_API_BASE_URL=http://localhost:8080` |
 | Stage/Prod Gateway | `GATEWAY_CORS_ALLOWED_ORIGINS=https://your-frontend.example` |
 | Stage/Prod Gateway | Public product/Auth routes, payment webhooks, CORS preflight including `Idempotency-Key`, rate-limit behavior, and protected-route access must pass stage smoke tests. |
+| Stage/Prod Gateway | Checkout (`POST /api/v1/orders`) and cancellation (`PUT /api/v1/orders/*/cancel`) use the configured IP-based limits: 2 requests/second with burst 5 by default. Tune only through `GATEWAY_ORDER_CHECKOUT_RATE_LIMIT_*` and `GATEWAY_ORDER_CANCEL_RATE_LIMIT_*`. |
 | Stage/Prod Cart | `CART_GUEST_COOKIE_SECURE=true`; set `CART_GUEST_COOKIE_SAME_SITE` intentionally for deployment topology. |
 | Stage/Prod Auth | Secure HttpOnly refresh cookie and compatible SameSite policy; align `VITE_SESSION_IDLE_TIMEOUT_MS` / `VITE_SESSION_WARNING_MS` with Auth browser-session timeouts. |

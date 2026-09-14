@@ -3,6 +3,7 @@ package com.ecommerce.order.kafka;
 import com.ecommerce.common.events.payment.PaymentFailedEvent;
 import com.ecommerce.common.events.payment.PaymentSuccessEvent;
 import com.ecommerce.common.events.payment.PaymentRefundCompletedEvent;
+import com.ecommerce.common.events.payment.PaymentRefundRequestRejectedEvent;
 import com.ecommerce.common.events.topic.KafkaTopics;
 import com.ecommerce.order.service.OrderService;
 import com.ecommerce.order.observability.PaymentOutcomeMetrics;
@@ -74,6 +75,17 @@ public class PaymentOutcomeConsumer {
             log.info("Received payment-refund-completed event. eventId={}, orderId={}, refundId={}, fullRefund={}",
                     event.getEventId(), event.getOrderId(), event.getRefundId(), event.isFullRefund());
             orderService.handleRefundCompleted(event);
+        } finally { clearMdc(); }
+    }
+
+    @KafkaListener(topics = KafkaTopics.PAYMENT_REFUND_REQUEST_REJECTED,
+            groupId = "${order.payment-outcome-consumer-group:order-service-payment-outcomes}")
+    public void onRefundRequestRejected(PaymentRefundRequestRejectedEvent event) {
+        populateMdc(event.getCorrelationId(), event.getTraceId(), event.getEventId(), event.getOrderId(), event.getPaymentId());
+        try {
+            log.warn("Received payment-refund-request-rejected event. eventId={}, refundRequestId={}, orderId={}, paymentId={}",
+                    event.getEventId(), event.getRefundRequestId(), event.getOrderId(), event.getPaymentId());
+            orderService.handleRefundRequestRejected(event);
         } finally { clearMdc(); }
     }
 

@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 @Component
@@ -39,7 +39,7 @@ public class InventoryReleaseOutboxProcessor {
     )
     @Transactional
     public void processPendingReleases() {
-        LocalDateTime now = LocalDateTime.now(clock);
+        Instant now = Instant.now(clock);
         List<InventoryReleaseOutbox> commands = inventoryReleaseOutboxRepository
                 .lockNextPending(Math.max(1, batchSize), now);
 
@@ -63,7 +63,7 @@ public class InventoryReleaseOutboxProcessor {
                     continue;
                 }
                 int nextAttempt = command.getAttemptCount() + 1;
-                LocalDateTime nextAttemptAt = now.plus(retryPolicy.delayForAttempt(nextAttempt));
+                Instant nextAttemptAt = now.plus(retryPolicy.delayForAttempt(nextAttempt));
                 command.recordFailure(exception.getMessage(), nextAttemptAt, Math.max(1, maxAttempts), now);
                 paymentOutcomeMetrics.inventoryReleaseFailed(command.getReason().name().toLowerCase());
                 if (command.getStatus() == InventoryReleaseStatus.FAILED) {
