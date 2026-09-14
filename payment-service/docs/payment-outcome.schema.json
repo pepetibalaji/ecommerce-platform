@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ecommerce:payment-outcome:1.0",
+  "title": "Order-facing payment outcome",
+  "description": "Covers the five financial payment/refund outcomes; PAYMENT_REFUND_REQUEST_REJECTED is a separate command-rejection contract documented in events-and-operations.md. Kafka key is orderId. Delivery is at least once; consumers deduplicate eventId and enforce business state transitions.",
+  "type": "object",
+  "required": ["eventId", "eventType", "schemaVersion", "source", "occurredAt", "paymentId", "orderId", "userId", "amount", "currency", "provider", "correlationId", "traceId"],
+  "properties": {
+    "eventId": {"type": "string", "format": "uuid"},
+    "eventType": {"enum": ["PAYMENT_SUCCESS", "PAYMENT_FAILED", "PAYMENT_EXPIRED", "PAYMENT_REFUND_COMPLETED", "PAYMENT_REFUND_FAILED"]},
+    "schemaVersion": {"const": "1.0"},
+    "source": {"const": "payment-service"},
+    "occurredAt": {"type": "string", "format": "date-time"},
+    "paymentId": {"type": "string", "format": "uuid"},
+    "orderId": {"type": "string", "format": "uuid"},
+    "userId": {"type": "string", "format": "uuid"},
+    "amount": {"type": "number", "exclusiveMinimum": 0},
+    "currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+    "provider": {"enum": ["STRIPE", "SANDBOX"]},
+    "correlationId": {"type": ["string", "null"]},
+    "traceId": {"type": ["string", "null"]},
+    "refundId": {"type": "string", "format": "uuid"},
+    "refundRequestId": {"type": ["string", "null"], "format": "uuid"},
+    "totalRefundedAmount": {"type": "number", "minimum": 0},
+    "paymentAmount": {"type": "number", "exclusiveMinimum": 0},
+    "fullRefund": {"type": "boolean"},
+    "reason": {"type": ["string", "null"]}
+  },
+  "allOf": [
+    {"if": {"properties": {"eventType": {"const": "PAYMENT_REFUND_COMPLETED"}}},
+     "then": {"required": ["refundId", "totalRefundedAmount", "paymentAmount", "fullRefund"]}},
+    {"if": {"properties": {"eventType": {"const": "PAYMENT_REFUND_FAILED"}}},
+     "then": {"required": ["refundId", "reason"]}}
+  ]
+}

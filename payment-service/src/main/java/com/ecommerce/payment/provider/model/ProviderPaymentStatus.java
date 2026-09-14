@@ -4,6 +4,7 @@ public enum ProviderPaymentStatus {
     SUCCESS,
     FAILED,
     CANCELLED,
+    EXPIRED,
     PROCESSING,
     IGNORED
 }

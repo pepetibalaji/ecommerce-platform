@@ -35,7 +35,7 @@ class StripePaymentGatewayTest {
             assertThat(gateway().getPaymentStatus("cs_test_saved").getStatus()).isEqualTo(ProviderPaymentStatus.SUCCESS);
             assertThat(gateway().getPaymentStatus("cs_test_saved").getStatus()).isEqualTo(ProviderPaymentStatus.IGNORED);
             assertThat(gateway().getPaymentStatus("cs_test_saved").getStatus()).isEqualTo(ProviderPaymentStatus.PROCESSING);
-            assertThat(gateway().getPaymentStatus("cs_test_saved").getStatus()).isEqualTo(ProviderPaymentStatus.CANCELLED);
+            assertThat(gateway().getPaymentStatus("cs_test_saved").getStatus()).isEqualTo(ProviderPaymentStatus.EXPIRED);
         }
     }
     @Test void providerOutageDoesNotClaimFailureOrSuccess() throws Exception {
@@ -56,14 +56,39 @@ class StripePaymentGatewayTest {
         assertThatThrownBy(() -> gateway().parseWebhookEvent(payload("checkout.session.completed", com.stripe.Stripe.API_VERSION), "t=1,v1=invalid"))
                 .isInstanceOf(com.ecommerce.common.exception.BadRequestException.class);
     }
-    @Test void mismatchedWebhookApiVersionUsesAuthenticatedLookup() throws Exception {
+    @Test void mismatchedWebhookApiVersionUsesOnlyVerifiedSignedFields() throws Exception {
         try (var stripe = mockStatic(Session.class)) {
             stripe.when(() -> Session.retrieve(eq("cs_test_saved"), any(RequestOptions.class))).thenReturn(session("paid", "complete"));
             String payload = payload("checkout.session.completed", "2020-08-27");
             assertThat(gateway().parseWebhookEvent(payload, signature(payload)).getStatus()).isEqualTo(ProviderPaymentStatus.SUCCESS);
-            stripe.verify(() -> Session.retrieve(eq("cs_test_saved"), any(RequestOptions.class)));
+            stripe.verifyNoInteractions();
         }
     }
+    @Test void acceptsPreviousSecretDuringWebhookRotationOverlap() throws Exception {
+        var properties = new PaymentProviderProperties();
+        properties.getProvider().getStripe().setEnabled(true);
+        properties.getProvider().getStripe().setApiKey("sk_test_fixture_only");
+        properties.getProvider().getStripe().setWebhookSecret("whsec_new_secret");
+        properties.getProvider().getStripe().setPreviousWebhookSecrets(java.util.List.of("whsec_fixture_only"));
+        String payload = payload("checkout.session.completed", com.stripe.Stripe.API_VERSION);
+        assertThat(new StripePaymentGateway(properties).parseWebhookEvent(payload, signature(payload)).getStatus())
+                .isEqualTo(ProviderPaymentStatus.SUCCESS);
+    }
+
+    @Test void refundTimeoutPreservesUncertaintyForDurableRetry() {
+        try (var stripe = mockStatic(com.stripe.model.Refund.class)) {
+            stripe.when(() -> com.stripe.model.Refund.create(any(com.stripe.param.RefundCreateParams.class), any(RequestOptions.class)))
+                    .thenThrow(mock(com.stripe.exception.StripeException.class));
+            var request = new com.ecommerce.payment.provider.model.RefundGatewayRequest(
+                    java.util.UUID.randomUUID(), java.util.UUID.randomUUID(), "pi_test",
+                    new java.math.BigDecimal("10.00"), "USD", "requested", "refund:durable-key");
+            assertThatThrownBy(() -> gateway().refund(request))
+                    .isInstanceOfSatisfying(com.ecommerce.payment.exception.PaymentApiException.class,
+                            exception -> assertThat(exception.getCode())
+                                    .isEqualTo(com.ecommerce.payment.exception.PaymentErrorCode.PAYMENT_PROVIDER_UNAVAILABLE));
+        }
+    }
+
     private String payload(String type, String version) {
         return "{\"id\":\"evt_test\",\"object\":\"event\",\"api_version\":\"" + version + "\",\"type\":\"" + type
                 + "\",\"data\":{\"object\":{\"id\":\"cs_test_saved\",\"object\":\"checkout.session\",\"payment_status\":\"paid\",\"status\":\"complete\",\"payment_intent\":\"pi_test_saved\"}}}";

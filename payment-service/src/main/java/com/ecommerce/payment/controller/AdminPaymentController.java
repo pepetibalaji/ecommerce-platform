@@ -28,9 +28,10 @@ public class AdminPaymentController {
     @GetMapping
     public ResponseEntity<Page<AdminPaymentResponse>> getPayments(
             @RequestParam(required = false) PaymentStatus status,
-            Pageable pageable
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
-        return ResponseEntity.ok(paymentQueryService.getAdminPayments(status, pageable));
+        return ResponseEntity.ok(paymentQueryService.getAdminPayments(status, com.ecommerce.payment.config.PaymentPagination.page(page, size)));
     }
 
     @GetMapping("/{paymentId}")

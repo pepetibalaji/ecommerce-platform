@@ -1,15 +1,11 @@
-# Payment Service events and operations
+# Payment events and operations
 
-## Kafka
+Payment consumes authenticated Order-created, cancellation/expiry and refund-request contracts. Event schema and required identity/amount/currency fields are validated; payment preparation independently verifies the signed trusted Order snapshot.
 
-Consumes `order-created` using group `payment-service` by default and creates a PENDING payment with idempotency key `order-created:{orderId}`. Publishes `payment-success`, `payment-failed`, and `payment-refund-completed` when verified provider processing changes the relevant state.
+Financial outcomes include `payment-success`, `payment-failed`, `payment-expired`, `payment-refund-completed` and `payment-refund-failed`. These envelopes carry event/payment/order/user IDs, amount/currency, provider, correlation/trace IDs and UTC timestamps; refund outcomes carry refund identity and cumulative amounts where applicable. The [payment outcome schema](payment-outcome.schema.json) covers these five types.
 
-## Configuration and safety
+`payment-refund-request-rejected` separately reports a business refusal of an Order refund command through the same durable outbox. Its `PAYMENT_REFUND_REQUEST_REJECTED` envelope carries `eventId`, `eventType`, `schemaVersion`, `source`, `occurredAt`, `correlationId`, `traceId`, `refundRequestId`, `paymentId`, `orderId` and safe `reason`. The event ID is the original refund request ID. It does not carry user, amount, currency or provider fields and is outside the five-type financial outcome schema. A rejection does not prove that a provider refund occurred.
 
-Required environment configuration includes PostgreSQL, Kafka, JWT/JWK, active provider choice/credentials, Stripe/Razorpay webhook secrets, redirect URLs, gRPC, Config Server, and tracing. `SPRING_PROFILES_ACTIVE` defaults `dev`; `CONFIG_SERVER_URL` defaults `http://localhost:8888`; `OBSERVABILITY_LOG_FILE` defaults `../logs/payment-service.json`.
+Payment/refund state and its outbox event commit together. Delivery uses orderId as Kafka key, per-order publication sequencing, leases, bounded retries and a durable DEAD state. Different Kafka topics may still be consumed in a different order. Delivery is at least once; Order consumers must deduplicate and reject contradictory/late lifecycle changes. Retry existing event IDs rather than synthesizing new outcomes.
 
-Set `PAYMENT_CHECKOUT_SUCCESS_URL` and `PAYMENT_CHECKOUT_CANCEL_URL` to the frontend payment-return route, including `{ORDER_ID}` and `{PAYMENT_ID}` placeholders. Local development uses `http://localhost:5173/payment/return?orderId={ORDER_ID}&paymentId={PAYMENT_ID}`. Stage must use the deployed Vercel origin instead; do not point provider returns to Payment Service's `/public/payments/**` diagnostic endpoints.
-
-Public utility endpoints include health/info/prometheus and OpenAPI/Swagger. Monitor provider latency, invalid signature/webhook counts, payment-event publication errors, consumer lag, payment/refund state anomalies, and expired checkout attempts. Never log secrets, signatures, card data, or raw sensitive provider payloads.
-
-When Kafka is unavailable, reconcile payment records whose terminal state lacks the expected downstream outcome; when a provider callback fails validation, correct provider secret/configuration before replaying according to provider rules.
+Use the [production reliability runbook](production-reliability.md) for environment settings, Kafka security, webhook secret rotation, incident metrics, outbox/webhook retry endpoints, and safe refund reconciliation. See [API](api.md) for customer contracts and [schema](schema.md) for durable record definitions.

@@ -30,6 +30,6 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     @Query(value = "select * from orders where id = :id for update", nativeQuery = true)
     Optional<Order> findByIdForUpdate(@Param("id") UUID id);
 
-    @Query(value = "select * from orders where status = 'PENDING' and payment_expires_at <= :now order by payment_expires_at limit :batchSize for update skip locked", nativeQuery = true)
+    @Query(value = "select o.* from orders o where o.status = 'PENDING' and o.payment_expires_at <= :now and not exists (select 1 from order_refund_request_outbox c where c.order_id = o.id and c.command_type = 'EXPIRY') order by o.payment_expires_at, o.id limit :batchSize for update of o skip locked", nativeQuery = true)
     List<Order> lockExpiredPending(@Param("now") Instant now, @Param("batchSize") int batchSize);
 }

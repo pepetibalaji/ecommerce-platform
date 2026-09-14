@@ -22,6 +22,12 @@ public class OrderCreatedEvent extends AbstractDomainEvent {
 
   public OrderCreatedEvent() {
     super(EventTypes.ORDER_CREATED, EventSources.ORDER_SERVICE, null, null);
+    // Deserialization must not manufacture absent trusted envelope fields.
+    setEventId(null);
+    setOccurredAt(null);
+    setSchemaVersion(null);
+    setSource(null);
+    setEventType(null);
   }
 
   public OrderCreatedEvent(

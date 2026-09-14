@@ -8,7 +8,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Data
@@ -40,11 +40,11 @@ public class PaymentAttemptResponse {
     @Size(max = 5000, message = "Failure reason must not exceed 5000 characters")
     private String failureReason;
 
-    private LocalDateTime expiresAt;
+    private Instant expiresAt;
 
     @NotNull(message = "Created timestamp is required")
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @NotNull(message = "Updated timestamp is required")
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 }

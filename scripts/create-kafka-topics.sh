@@ -15,7 +15,15 @@ topics="
 order-created:3
 payment-success:3
 payment-failed:3
+payment-expired:3
 payment-refund-completed:3
+payment-refund-failed:3
+payment-refund-requested:3
+payment-refund-request-rejected:3
+payment-cancellation-requested:3
+order-created.DLT:3
+payment-refund-requested.DLT:3
+payment-cancellation-requested.DLT:3
 order-cancelled:3
 order-shipped:3
 order-delivered:3

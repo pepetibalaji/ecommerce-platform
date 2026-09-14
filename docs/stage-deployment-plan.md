@@ -208,6 +208,13 @@ Run open-source Apache Kafka in **single-node KRaft mode**.
 - Set Kafka heap around 768 MB–1 GB initially.
 - Keep broker and controller listeners private to the Docker network.
 
+Payment startup also requires authenticated `SASL_SSL` client connections in stage;
+network isolation alone is insufficient. Configure separate service principals,
+topic ACLs, `KAFKA_SASL_MECHANISM` and secret-injected `KAFKA_SASL_JAAS_CONFIG`.
+The shared stage configuration applies these settings to every Kafka service.
+Provision the payment expiry, refund-failure, cancellation and command `.DLT` topics
+listed in `scripts/create-kafka-topics.sh` as part of the coordinated rollout.
+
 The number of application topics is not the practical issue for this stage setup.
 Twenty to forty low-volume topics is reasonable. The real constraints are message
 volume, consumer health, disk, CPU, and RAM.
@@ -278,6 +285,12 @@ Use Stripe Sandbox/Test Mode only.
   `/payment/return?orderId=&paymentId=`.
 - The frontend verifies outcome by polling authenticated Order and Payment APIs;
   provider redirect alone is not payment proof.
+
+Deploy Order and Payment with the same `PAYMENT_ORDER_LOOKUP_SECRET`, a private
+`ORDER_SERVICE_URI`, exact `PAYMENT_FRONTEND_ORIGINS`, and frontend return URLs.
+Review Payment V4-V6 and Order V15 migration prerequisites. Complete the real Stripe
+test-mode checkout, signature/replay, expiry and refund exercise before enabling
+the staging-verified provider gate. See the [Payment rollout runbook](../payment-service/docs/production-reliability.md).
 
 ## 11. Gateway and frontend contract
 

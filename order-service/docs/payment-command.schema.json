@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ecommerce:order-payment-command:1.0",
+  "title": "Durable Order payment command",
+  "type": "object",
+  "required": [
+    "eventId",
+    "eventType",
+    "source",
+    "schemaVersion",
+    "occurredAt",
+    "orderId",
+    "userId",
+    "amount",
+    "currency",
+    "actorType",
+    "requestedBy",
+    "reason",
+    "correlationId",
+    "traceId"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "enum": [
+        "PAYMENT_CANCELLATION_REQUESTED",
+        "PAYMENT_REFUND_REQUESTED"
+      ]
+    },
+    "source": {
+      "const": "order-service"
+    },
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "orderId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "userId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "paymentId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "cancellationRequestId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "refundRequestId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "requestedBy": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "actorType": {
+      "type": "string",
+      "enum": [
+        "CUSTOMER",
+        "ADMIN",
+        "ORDER_SYSTEM"
+      ]
+    },
+    "amount": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "multipleOf": 0.01
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 5000
+    },
+    "correlationId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 128
+    },
+    "traceId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 128
+    },
+    "expiryRequested": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "eventType": {
+            "const": "PAYMENT_CANCELLATION_REQUESTED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "cancellationRequestId",
+          "expiryRequested"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "eventType": {
+            "const": "PAYMENT_REFUND_REQUESTED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "refundRequestId",
+          "paymentId"
+        ]
+      }
+    }
+  ]
+}

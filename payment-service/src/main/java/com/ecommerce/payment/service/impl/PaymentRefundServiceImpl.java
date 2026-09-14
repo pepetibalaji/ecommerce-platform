@@ -1,7 +1,5 @@
 package com.ecommerce.payment.service.impl;
 
-import com.ecommerce.common.exception.BadRequestException;
-import com.ecommerce.common.exception.ResourceAlreadyExistsException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.payment.dto.request.CreatePaymentRefundRequest;
 import com.ecommerce.payment.dto.response.AdminRefundResponse;
@@ -12,95 +10,70 @@ import com.ecommerce.payment.entity.PaymentRefund;
 import com.ecommerce.payment.enums.PaymentAttemptStatus;
 import com.ecommerce.payment.enums.PaymentStatus;
 import com.ecommerce.payment.enums.RefundStatus;
+import com.ecommerce.payment.exception.PaymentApiException;
+import com.ecommerce.payment.exception.PaymentErrorCode;
 import com.ecommerce.payment.mapper.PaymentRefundMapper;
 import com.ecommerce.payment.observability.PaymentMetrics;
-import com.ecommerce.payment.provider.PaymentGateway;
-import com.ecommerce.payment.provider.PaymentGatewayFactory;
-import com.ecommerce.payment.provider.model.RefundGatewayRequest;
-import com.ecommerce.payment.provider.model.RefundGatewayResponse;
 import com.ecommerce.payment.repository.PaymentAttemptRepository;
 import com.ecommerce.payment.repository.PaymentRefundRepository;
 import com.ecommerce.payment.repository.PaymentRepository;
 import com.ecommerce.payment.service.PaymentRefundService;
-import com.ecommerce.payment.kafka.producer.PaymentEventPublisher;
+import com.ecommerce.payment.service.RefundAudit;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
-@Slf4j
+/** Enqueues a refund atomically. Provider I/O is exclusively performed by the durable worker. */
 @Service
 @Validated
 @RequiredArgsConstructor
-@Transactional
+@Transactional(noRollbackFor = PaymentApiException.class)
 public class PaymentRefundServiceImpl implements PaymentRefundService {
-
     private final PaymentRefundRepository paymentRefundRepository;
     private final PaymentRepository paymentRepository;
     private final PaymentAttemptRepository paymentAttemptRepository;
-    private final PaymentGatewayFactory paymentGatewayFactory;
     private final PaymentRefundMapper paymentRefundMapper;
     private final PaymentMetrics paymentMetrics;
-    private final PaymentEventPublisher paymentEventPublisher;
 
     @Override
     public PaymentRefundResponse createPaymentRefund(@Valid CreatePaymentRefundRequest request) {
-        if (paymentRefundRepository.existsByIdempotencyKey(request.getIdempotencyKey())) {
-            throw new ResourceAlreadyExistsException(
-                    "Payment refund already exists for idempotency key: "
-                            + request.getIdempotencyKey()
-            );
-        }
-
-        Payment payment = paymentRepository.findById(request.getPaymentId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Payment not found: " + request.getPaymentId()
-                ));
-
-        PaymentRefund refund = paymentRefundMapper.toEntity(request);
-        refund.setPayment(payment);
-
-        PaymentRefund savedRefund = paymentRefundRepository.save(refund);
-
-        return paymentRefundMapper.toResponse(savedRefund);
+        UUID orderId = paymentRefundRepository.findPaymentOrderId(request.getPaymentId())
+                .orElseThrow(() -> new PaymentApiException(PaymentErrorCode.PAYMENT_NOT_FOUND));
+        AdminRefundResponse response = refundPayment(request.getPaymentId(), orderId, request.getAmount(),
+                request.getCurrency(), request.getReason(), request.getIdempotencyKey(), RefundAudit.system());
+        return getPaymentRefundById(response.refundId());
     }
 
     @Override
     @Transactional(readOnly = true)
     public PaymentRefundResponse getPaymentRefundById(UUID refundId) {
-        PaymentRefund refund = paymentRefundRepository.findById(refundId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Payment refund not found: " + refundId
-                ));
-
-        return paymentRefundMapper.toResponse(refund);
+        return paymentRefundMapper.toResponse(paymentRefundRepository.findById(refundId)
+                .orElseThrow(() -> new ResourceNotFoundException("Refund not found")));
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<PaymentRefundResponse> getPaymentRefundsByPaymentId(UUID paymentId) {
-        return paymentRefundRepository.findByPayment_IdOrderByCreatedAtDesc(paymentId)
-                .stream()
-                .map(paymentRefundMapper::toResponse)
-                .toList();
+        return paymentRefundRepository.findByPayment_IdOrderByCreatedAtDesc(paymentId).stream()
+                .map(paymentRefundMapper::toResponse).toList();
     }
 
     @Override
     @Transactional(readOnly = true)
     public PaymentRefundResponse getPaymentRefundByIdempotencyKey(String idempotencyKey) {
-        PaymentRefund refund = paymentRefundRepository.findByIdempotencyKey(idempotencyKey)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Payment refund not found for idempotency key: " + idempotencyKey
-                ));
-
-        return paymentRefundMapper.toResponse(refund);
+        return paymentRefundMapper.toResponse(paymentRefundRepository.findByIdempotencyKey(idempotencyKey)
+                .orElseThrow(() -> new ResourceNotFoundException("Refund not found")));
     }
 
     @Override
@@ -110,334 +83,119 @@ public class PaymentRefundServiceImpl implements PaymentRefundService {
     }
 
     @Override
-    public AdminRefundResponse refundPayment(
-            UUID paymentId,
-            UUID orderId,
-            BigDecimal amount,
-            String currency,
-            String reason,
-            String idempotencyKey
-    ) {
-        validateRefundRequest(
-                paymentId,
-                orderId,
-                amount,
-                currency,
-                idempotencyKey
-        );
+    public AdminRefundResponse refundPayment(UUID paymentId, UUID orderId, BigDecimal amount, String currency,
+                                              String reason, String idempotencyKey) {
+        return refundPayment(paymentId, orderId, amount, currency, reason, idempotencyKey, RefundAudit.system());
+    }
 
-        BigDecimal normalizedAmount = normalizeAmount(amount);
-        String normalizedCurrency = normalizeCurrency(currency);
-        String normalizedReason = normalizeReason(reason);
-
-        Payment payment = paymentRepository.findByIdAndOrderId(paymentId, orderId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Payment not found for paymentId=" + paymentId + ", orderId=" + orderId
-                ));
-
-        PaymentRefund existingRefund = paymentRefundRepository
-                .findByPayment_IdAndIdempotencyKey(paymentId, idempotencyKey)
-                .orElse(null);
-
-        if (existingRefund != null) {
-            log.info(
-                    "Returning existing refund for idempotency key. paymentId={}, refundId={}, idempotencyKey={}",
-                    paymentId,
-                    existingRefund.getId(),
-                    idempotencyKey
-            );
-
-            // The command consumer can be retried after an outcome-send failure. Re-emitting the
-            // same refund id is safe because Order Service deduplicates refund-completed events.
-            if (existingRefund.getStatus() == RefundStatus.REFUNDED) {
-                paymentEventPublisher.publishRefundCompleted(
-                        payment,
-                        existingRefund,
-                        totalSuccessfulRefunds(payment)
-                );
-            }
-
-            return toAdminRefundResponse(existingRefund);
+    @Override
+    public AdminRefundResponse refundPayment(UUID paymentId, UUID orderId, BigDecimal amount, String currency,
+                                              String reason, String idempotencyKey, RefundAudit audit) {
+        validate(paymentId, orderId, amount, currency, idempotencyKey, reason);
+        BigDecimal normalizedAmount;
+        try {
+            normalizedAmount = amount.setScale(2, RoundingMode.UNNECESSARY);
+        } catch (ArithmeticException invalidPrecision) {
+            throw new PaymentApiException(PaymentErrorCode.PAYMENT_REFUND_NOT_ALLOWED);
         }
-
-        validateRefundEligibility(
-                payment,
-                normalizedAmount,
-                normalizedCurrency
-        );
-
-        PaymentAttempt successfulAttempt = paymentAttemptRepository
-                .findTopByPayment_IdAndStatusInOrderByCreatedAtDesc(
-                        payment.getId(),
-                        List.of(PaymentAttemptStatus.SUCCESS)
-                )
-                .orElseThrow(() -> new BadRequestException(
-                        "No successful payment attempt found for payment: " + payment.getId()
-                ));
-
-        validateProviderPaymentIntent(successfulAttempt);
-
-        validateRefundDoesNotExceedPaymentAmount(
-                payment,
-                normalizedAmount
-        );
-
-        PaymentRefund refund = PaymentRefund.builder()
-                .payment(payment)
-                .amount(normalizedAmount)
-                .currency(normalizedCurrency)
-                .reason(normalizedReason)
-                .status(RefundStatus.REFUND_REQUESTED)
-                .idempotencyKey(idempotencyKey)
-                .build();
-
-        paymentRefundRepository.saveAndFlush(refund);
-        paymentMetrics.refundRequested(payment.getProvider());
-
+        String normalizedCurrency = currency.trim().toUpperCase(Locale.ROOT);
+        String normalizedReason = reason == null || reason.isBlank() ? null : reason.trim();
+        // Every refund mutation locks the parent first, serializing amount reservations with webhooks.
+        Payment payment = paymentRepository.findByOrderIdForUpdate(orderId)
+                .filter(p -> p.getId().equals(paymentId))
+                .orElseThrow(() -> new PaymentApiException(PaymentErrorCode.PAYMENT_NOT_FOUND));
+        PaymentRefund existing = paymentRefundRepository.findByIdempotencyKey(idempotencyKey).orElse(null);
+        if (existing != null) {
+            if (!existing.getPayment().getId().equals(paymentId)
+                    || existing.getAmount().compareTo(normalizedAmount) != 0
+                    || !existing.getCurrency().equals(normalizedCurrency)
+                    || !Objects.equals(existing.getReason(), normalizedReason)) {
+                throw new PaymentApiException(PaymentErrorCode.PAYMENT_STATE_CONFLICT);
+            }
+            return toAdminRefundResponse(existing);
+        }
+        if (!Set.of(PaymentStatus.SUCCESS, PaymentStatus.REFUND_REQUESTED,
+                PaymentStatus.REFUND_PROCESSING, PaymentStatus.REFUND_FAILED).contains(payment.getStatus())
+                || !payment.getCurrency().equals(normalizedCurrency)) {
+            throw new PaymentApiException(PaymentErrorCode.PAYMENT_REFUND_NOT_ALLOWED);
+        }
+        BigDecimal reserved = paymentRefundRepository.findByPayment_IdOrderByCreatedAtDesc(paymentId).stream()
+                // Unknown provider acceptance retains its reservation until an operator reconciles it.
+                .filter(r -> r.getStatus() != RefundStatus.REFUND_FAILED)
+                .map(PaymentRefund::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (reserved.add(normalizedAmount).compareTo(payment.getAmount()) > 0) {
+            throw new PaymentApiException(PaymentErrorCode.PAYMENT_REFUND_NOT_ALLOWED);
+        }
+        PaymentAttempt attempt = paymentAttemptRepository.findTopByPayment_IdAndStatusInOrderByCreatedAtDesc(
+                paymentId, List.of(PaymentAttemptStatus.SUCCESS))
+                .orElseThrow(() -> new PaymentApiException(PaymentErrorCode.PAYMENT_REFUND_NOT_ALLOWED));
+        if (attempt.getProviderPaymentIntentId() == null || attempt.getProviderPaymentIntentId().isBlank()) {
+            throw new PaymentApiException(PaymentErrorCode.PAYMENT_REFUND_NOT_ALLOWED);
+        }
+        RefundAudit context = audit == null ? RefundAudit.system() : audit;
+        PaymentRefund refund = PaymentRefund.builder().payment(payment).amount(normalizedAmount)
+                .currency(normalizedCurrency).reason(normalizedReason).status(RefundStatus.REFUND_REQUESTED)
+                .idempotencyKey(idempotencyKey).providerIdempotencyKey("refund:" + UUID.randomUUID())
+                .providerPaymentIntentId(attempt.getProviderPaymentIntentId())
+                .refundRequestId(context.refundRequestId()).requestedBy(context.requestedBy())
+                .actorType(context.actorType()).correlationId(context.correlationId()).traceId(context.traceId())
+                .requestedAt(context.requestedAt() == null ? Instant.now() : context.requestedAt())
+                .nextAttemptAt(Instant.now()).build();
+        PaymentRefund saved = paymentRefundRepository.saveAndFlush(refund);
         payment.setStatus(PaymentStatus.REFUND_REQUESTED);
         payment.setFailureReason(null);
-        paymentRepository.saveAndFlush(payment);
-
-        RefundGatewayResponse providerResponse = requestProviderRefund(
-                payment,
-                successfulAttempt,
-                normalizedAmount,
-                normalizedCurrency,
-                normalizedReason,
-                idempotencyKey
-        );
-
-        refund.setProviderRefundId(providerResponse.providerRefundId());
-        refund.setFailureReason(providerResponse.failureReason());
-
-        if (providerResponse.success()) {
-            applySuccessfulProviderRefundResponse(
-                    payment,
-                    refund,
-                    providerResponse
-            );
-        } else {
-            refund.setStatus(RefundStatus.REFUND_FAILED);
-            payment.setStatus(PaymentStatus.REFUND_FAILED);
-            payment.setFailureReason(providerResponse.failureReason());
-        }
-
-        if (providerResponse.success()) {
-            paymentMetrics.refundSucceeded(payment.getProvider());
-        } else {
-            paymentMetrics.refundFailed(payment.getProvider());
-        }
-
-        PaymentRefund savedRefund = paymentRefundRepository.save(refund);
         paymentRepository.save(payment);
-
-        if (savedRefund.getStatus() == RefundStatus.REFUNDED) {
-            paymentEventPublisher.publishRefundCompleted(payment, savedRefund,
-                    totalSuccessfulRefunds(payment));
-        }
-
-        log.info(
-                "Refund request processed. paymentId={}, refundId={}, orderId={}, refundStatus={}, paymentStatus={}, providerRefundId={}",
-                payment.getId(),
-                savedRefund.getId(),
-                payment.getOrderId(),
-                savedRefund.getStatus(),
-                payment.getStatus(),
-                savedRefund.getProviderRefundId()
-        );
-
-        return toAdminRefundResponse(savedRefund);
+        paymentMetrics.refundRequested(payment.getProvider());
+        return toAdminRefundResponse(saved);
     }
 
-    private RefundGatewayResponse requestProviderRefund(
-            Payment payment,
-            PaymentAttempt successfulAttempt,
-            BigDecimal amount,
-            String currency,
-            String reason,
-            String idempotencyKey
-    ) {
-        try {
-            PaymentGateway gateway = paymentGatewayFactory.getGateway(payment.getProvider());
-
-            return gateway.refund(
-                    new RefundGatewayRequest(
-                            payment.getId(),
-                            payment.getOrderId(),
-                            successfulAttempt.getProviderPaymentIntentId(),
-                            amount,
-                            currency,
-                            reason,
-                            idempotencyKey
-                    )
-            );
-        } catch (RuntimeException exception) {
-            log.warn(
-                    "Provider refund request failed. paymentId={}, orderId={}, provider={}, reason={}",
-                    payment.getId(),
-                    payment.getOrderId(),
-                    payment.getProvider(),
-                    exception.getMessage()
-            );
-
-            return new RefundGatewayResponse(
-                    false,
-                    null,
-                    "FAILED",
-                    exception.getMessage()
-            );
+    @Override
+    public AdminRefundResponse reconcileRefund(UUID paymentId, UUID refundId, UUID actorId, String reason) {
+        if (actorId == null || reason == null || reason.isBlank() || reason.length() > 5000) {
+            throw new PaymentApiException(PaymentErrorCode.PAYMENT_INVALID_REQUEST);
         }
-    }
-
-    private void validateRefundRequest(
-            UUID paymentId,
-            UUID orderId,
-            BigDecimal amount,
-            String currency,
-            String idempotencyKey
-    ) {
-        if (paymentId == null) {
-            throw new BadRequestException("paymentId is required");
+        UUID orderId = paymentRefundRepository.findOrderId(paymentId, refundId)
+                .orElseThrow(() -> new PaymentApiException(PaymentErrorCode.PAYMENT_NOT_FOUND));
+        Payment payment = paymentRepository.findByOrderIdForUpdate(orderId).orElseThrow();
+        PaymentRefund refund = paymentRefundRepository.findByIdForUpdate(refundId).orElseThrow();
+        if (refund.getStatus() == RefundStatus.REFUNDED) return toAdminRefundResponse(refund);
+        if (refund.getStatus() == RefundStatus.REFUND_REQUESTED || refund.getStatus() == RefundStatus.REFUND_PROCESSING) {
+            throw new PaymentApiException(PaymentErrorCode.PAYMENT_REFUND_IN_PROGRESS);
         }
-
-        if (orderId == null) {
-            throw new BadRequestException("orderId is required");
+        // Known failed provider results require a new, explicitly authorized refund request.
+        boolean hasProviderId = refund.getProviderRefundId() != null && !refund.getProviderRefundId().isBlank();
+        if (refund.getStatus() != RefundStatus.REFUND_MANUAL_REVIEW
+                || (!hasProviderId && (refund.getFirstProviderAttemptAt() == null
+                || !refund.getFirstProviderAttemptAt().isAfter(Instant.now().minusSeconds(23 * 3600))))) {
+            throw new PaymentApiException(PaymentErrorCode.PAYMENT_REFUND_NOT_ALLOWED);
         }
-
-        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BadRequestException("Refund amount must be greater than zero");
-        }
-
-        if (currency == null || currency.isBlank()) {
-            throw new BadRequestException("Refund currency is required");
-        }
-
-        if (idempotencyKey == null || idempotencyKey.isBlank()) {
-            throw new BadRequestException("Refund idempotency key is required");
-        }
-    }
-
-    private void validateRefundEligibility(
-            Payment payment,
-            BigDecimal refundAmount,
-            String refundCurrency
-    ) {
-        if (payment.getStatus() != PaymentStatus.SUCCESS) {
-            throw new BadRequestException("Only SUCCESS payments can be refunded");
-        }
-
-        if (!payment.getCurrency().equals(refundCurrency)) {
-            throw new BadRequestException(
-                    "Refund currency must match payment currency: " + payment.getCurrency()
-            );
-        }
-
-        if (refundAmount.compareTo(payment.getAmount()) > 0) {
-            throw new BadRequestException("Refund amount cannot exceed payment amount");
-        }
-    }
-
-    private void validateProviderPaymentIntent(PaymentAttempt successfulAttempt) {
-        if (successfulAttempt.getProviderPaymentIntentId() == null
-                || successfulAttempt.getProviderPaymentIntentId().isBlank()) {
-            throw new BadRequestException(
-                    "Payment cannot be refunded because provider payment intent id is missing"
-            );
-        }
-    }
-
-    private void validateRefundDoesNotExceedPaymentAmount(
-            Payment payment,
-            BigDecimal newRefundAmount
-    ) {
-        BigDecimal alreadyRequestedOrProcessed = paymentRefundRepository
-                .findByPayment_IdOrderByCreatedAtDesc(payment.getId())
-                .stream()
-                .filter(refund -> refund.getStatus() != RefundStatus.REFUND_FAILED)
-                .map(PaymentRefund::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        BigDecimal totalAfterNewRefund = alreadyRequestedOrProcessed.add(newRefundAmount);
-
-        if (totalAfterNewRefund.compareTo(payment.getAmount()) > 0) {
-            throw new BadRequestException("Total refund amount cannot exceed payment amount");
-        }
-    }
-
-    private void applySuccessfulProviderRefundResponse(
-            Payment payment,
-            PaymentRefund refund,
-            RefundGatewayResponse providerResponse
-    ) {
-        if (isTerminalRefundSuccess(providerResponse.status())) {
-            refund.setStatus(RefundStatus.REFUNDED);
-            payment.setStatus(isFullRefundAfter(refund, payment) ? PaymentStatus.REFUNDED : PaymentStatus.SUCCESS);
-            payment.setFailureReason(null);
-            return;
-        }
-
-        refund.setStatus(RefundStatus.REFUND_PROCESSING);
+        refund.setStatus(hasProviderId ? RefundStatus.REFUND_PROCESSING : RefundStatus.REFUND_REQUESTED);
+        refund.setAttemptCount(0);
+        refund.setNextAttemptAt(Instant.now());
+        refund.setLeaseToken(null);
+        refund.setLeaseUntil(null);
+        refund.setFailureReason(null);
+        refund.setLastReconciledBy(actorId);
+        refund.setLastReconciledAt(Instant.now());
+        refund.setReconciliationReason(reason.trim());
+        refund.setReconciliationCount(refund.getReconciliationCount() + 1);
         payment.setStatus(PaymentStatus.REFUND_PROCESSING);
         payment.setFailureReason(null);
+        // Original provider key, first acceptance-attempt time and request audit are immutable.
+        return toAdminRefundResponse(refund);
     }
-
-    private boolean isFullRefundAfter(PaymentRefund newRefund, Payment payment) {
-        return totalSuccessfulRefunds(payment).add(newRefund.getAmount()).compareTo(payment.getAmount()) == 0;
-    }
-
-    private BigDecimal totalSuccessfulRefunds(Payment payment) {
-        return paymentRefundRepository.findByPayment_IdOrderByCreatedAtDesc(payment.getId()).stream()
-                .filter(refund -> refund.getStatus() == RefundStatus.REFUNDED)
-                .map(PaymentRefund::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
-
-    private boolean isTerminalRefundSuccess(String providerStatus) {
-        if (providerStatus == null) {
-            return false;
+    private void validate(UUID paymentId, UUID orderId, BigDecimal amount, String currency,
+                          String key, String reason) {
+        if (paymentId == null || orderId == null || amount == null || amount.signum() <= 0
+                || currency == null || !currency.trim().matches("(?i)[a-z]{3}")
+                || key == null || key.isBlank() || key.length() > 150
+                || (reason != null && reason.length() > 5000)) {
+            throw new PaymentApiException(PaymentErrorCode.PAYMENT_REFUND_NOT_ALLOWED);
         }
-
-        String normalized = providerStatus.trim().toLowerCase();
-
-        return normalized.equals("succeeded")
-                || normalized.equals("success")
-                || normalized.equals("refunded");
-    }
-
-    private BigDecimal normalizeAmount(BigDecimal amount) {
-        try {
-            return amount.setScale(2, RoundingMode.UNNECESSARY);
-        } catch (ArithmeticException exception) {
-            throw new BadRequestException("Refund amount must have at most 2 decimal places");
-        }
-    }
-
-    private String normalizeCurrency(String currency) {
-        String normalized = currency.trim().toUpperCase();
-
-        if (!normalized.matches("^[A-Z]{3}$")) {
-            throw new BadRequestException(
-                    "Currency must be a 3-letter ISO code, for example INR or USD"
-            );
-        }
-
-        return normalized;
-    }
-
-    private String normalizeReason(String reason) {
-        if (reason == null || reason.isBlank()) {
-            return null;
-        }
-
-        return reason.trim();
     }
 
     private AdminRefundResponse toAdminRefundResponse(PaymentRefund refund) {
-        return new AdminRefundResponse(
-                refund.getPayment().getId(),
-                refund.getId(),
-                refund.getStatus().name(),
-                refund.getProviderRefundId(),
-                refund.getFailureReason()
-        );
+        return new AdminRefundResponse(refund.getPayment().getId(), refund.getId(), refund.getStatus().name(),
+                refund.getProviderRefundId(), refund.getFailureReason());
     }
 }

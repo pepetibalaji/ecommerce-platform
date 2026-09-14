@@ -23,6 +23,7 @@ on:
             - "frontend/**"
             - "docker-compose.yml"
             - "scripts/create-kafka-topics.sh"
+            - "scripts/ci/**"
             - "monitoring/**"
             - "docs/**"
             - ".github/**"
@@ -46,6 +47,7 @@ on:
             - "frontend/**"
             - "docker-compose.yml"
             - "scripts/create-kafka-topics.sh"
+            - "scripts/ci/**"
             - "monitoring/**"
             - "docs/**"
             - ".github/**"
@@ -197,8 +199,11 @@ jobs:
                   MANAGEMENT_TRACING_ENABLED: "false"
                   OTEL_TRACES_ENDPOINT: http://localhost:4318/v1/traces
 
+            - name: Verify payment database reliability coverage
+              run: java scripts/ci/VerifyPaymentReliabilityReports.java
+
             - name: Upload JVM test reports
-              if: failure()
+              if: always()
               uses: actions/upload-artifact@v4
               with:
                   name: jvm-test-reports
@@ -245,6 +250,8 @@ jobs:
 
             - name: Build frontend
               run: npm run build
+              env:
+                  VITE_USE_MOCKS: "false"
 
     docker-build:
         name: docker-build

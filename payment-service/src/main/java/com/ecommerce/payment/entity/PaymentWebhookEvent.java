@@ -29,7 +29,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Getter
@@ -96,15 +96,15 @@ public class PaymentWebhookEvent {
 
     @NotNull(message = "Received timestamp is required")
     @Column(name = "received_at", nullable = false, updatable = false)
-    private LocalDateTime receivedAt;
+    private Instant receivedAt;
 
     @Column(name = "processed_at")
-    private LocalDateTime processedAt;
+    private Instant processedAt;
 
     @PrePersist
     void prePersist() {
         if (receivedAt == null) {
-            receivedAt = LocalDateTime.now();
+            receivedAt = Instant.now();
         }
 
         if (processingStatus == null) {
@@ -115,7 +115,7 @@ public class PaymentWebhookEvent {
     @PreUpdate
     void preUpdate() {
         if (isFinalProcessingStatus() && processedAt == null) {
-            processedAt = LocalDateTime.now();
+            processedAt = Instant.now();
         }
     }
 

@@ -32,4 +32,8 @@ public interface PaymentRefundService {
         String reason,
         String idempotencyKey
     );
+
+    AdminRefundResponse refundPayment(UUID paymentId, UUID orderId, BigDecimal amount, String currency,
+                                      String reason, String idempotencyKey, RefundAudit audit);
+    AdminRefundResponse reconcileRefund(UUID paymentId, UUID refundId, UUID actorId, String reason);
 }

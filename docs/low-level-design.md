@@ -7,7 +7,12 @@
 | `order-created` | Order | Payment, Notification | `orderId` | Prepare payment and create order-received notification. |
 | `payment-success` | Payment | Order, Notification | `orderId` | Confirm order and notify customer. |
 | `payment-failed` | Payment | Order, Notification | `orderId` | Fail order and notify customer. |
-| `payment-refund-completed` | Payment | Notification | `orderId` | Notify refund completion. |
+| `payment-expired` | Payment | Order | `orderId` | Expire the Order and queue eligible inventory release. |
+| `payment-cancellation-requested` | Order | Payment | `orderId` | Durably resolve unpaid cancellation or expiry; orchestrate a refund if payment races with cancellation. |
+| `payment-refund-requested` | Order | Payment | `orderId` | Reserve and execute durable refund work. |
+| `payment-refund-request-rejected` | Payment | Order | `orderId` | Report a business refusal for refund review. |
+| `payment-refund-completed` | Payment | Order, Notification | `orderId` | Apply partial/full refund lifecycle and notify refund completion. |
+| `payment-refund-failed` | Payment | Order | `orderId` | Surface refund failure or uncertain acceptance for review. |
 | `user-contact-updated` | Auth | Notification | `userId` | Upsert/deactivate local email recipient. |
 
 Events carry an `eventId`. Consumers store processed IDs to make at-least-once Kafka delivery safe.

@@ -13,7 +13,7 @@ import java.util.UUID;
 
 public interface OrderRefundRequestOutboxRepository extends JpaRepository<OrderRefundRequestOutbox, UUID> {
 
-    Optional<OrderRefundRequestOutbox> findByOrderId(UUID orderId);
+    Optional<OrderRefundRequestOutbox> findByOrderIdAndCommandType(UUID orderId, String commandType);
 
     @Query(value = """
             select * from order_refund_request_outbox

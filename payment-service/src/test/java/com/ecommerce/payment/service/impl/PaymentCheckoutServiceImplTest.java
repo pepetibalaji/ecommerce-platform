@@ -1,78 +1,131 @@
 package com.ecommerce.payment.service.impl;
 
-import com.ecommerce.payment.dto.response.CreateCheckoutSessionResponse;
-import com.ecommerce.payment.entity.Payment;
-import com.ecommerce.payment.entity.PaymentAttempt;
-import com.ecommerce.payment.enums.PaymentAttemptStatus;
-import com.ecommerce.payment.enums.PaymentProvider;
-import com.ecommerce.payment.enums.PaymentStatus;
+import com.ecommerce.payment.config.*;
+import com.ecommerce.payment.entity.*;
+import com.ecommerce.payment.enums.*;
+import com.ecommerce.payment.exception.*;
 import com.ecommerce.payment.observability.PaymentMetrics;
-import com.ecommerce.payment.provider.PaymentGateway;
-import com.ecommerce.payment.provider.PaymentGatewayFactory;
-import com.ecommerce.payment.repository.PaymentAttemptRepository;
-import com.ecommerce.payment.repository.PaymentRepository;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-
+import com.ecommerce.payment.order.TrustedOrderClient;
+import com.ecommerce.payment.provider.*;
+import com.ecommerce.payment.provider.model.*;
+import com.ecommerce.payment.repository.*;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.mockito.ArgumentCaptor;
+import org.springframework.mock.env.MockEnvironment;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.Optional;
-import java.util.UUID;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import java.time.Instant;
+import java.util.*;
+import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-@ExtendWith(MockitoExtension.class)
 class PaymentCheckoutServiceImplTest {
+    PaymentRepository payments = mock(PaymentRepository.class);
+    PaymentAttemptRepository attempts = mock(PaymentAttemptRepository.class);
+    PaymentGatewayFactory gateways = mock(PaymentGatewayFactory.class);
+    PaymentGateway gateway = mock(PaymentGateway.class);
+    PaymentCancellationRequestRepository cancellations = mock(PaymentCancellationRequestRepository.class);
+    TrustedOrderClient trustedOrders = mock(TrustedOrderClient.class);
+    PaymentProviderProperties settings = new PaymentProviderProperties();
+    Payment payment;
+    PaymentAttempt attempt;
+    CheckoutSessionTransactions transactions;
+    PaymentCheckoutServiceImpl service;
 
-    @Mock private PaymentRepository paymentRepository;
-    @Mock private PaymentAttemptRepository paymentAttemptRepository;
-    @Mock private PaymentGatewayFactory paymentGatewayFactory;
-    @Mock private PaymentMetrics paymentMetrics;
-    @InjectMocks private PaymentCheckoutServiceImpl paymentCheckoutService;
-
-    @Test
-    void returnsExistingActiveAttemptWithoutCreatingAnotherProviderSession() {
-        UUID paymentId = UUID.randomUUID();
-        UUID orderId = UUID.randomUUID();
-        UUID userId = UUID.randomUUID();
-        Payment payment = payment(paymentId, orderId, userId);
-        PaymentAttempt attempt = PaymentAttempt.builder()
-                .payment(payment)
-                .provider(PaymentProvider.SANDBOX)
-                .providerSessionId("sandbox-session")
-                .checkoutUrl("https://checkout.example/session")
-                .status(PaymentAttemptStatus.REQUIRES_CUSTOMER_ACTION)
-                .expiresAt(LocalDateTime.now().plusMinutes(10))
-                .build();
-        when(paymentRepository.findByOrderId(orderId)).thenReturn(Optional.of(payment));
-        when(paymentAttemptRepository
-                .findTopByPayment_IdAndStatusInAndExpiresAtAfterOrderByCreatedAtDesc(
-                        eq(paymentId), anyList(), any(LocalDateTime.class)))
-                .thenReturn(Optional.of(attempt));
-
-        CreateCheckoutSessionResponse result = paymentCheckoutService.createCheckoutSession(orderId, userId);
-
-        assertThat(result.getPaymentId()).isEqualTo(paymentId);
-        assertThat(result.getCheckoutUrl()).isEqualTo("https://checkout.example/session");
-        verifyNoInteractions(paymentGatewayFactory, paymentMetrics);
-        verify(paymentAttemptRepository, never()).save(any());
+    @BeforeEach void setUp() {
+        var environment = new MockEnvironment(); environment.setActiveProfiles("test");
+        transactions = new CheckoutSessionTransactions(payments, attempts, gateways, settings,
+                new CheckoutUrlPolicy(settings, environment), new PaymentMetrics(new SimpleMeterRegistry()), cancellations, trustedOrders);
+        service = new PaymentCheckoutServiceImpl(transactions);
+        payment = Payment.builder().id(UUID.randomUUID()).orderId(UUID.randomUUID()).userId(UUID.randomUUID())
+                .amount(new BigDecimal("10.00")).currency("USD").provider(PaymentProvider.SANDBOX)
+                .status(PaymentStatus.PENDING).idempotencyKey("payment-key").build();
+        attempt = PaymentAttempt.builder().id(UUID.randomUUID()).payment(payment).provider(PaymentProvider.SANDBOX)
+                .idempotencyKey("checkout:durable").successUrl("http://localhost:5173/payment/return")
+                .cancelUrl("http://localhost:5173/payment/return").expiresAt(Instant.now().plusSeconds(1800))
+                .status(PaymentAttemptStatus.CREATED).build();
+        when(payments.findByOrderIdForUpdate(payment.getOrderId())).thenReturn(Optional.of(payment));
+        when(attempts.findById(attempt.getId())).thenReturn(Optional.of(attempt));
     }
 
-    private Payment payment(UUID paymentId, UUID orderId, UUID userId) {
-        return Payment.builder()
-                .id(paymentId)
-                .orderId(orderId)
-                .userId(userId)
-                .amount(new BigDecimal("10.00"))
-                .currency("USD")
-                .provider(PaymentProvider.SANDBOX)
-                .status(PaymentStatus.PENDING)
-                .idempotencyKey("payment-key")
-                .build();
+    @Test void returnsExistingActiveSessionWithoutCreatingProviderSession() {
+        attempt.setProviderSessionId("saved-session");
+        attempt.setCheckoutUrl("http://localhost:3001/mock-checkout");
+        attempt.setStatus(PaymentAttemptStatus.REQUIRES_CUSTOMER_ACTION);
+        payment.setStatus(PaymentStatus.REQUIRES_CUSTOMER_ACTION);
+        when(attempts.findTopByPayment_IdAndStatusInOrderByCreatedAtDesc(eq(payment.getId()), anyList()))
+                .thenReturn(Optional.of(attempt));
+        var result = service.createCheckoutSession(payment.getOrderId(), payment.getUserId());
+        assertThat(result.getCheckoutUrl()).isEqualTo(attempt.getCheckoutUrl());
+        verifyNoInteractions(gateway, gateways);
+    }
+
+    @Test void providerTimeoutReplaysPersistedKeyAndRequestParameters() {
+        when(attempts.findTopByPayment_IdAndStatusInOrderByCreatedAtDesc(eq(payment.getId()), anyList()))
+                .thenReturn(Optional.of(attempt));
+        when(gateways.getGateway(PaymentProvider.SANDBOX)).thenReturn(gateway);
+        when(gateway.createCheckoutSession(any())).thenThrow(new IllegalStateException("secret provider detail"))
+                .thenReturn(CheckoutSessionResult.builder().provider(PaymentProvider.SANDBOX)
+                        .providerSessionId("same-session").checkoutUrl("http://localhost:3001/mock-checkout")
+                        .expiresAt(attempt.getExpiresAt()).build());
+        assertThatThrownBy(() -> service.createCheckoutSession(payment.getOrderId(), payment.getUserId()))
+                .isInstanceOf(PaymentApiException.class).hasMessageNotContaining("secret");
+        assertThat(attempt.getStatus()).isEqualTo(PaymentAttemptStatus.CREATED);
+        service.createCheckoutSession(payment.getOrderId(), payment.getUserId());
+        var commands = ArgumentCaptor.forClass(CreateCheckoutSessionCommand.class);
+        verify(gateway, times(2)).createCheckoutSession(commands.capture());
+        assertThat(commands.getAllValues()).extracting(CreateCheckoutSessionCommand::getIdempotencyKey)
+                .containsExactly("checkout:durable", "checkout:durable");
+        assertThat(commands.getAllValues()).extracting(CreateCheckoutSessionCommand::getExpiresAt)
+                .containsOnly(attempt.getExpiresAt());
+        verify(attempts, never()).save(any());
+    }
+
+    @Test void reservesUniqueAttemptKeyBeforeAnyProviderExecution() {
+        when(attempts.saveAndFlush(any())).thenAnswer(invocation -> {
+            PaymentAttempt saved = invocation.getArgument(0);
+            saved.setId(UUID.randomUUID());
+            return saved;
+        });
+        transactions.reserve(payment.getOrderId(), payment.getUserId());
+        var reserved = ArgumentCaptor.forClass(PaymentAttempt.class);
+        verify(attempts).saveAndFlush(reserved.capture());
+        assertThat(reserved.getValue().getIdempotencyKey()).startsWith("checkout:").hasSize(45);
+        assertThat(reserved.getValue().getSuccessUrl()).contains(payment.getId().toString(), payment.getOrderId().toString());
+        verifyNoInteractions(gateway);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = PaymentStatus.class, names = {"SUCCESS", "FAILED", "CANCELLED", "EXPIRED",
+            "PROCESSING", "REFUNDED", "REFUND_REQUESTED", "REFUND_PROCESSING", "REFUND_FAILED"})
+    void rejectsTerminalOrProcessingPayment(PaymentStatus status) {
+        payment.setStatus(status);
+        assertThatThrownBy(() -> service.createCheckoutSession(payment.getOrderId(), payment.getUserId()))
+                .isInstanceOf(PaymentApiException.class);
+        verifyNoInteractions(gateways, gateway);
+    }
+
+    @Test void rejectsExpiredAttemptWithoutMakingReplacementSession() {
+        attempt.setExpiresAt(Instant.now().minusSeconds(1));
+        when(attempts.findTopByPayment_IdAndStatusInOrderByCreatedAtDesc(eq(payment.getId()), anyList()))
+                .thenReturn(Optional.of(attempt));
+        assertThatThrownBy(() -> service.createCheckoutSession(payment.getOrderId(), payment.getUserId()))
+                .isInstanceOfSatisfying(PaymentApiException.class,
+                        exception -> assertThat(exception.getCode()).isEqualTo(PaymentErrorCode.PAYMENT_CHECKOUT_SESSION_EXPIRED));
+        verifyNoInteractions(gateways, gateway);
+    }
+
+    @Test void refusesCancellationTombstoneAndWrongOwner() {
+        when(cancellations.existsByOrderId(payment.getOrderId())).thenReturn(true);
+        assertThatThrownBy(() -> service.createCheckoutSession(payment.getOrderId(), payment.getUserId()))
+                .isInstanceOfSatisfying(PaymentApiException.class,
+                        exception -> assertThat(exception.getCode()).isEqualTo(PaymentErrorCode.PAYMENT_CANCELLED));
+        assertThatThrownBy(() -> service.createCheckoutSession(payment.getOrderId(), UUID.randomUUID()))
+                .isInstanceOfSatisfying(PaymentApiException.class,
+                        exception -> assertThat(exception.getCode()).isEqualTo(PaymentErrorCode.PAYMENT_NOT_OWNED));
+        verifyNoInteractions(gateways, gateway);
     }
 }

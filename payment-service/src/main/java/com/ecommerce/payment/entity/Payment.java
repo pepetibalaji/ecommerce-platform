@@ -33,7 +33,7 @@ import lombok.Setter;
 import lombok.ToString;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -118,18 +118,18 @@ public class Payment {
 
     @NotNull(message = "Created timestamp is required")
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @NotNull(message = "Updated timestamp is required")
     @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     @Version
     @Column(name = "version", nullable = false)
     private Long version;
 
     @Column(name = "last_provider_check_at")
-    private LocalDateTime lastProviderCheckAt;
+    private Instant lastProviderCheckAt;
 
     @Builder.Default
     @OneToMany(mappedBy = "payment", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
@@ -148,7 +148,7 @@ public class Payment {
 
     @PrePersist
     void prePersist() {
-        LocalDateTime now = LocalDateTime.now();
+        Instant now = Instant.now();
 
         if (createdAt == null) {
             createdAt = now;
@@ -171,7 +171,7 @@ public class Payment {
 
     @PreUpdate
     void preUpdate() {
-        updatedAt = LocalDateTime.now();
+        updatedAt = Instant.now();
         normalizeCurrency();
     }
 

@@ -26,4 +26,8 @@ public interface PaymentGateway {
     RefundPaymentResult refundPayment(RefundPaymentCommand command);
 
     RefundGatewayResponse refund(RefundGatewayRequest request);
+
+    default RefundGatewayResponse retrieveRefund(String providerRefundId) {
+        throw new UnsupportedOperationException("Refund reconciliation is not supported by this provider");
+    }
 }

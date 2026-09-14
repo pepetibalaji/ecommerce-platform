@@ -47,6 +47,10 @@ public interface OrderService {
 
     void handlePaymentFailure(PaymentFailedEvent event);
 
+    void handlePaymentExpired(com.ecommerce.common.events.payment.PaymentExpiredEvent event);
+
+    void handleRefundFailed(com.ecommerce.common.events.payment.PaymentRefundFailedEvent event);
+
     void handleRefundCompleted(PaymentRefundCompletedEvent event);
 
     void handleRefundRequestRejected(PaymentRefundRequestRejectedEvent event);

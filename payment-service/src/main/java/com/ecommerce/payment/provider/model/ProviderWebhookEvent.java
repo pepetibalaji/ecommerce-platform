@@ -17,6 +17,14 @@ public class ProviderWebhookEvent {
 
     private String providerEventId;
 
+    private java.util.UUID paymentId;
+
+    private String attemptIdempotencyKey;
+
+    private BigDecimal amount;
+
+    private String currency;
+
     private String eventType;
 
     private ProviderPaymentStatus status;

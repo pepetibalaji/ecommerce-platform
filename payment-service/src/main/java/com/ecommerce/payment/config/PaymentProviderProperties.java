@@ -66,7 +66,7 @@ public class PaymentProviderProperties {
             }
 
             if (active == PaymentProvider.RAZORPAY) {
-                return razorpay.enabled;
+                return false;
             }
 
             return false;
@@ -116,6 +116,10 @@ public class PaymentProviderProperties {
 
         private String apiKey = "";
 
+        private boolean stagingVerified = false;
+
+        private java.util.List<String> previousWebhookSecrets = java.util.List.of();
+
         private String webhookSecret = "";
 
         @Positive(message = "Stripe timeout must be greater than zero")
@@ -141,6 +145,10 @@ public class PaymentProviderProperties {
     @Getter
     @Setter
     public static class Checkout {
+
+        private java.util.Set<String> allowedProviderHosts = java.util.Set.of("checkout.stripe.com");
+
+        private java.util.Set<String> frontendOrigins = java.util.Set.of("http://localhost:5173");
 
         @NotBlank(message = "Checkout success URL is required")
         private String successUrl = "http://localhost:5173/payment/return?orderId={ORDER_ID}&paymentId={PAYMENT_ID}";

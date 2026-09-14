@@ -48,6 +48,16 @@ class CatalogueSecurityTest {
   }
 
   @Test
+  void browserCanReadRetryGuidanceOnCrossOriginResponses() {
+    client.get().uri("http://gateway.test/api/v1/products")
+        .header("Origin", "http://localhost:5173")
+        .exchange().expectStatus().isOk()
+        .expectHeader().valueEquals("Access-Control-Allow-Origin", "http://localhost:5173")
+        .expectHeader().value("Access-Control-Expose-Headers", value ->
+            org.assertj.core.api.Assertions.assertThat(value).contains("Retry-After"));
+  }
+
+  @Test
   void sellerAdminAndInternalPathsAreNotAnonymousCatalogueEndpoints() {
     client.get().uri("/api/v1/seller/products").exchange().expectStatus().isUnauthorized();
     client.get().uri("/api/v1/admin/products").exchange().expectStatus().isUnauthorized();

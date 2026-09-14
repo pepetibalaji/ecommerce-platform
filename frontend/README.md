@@ -25,7 +25,10 @@ Copy-Item .env.example .env.local
 npm run dev
 ```
 
-For visual-only development, set `VITE_USE_MOCKS=true` in `.env.local`. Do not enable mocks in stage.
+The example configuration uses real Gateway requests. For visual-only development,
+set `VITE_USE_MOCKS=true` in `.env.local` and use `npm run dev`. Frontend builds and
+production mode reject mock data. Set `VITE_USE_MOCKS=false` in the process or build
+environment before running release checks; process values override local settings.
 
 Run the release checks before deployment:
 
@@ -107,9 +110,52 @@ The test command above includes workspace search and server-rendered markup chec
 These do not replace signed-in browser checks of mobile navigation, keyboard focus,
 form interactions and table scrolling before deployment.
 
+## Payment and cancellation
+
+Checkout creates one Order intent and asks Payment Service for its checkout session.
+Only a retryable `PAYMENT_PREPARING` response triggers automatic preparation retries:
+at most five attempts, with delays bounded to one to five seconds. The server owns
+the provider session and its idempotency key. The browser checks the exact
+`https://checkout.stripe.com` host and an unexpired, timezone-aware `expiresAt`
+before enabling the redirect, and blocks repeat redirect clicks.
+
+The `/payment/return` page queries authenticated Order and Payment GET endpoints
+up to 25 times over about two minutes. It displays recorded state; URL parameters,
+provider redirects, and browser timers never establish payment success. A manual
+status refresh starts another bounded run. Payment `EXPIRED` and Order
+`PAYMENT_EXPIRED` end the existing checkout intent.
+
+Cancellation can remain `CANCELLATION_REQUESTED` while payment is resolved. A paid
+cancellation enters `REFUND_REQUESTED`; `PARTIALLY_REFUNDED`, `REFUNDED`, and
+`REFUND_FAILED` reflect later outcomes. A refund request acknowledgement is not
+completion. Admin full-order refunds use the audited Order refund-request API.
+Partial refunds and provider reconciliation remain operator procedures described
+in the [Payment recovery runbook](../payment-service/docs/production-reliability.md).
+
+Frontend mocks are visual fixtures and leave a mock checkout awaiting confirmation.
+The backend Sandbox adapter is local/test-only; its `http://localhost:3001/mock-checkout`
+URL is accepted only in development. This repository does not provide a browser
+sandbox that completes real payments or a public Sandbox webhook endpoint.
+
 ## Stage deployment
 
 Deploy this folder as Vercel's project root. Set `VITE_API_BASE_URL` to the Gateway's public HTTPS URL, `VITE_USE_MOCKS=false`, and `VITE_CART_MAX_QUANTITY_PER_ITEM` to the Cart Service's configured per-line limit (100 by default). Configure the same frontend origin in Gateway CORS, payment return configuration, and Auth email-link configuration.
+
+Set the exact frontend origin, including any nondefault port, in
+`GATEWAY_CORS_ALLOWED_ORIGINS` and Payment's `PAYMENT_FRONTEND_ORIGINS`. For example,
+an origin of `https://shop.example` uses both `PAYMENT_CHECKOUT_SUCCESS_URL` and
+`PAYMENT_CHECKOUT_CANCEL_URL` set to
+`https://shop.example/payment/return?orderId={ORDER_ID}&paymentId={PAYMENT_ID}`, and
+`PAYMENT_FRONTEND_RETURN_URL=https://shop.example/payment/return`. These are backend
+configuration values; do not place provider credentials or the shared Order lookup
+secret in `VITE_*` variables. Vercel's rewrite preserves the return-page route.
+
+Before enabling Stripe outside development, complete the staging checkout, signed
+webhook/replay, expiry, and refund exercise, then set the backend
+`STRIPE_STAGING_VERIFIED=true` gate. Razorpay remains disabled and Sandbox cannot be
+used for a stage/production release. Follow the
+[frontend integration contract](../docs/frontend-integration.md) and
+[Payment rollout runbook](../payment-service/docs/production-reliability.md).
 
 Before a stage release, verify Gateway routing for public catalogue/Auth flows,
 the guest-cart cookie domain/SameSite policy, `Idempotency-Key` CORS support, and

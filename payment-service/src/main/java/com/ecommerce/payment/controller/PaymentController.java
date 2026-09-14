@@ -22,7 +22,11 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/payments")
 @RequiredArgsConstructor
-@Tag(name = "Payments", description = "Customer payment APIs")
+@Tag(name = "Payments", description = "Customer payment APIs; provider redirects are informational and never prove payment.")
+@io.swagger.v3.oas.annotations.responses.ApiResponses({
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Payment state conflict; use the stable code and retry guidance", content = @io.swagger.v3.oas.annotations.media.Content(schema = @io.swagger.v3.oas.annotations.media.Schema(implementation = com.ecommerce.payment.dto.response.PaymentApiError.class))),
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "503", description = "Payment provider unavailable", content = @io.swagger.v3.oas.annotations.media.Content(schema = @io.swagger.v3.oas.annotations.media.Schema(implementation = com.ecommerce.payment.dto.response.PaymentApiError.class)))
+})
 public class PaymentController {
 
     private final PaymentCheckoutService paymentCheckoutService;
@@ -36,6 +40,7 @@ public class PaymentController {
         return ResponseEntity.ok(paymentWebhookService.refreshPayment(orderId, extractUserId(jwt)));
     }
 
+    @io.swagger.v3.oas.annotations.Operation(summary = "Create or reuse an owned checkout session", description = "Requires a prepared payable Order. PAYMENT_PREPARING permits bounded retry after 2 seconds. Concurrent requests share one durable attempt. checkoutUrl is provider-allowlisted and expiresAt is UTC.")
     @PostMapping("/orders/{orderId}/checkout-session")
     public ResponseEntity<CreateCheckoutSessionResponse> createCheckoutSession(
             @PathVariable @NotNull(message = "Order id is required") UUID orderId,
@@ -48,10 +53,11 @@ public class PaymentController {
     @GetMapping("/me")
     public ResponseEntity<Page<PaymentResponse>> getMyPayments(
             @AuthenticationPrincipal Jwt jwt,
-            Pageable pageable
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
         UUID userId = extractUserId(jwt);
-        return ResponseEntity.ok(paymentQueryService.getMyPayments(userId, pageable));
+        return ResponseEntity.ok(paymentQueryService.getMyPayments(userId, com.ecommerce.payment.config.PaymentPagination.page(page, size)));
     }
 
     @GetMapping("/orders/{orderId}")

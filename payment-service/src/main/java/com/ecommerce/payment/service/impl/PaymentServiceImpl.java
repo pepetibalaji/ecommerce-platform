@@ -38,28 +38,13 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentRepository paymentRepository;
     private final PaymentMapper paymentMapper;
     private final PaymentMetrics paymentMetrics;
+    private final com.ecommerce.payment.order.TrustedOrderClient trustedOrderClient;
+    private final com.ecommerce.payment.repository.PaymentCancellationRequestRepository cancellationRequests;
 
     @Override
     public PaymentResponse createPayment(@Valid CreatePaymentRequest request) {
-        if (paymentRepository.existsByOrderId(request.getOrderId())) {
-            throw new ResourceAlreadyExistsException(
-                    "Payment already exists for order: " + request.getOrderId()
-            );
-        }
-
-        if (paymentRepository.existsByIdempotencyKey(request.getIdempotencyKey())) {
-            throw new ResourceAlreadyExistsException(
-                    "Payment already exists for idempotency key: " + request.getIdempotencyKey()
-            );
-        }
-
-        Payment payment = paymentMapper.toEntity(request);
-        payment.setStatus(PaymentStatus.PENDING);
-
-        Payment savedPayment = paymentRepository.save(payment);
-        paymentMetrics.paymentCreated();
-
-        return paymentMapper.toResponse(savedPayment);
+        // Only the authenticated Order event pipeline may prepare payments.
+        throw new BadRequestException("Payments must be prepared from an Order checkout");
     }
 
     @Override
@@ -127,19 +112,17 @@ public class PaymentServiceImpl implements PaymentService {
         BigDecimal normalizedAmount = normalizeAmount(amount);
         String idempotencyKey = buildOrderCreatedIdempotencyKey(orderId);
 
-        paymentRepository.findByOrderId(orderId)
-                .ifPresent(existing -> log.info(
-                        "Payment already prepared for order-created event. orderId={}, paymentId={}, status={}, correlationId={}, traceId={}",
-                        orderId,
-                        existing.getId(),
-                        existing.getStatus(),
-                        correlationId,
-                        traceId
-                ));
-
-        if (paymentRepository.existsByOrderId(orderId)) {
+        var existing = paymentRepository.findByOrderId(orderId);
+        if (existing.isPresent()) {
+            var prepared = existing.get();
+            if (!userId.equals(prepared.getUserId()) || normalizedAmount.compareTo(prepared.getAmount()) != 0
+                    || !normalizedCurrency.equals(prepared.getCurrency())) {
+                throw new BadRequestException("Duplicate Order event does not match prepared payment");
+            }
             return;
         }
+        trustedOrderClient.validatePreparation(orderId, userId, normalizedAmount, normalizedCurrency,
+                cancellationRequests.existsByOrderId(orderId));
 
         Payment payment = Payment.builder()
         .orderId(orderId)
@@ -169,13 +152,9 @@ public class PaymentServiceImpl implements PaymentService {
                     traceId
             );
         } catch (DataIntegrityViolationException ex) {
-            handleDuplicatePaymentPreparationRace(
-                    orderId,
-                    idempotencyKey,
-                    correlationId,
-                    traceId,
-                    ex
-            );
+            // PostgreSQL aborts a transaction after a unique violation. Let Kafka retry in a new
+            // transaction; do not query or acknowledge from this rollback-only transaction.
+            throw ex;
         }
     }
 
@@ -200,7 +179,7 @@ public class PaymentServiceImpl implements PaymentService {
             throw new BadRequestException("userId is required for payment preparation");
         }
 
-        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0 || amount.precision() - amount.scale() > 17) {
             throw new BadRequestException("amount must be greater than zero for payment preparation");
         }
 
@@ -233,28 +212,4 @@ public class PaymentServiceImpl implements PaymentService {
         return ORDER_CREATED_IDEMPOTENCY_PREFIX + orderId;
     }
 
-    private void handleDuplicatePaymentPreparationRace(
-            UUID orderId,
-            String idempotencyKey,
-            String correlationId,
-            String traceId,
-            DataIntegrityViolationException ex
-    ) {
-        boolean duplicateOrder = paymentRepository.existsByOrderId(orderId);
-        boolean duplicateIdempotencyKey = paymentRepository.existsByIdempotencyKey(idempotencyKey);
-
-        if (duplicateOrder || duplicateIdempotencyKey) {
-            log.info(
-                    "Duplicate order-created payment preparation ignored after DB constraint. orderId={}, idempotencyKey={}, correlationId={}, traceId={}",
-                    orderId,
-                    idempotencyKey,
-                    correlationId,
-                    traceId
-            );
-
-            return;
-        }
-
-        throw ex;
-    }
 }

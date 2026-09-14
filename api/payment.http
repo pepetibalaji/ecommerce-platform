@@ -10,6 +10,9 @@
 #    PENDING payment record.
 # 3. Create a checkout session for that order.
 # 4. Verify the payment through the customer or admin endpoints below.
+# Redirects are informational. Only verified provider webhooks confirm/fail payment.
+# PAYMENT_PREPARING is retryable every 2 seconds for a short bounded period.
+# Pagination requires page >= 0 and 1 <= size <= 50.
 # =========================================================
 
 @paymentBaseUrl = http://localhost:8087
@@ -27,6 +30,27 @@
 # Use a unique value for every refund request. Reuse the same value only when
 # retrying that exact request.
 @refundIdempotencyKey = refund-unique-key-001
+@refundId = paste_refund_id_here
+@eventId = paste_outbox_or_webhook_event_id_here
+
+### Outbox delivery status (ADMIN)
+GET {{paymentBaseUrl}}/api/v1/admin/payments/operations/outbox
+Authorization: Bearer {{adminAccessToken}}
+
+### Retry a DEAD event after correcting Kafka delivery (keeps event ID)
+POST {{paymentBaseUrl}}/api/v1/admin/payments/operations/outbox/{{eventId}}/retry
+Authorization: Bearer {{adminAccessToken}}
+
+### Inspect retained webhook processing status (ADMIN)
+GET {{paymentBaseUrl}}/api/v1/admin/payments/operations/webhooks
+Authorization: Bearer {{adminAccessToken}}
+
+### Reconcile a manual-review refund using its original provider identity
+POST {{paymentBaseUrl}}/api/v1/admin/payments/{{paymentId}}/refunds/{{refundId}}/reconcile
+Authorization: Bearer {{adminAccessToken}}
+Content-Type: application/json
+
+{"reason":"Provider incident investigated; retry original refund status reconciliation."}
 
 # =========================================================
 # CUSTOMER PAYMENT APIs

@@ -89,6 +89,9 @@ class OrderServiceTest {
     @Mock
     private CheckoutProperties checkoutProperties;
 
+    @Mock private OrderRefundRequestService orderRefundRequestService;
+    @Mock private OrderLifecycleAuditService lifecycleAuditService;
+
     @InjectMocks
     private OrderServiceImpl orderService;
 
@@ -416,43 +419,19 @@ class OrderServiceTest {
     }
 
     @Test
-    void cancelOrder_shouldReleaseStockAndCancel() {
-        UUID orderId =
-                UUID.randomUUID();
-
-        Order order =
-                existingOrder(orderId, OrderStatus.PENDING);
-
-        OrderItem item =
-                existingOrderItem(order);
-
-        order.getItems().add(item);
-
-        when(orderRepository.findByIdForUpdate(orderId))
-                .thenReturn(Optional.of(order));
-
-        when(orderRepository.save(any(Order.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-
-        OrderResponse response =
-                orderService.cancelOrder(userId, orderId);
-
-        assertThat(response.getStatus())
-                .isEqualTo(OrderStatus.CANCELLED);
-
-        assertThat(response.getCurrency())
-                .isEqualTo("INR");
-
-        verify(inventoryReleaseOutboxService)
-                .enqueueFor(order, InventoryReleaseReason.CANCELLED);
-
-        verify(inventoryGrpcClient, never())
-                .releaseStock(any(), anyInt(), any(UUID.class));
-
-        verify(orderRepository)
-                .save(order);
+    void cancelOrder_shouldQueueDurableCancellationAndWaitBeforeReleasingStock() {
+        UUID orderId = UUID.randomUUID();
+        Order order = existingOrder(orderId, OrderStatus.PENDING);
+        order.getItems().add(existingOrderItem(order));
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        OrderResponse response = orderService.cancelOrder(userId, orderId, "Changed my mind");
+        assertThat(response.getStatus()).isEqualTo(OrderStatus.CANCELLATION_REQUESTED);
+        verify(orderRefundRequestService).enqueueCancellation(order, userId, "CUSTOMER", "Changed my mind", false);
+        verifyNoInteractions(inventoryReleaseOutboxService);
+        verify(inventoryGrpcClient, never()).releaseStock(any(), anyInt(), any(UUID.class));
+        verify(orderRepository).save(order);
     }
-
     @Test
     void getOrderById_shouldThrowForDifferentUser() {
         UUID orderId =
@@ -499,43 +478,23 @@ class OrderServiceTest {
     }
 
     @Test
-    void updateOrderStatus_shouldUpdateStatus() {
-        UUID orderId =
-                UUID.randomUUID();
-
-        Order order =
-                existingOrder(orderId, OrderStatus.PENDING);
-
-        when(orderRepository.findByIdForUpdate(orderId))
-                .thenReturn(Optional.of(order));
-
-        when(orderRepository.save(any(Order.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-
-        UpdateOrderStatusRequest request =
-                new UpdateOrderStatusRequest();
-
+    void updateOrderStatus_cannotConfirmPaymentThroughAnAdminStatusWrite() {
+        UUID orderId = UUID.randomUUID();
+        Order order = existingOrder(orderId, OrderStatus.PENDING);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        UpdateOrderStatusRequest request = new UpdateOrderStatusRequest();
         request.setStatus(OrderStatus.CONFIRMED);
-
-        OrderResponse response =
-                orderService.updateOrderStatus(orderId, request);
-
-        assertThat(response.getStatus())
-                .isEqualTo(OrderStatus.CONFIRMED);
-
-        assertThat(response.getCurrency())
-                .isEqualTo("INR");
-
-        verify(orderRepository)
-                .save(order);
+        assertThrows(OrderApiException.class, () -> orderService.updateOrderStatus(orderId, request));
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+        verify(orderRepository, never()).save(any());
+        verifyNoInteractions(inventoryReleaseOutboxService);
     }
-
     @Test
     void handlePaymentSuccess_shouldConfirmPendingOrderAndRecordEvent() {
         UUID orderId = UUID.randomUUID();
         UUID paymentId = UUID.randomUUID();
         PaymentSuccessEvent event = new PaymentSuccessEvent(
-                paymentId, orderId, userId, new BigDecimal("100.00"), "INR",
+                paymentId, orderId, userId, new BigDecimal("200.00"), "INR",
                 "SANDBOX", "transaction-1", "correlation-1", "trace-1");
         Order order = existingOrder(orderId, OrderStatus.PENDING);
 
@@ -640,7 +599,7 @@ class OrderServiceTest {
         UUID orderId = UUID.randomUUID();
         UUID paymentId = UUID.randomUUID();
         PaymentFailedEvent event = new PaymentFailedEvent(
-                paymentId, orderId, userId, new BigDecimal("100.00"), "INR",
+                paymentId, orderId, userId, new BigDecimal("200.00"), "INR",
                 "SANDBOX", "DECLINED", "Card was declined", "correlation-1", "trace-1");
         Order order = existingOrder(orderId, OrderStatus.PENDING);
 
@@ -654,7 +613,7 @@ class OrderServiceTest {
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
         assertThat(order.getPaymentId()).isEqualTo(paymentId);
         assertThat(order.getPaymentFailedAt()).isNotNull();
-        assertThat(order.getPaymentFailureReason()).isEqualTo("Card was declined");
+        assertThat(order.getPaymentFailureReason()).isEqualTo("Payment was not completed.");
         verify(orderRepository).save(order);
         verify(inventoryReleaseOutboxService)
                 .enqueueFor(order, InventoryReleaseReason.PAYMENT_FAILED);
@@ -665,7 +624,7 @@ class OrderServiceTest {
     void handlePaymentFailure_shouldRemainRetryableWhenReservationIdIsMissing() {
         UUID orderId = UUID.randomUUID();
         PaymentFailedEvent event = new PaymentFailedEvent(
-                UUID.randomUUID(), orderId, userId, new BigDecimal("100.00"), "INR",
+                UUID.randomUUID(), orderId, userId, new BigDecimal("200.00"), "INR",
                 "SANDBOX", "DECLINED", "Card was declined", "correlation-1", "trace-1");
         Order order = existingOrder(orderId, OrderStatus.PENDING);
         OrderItem item = existingOrderItem(order);
@@ -685,29 +644,22 @@ class OrderServiceTest {
     }
 
     @Test
-    void updateOrderStatus_shouldQueueInventoryReleaseWhenCancelling() {
+    void updateOrderStatus_cannotBypassCancellationAndRefundPolicy() {
         UUID orderId = UUID.randomUUID();
-        Order order = existingOrder(orderId, OrderStatus.PENDING);
-        order.getItems().add(existingOrderItem(order));
-
+        Order order = existingOrder(orderId, OrderStatus.CONFIRMED);
+        order.setPaymentId(UUID.randomUUID());
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
-        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
         UpdateOrderStatusRequest request = new UpdateOrderStatusRequest();
         request.setStatus(OrderStatus.CANCELLED);
-
-        OrderResponse response = orderService.updateOrderStatus(orderId, request);
-
-        assertThat(response.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        verify(inventoryReleaseOutboxService)
-                .enqueueFor(order, InventoryReleaseReason.CANCELLED);
+        assertThrows(OrderApiException.class, () -> orderService.updateOrderStatus(orderId, request));
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        verifyNoInteractions(inventoryReleaseOutboxService, orderRefundRequestService);
     }
-
     @Test
     void handlePaymentSuccess_shouldIgnoreDuplicateEvent() {
         UUID orderId = UUID.randomUUID();
         PaymentSuccessEvent event = new PaymentSuccessEvent(
-                UUID.randomUUID(), orderId, userId, new BigDecimal("100.00"), "INR",
+                UUID.randomUUID(), orderId, userId, new BigDecimal("200.00"), "INR",
                 "SANDBOX", "transaction-1", "correlation-1", "trace-1");
         Order order = existingOrder(orderId, OrderStatus.PENDING);
 
@@ -727,7 +679,7 @@ class OrderServiceTest {
     void handlePaymentFailure_shouldIgnoreLateFailureForConfirmedOrder() {
         UUID orderId = UUID.randomUUID();
         PaymentFailedEvent event = new PaymentFailedEvent(
-                UUID.randomUUID(), orderId, userId, new BigDecimal("100.00"), "INR",
+                UUID.randomUUID(), orderId, userId, new BigDecimal("200.00"), "INR",
                 "SANDBOX", "DECLINED", "Card was declined", "correlation-1", "trace-1");
         Order order = existingOrder(orderId, OrderStatus.CONFIRMED);
 
@@ -746,7 +698,7 @@ class OrderServiceTest {
     void handlePaymentSuccess_shouldIgnoreLateSuccessForCancelledOrder() {
         UUID orderId = UUID.randomUUID();
         PaymentSuccessEvent event = new PaymentSuccessEvent(
-                UUID.randomUUID(), orderId, userId, new BigDecimal("100.00"), "INR",
+                UUID.randomUUID(), orderId, userId, new BigDecimal("200.00"), "INR",
                 "SANDBOX", "transaction-1", "correlation-1", "trace-1");
         Order order = existingOrder(orderId, OrderStatus.CANCELLED);
 
@@ -766,7 +718,7 @@ class OrderServiceTest {
     void handlePaymentSuccess_shouldFailForUnknownOrder() {
         UUID orderId = UUID.randomUUID();
         PaymentSuccessEvent event = new PaymentSuccessEvent(
-                UUID.randomUUID(), orderId, userId, new BigDecimal("100.00"), "INR",
+                UUID.randomUUID(), orderId, userId, new BigDecimal("200.00"), "INR",
                 "SANDBOX", "transaction-1", "correlation-1", "trace-1");
 
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.empty());
@@ -865,9 +817,153 @@ class OrderServiceTest {
         verifyNoInteractions(inventoryReleaseOutboxService);
     }
 
+    @Test
+    void paidCancellationQueuesRefundAndBrowserRetryDoesNotReleaseOrDuplicate() {
+        Order order = existingOrder(UUID.randomUUID(), OrderStatus.CONFIRMED);
+        order.setPaymentId(UUID.randomUUID());
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.save(order)).thenReturn(order);
+        orderService.cancelOrder(userId, order.getId(), "customer reason");
+        orderService.cancelOrder(userId, order.getId(), "retry reason");
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.REFUND_REQUESTED);
+        verify(orderRefundRequestService).enqueueFullRefund(order, userId, "CUSTOMER", "customer reason");
+        verifyNoInteractions(inventoryReleaseOutboxService);
+    }
+
+    @Test
+    void successRacingCancellationAwaitsExistingPaymentCommandWithoutDispatchingAnother() {
+        Order order = existingOrder(UUID.randomUUID(), OrderStatus.CANCELLATION_REQUESTED);
+        UUID paymentId = UUID.randomUUID();
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        orderService.handlePaymentSuccess(successEvent(order.getId(), paymentId));
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.REFUND_REQUESTED);
+        assertThat(order.getPaymentId()).isEqualTo(paymentId);
+        verifyNoInteractions(orderRefundRequestService, inventoryReleaseOutboxService, orderEventPublisher);
+        verify(orderProcessedEventRepository).save(any());
+    }
+
+    @Test
+    void fullRefundBeforeSuccessConvergesWithoutConfirmingOrReleasingTwice() {
+        Order order = existingOrder(UUID.randomUUID(), OrderStatus.PENDING);
+        UUID paymentId = UUID.randomUUID();
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        orderService.handleRefundCompleted(refundEvent(order.getId(), paymentId, true));
+        orderService.handlePaymentSuccess(successEvent(order.getId(), paymentId));
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.REFUNDED);
+        assertThat(order.getPaymentId()).isEqualTo(paymentId);
+        verify(inventoryReleaseOutboxService).enqueueFor(order, InventoryReleaseReason.FULL_REFUND);
+        verifyNoInteractions(orderEventPublisher);
+    }
+
+    @Test
+    void distinctEventIdsCannotDowngradeRefundedOrderOrRepeatInventoryRelease() {
+        Order order = existingOrder(UUID.randomUUID(), OrderStatus.CONFIRMED);
+        UUID paymentId = UUID.randomUUID();
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        orderService.handleRefundCompleted(refundEvent(order.getId(), paymentId, true));
+        orderService.handleRefundCompleted(refundEvent(order.getId(), paymentId, true));
+        orderService.handleRefundCompleted(refundEvent(order.getId(), paymentId, false));
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.REFUNDED);
+        verify(inventoryReleaseOutboxService).enqueueFor(order, InventoryReleaseReason.FULL_REFUND);
+        verify(orderProcessedEventRepository, times(3)).save(any());
+    }
+
+    @Test
+    void partialRefundBeforeSuccessRetriesAndEventuallyPreservesPartialState() {
+        Order order = existingOrder(UUID.randomUUID(), OrderStatus.PENDING);
+        UUID paymentId = UUID.randomUUID();
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        PaymentRefundCompletedEvent partial = refundEvent(order.getId(), paymentId, false);
+        assertThrows(IllegalStateException.class, () -> orderService.handleRefundCompleted(partial));
+        verify(orderProcessedEventRepository, never()).save(any());
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+        transactions.executeWithoutResult(tx -> orderService.handlePaymentSuccess(successEvent(order.getId(), paymentId)));
+        orderService.handleRefundCompleted(partial);
+        orderService.handlePaymentSuccess(successEvent(order.getId(), paymentId));
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PARTIALLY_REFUNDED);
+        verifyNoInteractions(inventoryReleaseOutboxService);
+        verify(orderEventPublisher).publishOrderCompleted(any());
+    }
+
+    @Test
+    void verifiedFullRefundRecoversProviderManualReviewWithoutFulfilmentDowngrade() {
+        Order order = existingOrder(UUID.randomUUID(), OrderStatus.REFUND_REQUESTED);
+        UUID paymentId = UUID.randomUUID(); order.setPaymentId(paymentId);
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        var failed = new com.ecommerce.common.events.payment.PaymentRefundFailedEvent(UUID.randomUUID(), paymentId,
+                order.getId(), userId, order.getTotalAmount(), "INR", "STRIPE", "REFUND_MANUAL_REVIEW", null, null);
+        orderService.handleRefundFailed(failed);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.REFUND_FAILED);
+        verifyNoInteractions(inventoryReleaseOutboxService);
+        orderService.handleRefundCompleted(refundEvent(order.getId(), paymentId, true));
+        orderService.handleRefundFailed(failed);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.REFUNDED);
+        verify(inventoryReleaseOutboxService).enqueueFor(order, InventoryReleaseReason.FULL_REFUND);
+    }
+
+    @Test
+    void expiryOutcomeReleasesPendingOrderOnlyOnceAndLateSuccessCannotReviveIt() {
+        Order order = existingOrder(UUID.randomUUID(), OrderStatus.PENDING);
+        UUID paymentId = UUID.randomUUID();
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        var event = new com.ecommerce.common.events.payment.PaymentExpiredEvent(paymentId, order.getId(), userId,
+                order.getTotalAmount(), "INR", "STRIPE", null, null);
+        when(orderProcessedEventRepository.existsByEventId(event.getEventId())).thenReturn(false, true);
+        orderService.handlePaymentExpired(event); orderService.handlePaymentExpired(event);
+        orderService.handlePaymentSuccess(successEvent(order.getId(), paymentId));
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_EXPIRED);
+        verify(inventoryReleaseOutboxService).enqueueFor(order, InventoryReleaseReason.PAYMENT_EXPIRED);
+        verifyNoInteractions(orderEventPublisher);
+    }
+
+    @Test
+    void expiryArrivingAfterSuccessCannotReleaseAPaidOrder() {
+        Order order = existingOrder(UUID.randomUUID(), OrderStatus.CONFIRMED);
+        UUID paymentId = UUID.randomUUID(); order.setPaymentId(paymentId);
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        orderService.handlePaymentExpired(new com.ecommerce.common.events.payment.PaymentExpiredEvent(paymentId,
+                order.getId(), userId, order.getTotalAmount(), "INR", "STRIPE", null, null));
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        verifyNoInteractions(inventoryReleaseOutboxService);
+    }
+
+    @Test
+    void trustedTotalsRejectForgedAmountCurrencyOwnerAndPaymentIdBeforeAnyEffects() {
+        Order order = existingOrder(UUID.randomUUID(), OrderStatus.PENDING);
+        UUID paymentId = UUID.randomUUID(); order.setPaymentId(paymentId);
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        var forged = List.of(
+                new PaymentSuccessEvent(paymentId, order.getId(), userId, new BigDecimal("199.00"), "INR", "STRIPE", null, null, null),
+                new PaymentSuccessEvent(paymentId, order.getId(), userId, order.getTotalAmount(), "USD", "STRIPE", null, null, null),
+                new PaymentSuccessEvent(paymentId, order.getId(), UUID.randomUUID(), order.getTotalAmount(), "INR", "STRIPE", null, null, null),
+                successEvent(order.getId(), UUID.randomUUID()));
+        for (var event : forged) assertThrows(BadRequestException.class, () -> orderService.handlePaymentSuccess(event));
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+        verify(orderRepository, never()).save(any());
+        verifyNoInteractions(orderEventPublisher, inventoryReleaseOutboxService);
+        verify(orderProcessedEventRepository, never()).save(any());
+    }
+
+    @Test
+    void authoritativeCancellationOutcomeCompletesCancellationAndQueuesOneRelease() {
+        Order order = existingOrder(UUID.randomUUID(), OrderStatus.CANCELLATION_REQUESTED);
+        UUID paymentId = UUID.randomUUID();
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        PaymentFailedEvent cancelled = new PaymentFailedEvent(paymentId, order.getId(), userId,
+                order.getTotalAmount(), "INR", "STRIPE", "PAYMENT_CANCELLED", "Payment cancelled", null, null);
+        orderService.handlePaymentFailure(cancelled);
+        orderService.handlePaymentFailure(cancelled);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(order.getPaymentId()).isEqualTo(paymentId);
+        verify(inventoryReleaseOutboxService).enqueueFor(order, InventoryReleaseReason.CANCELLED);
+    }
+    private PaymentSuccessEvent successEvent(UUID orderId, UUID paymentId) {
+        return new PaymentSuccessEvent(paymentId, orderId, userId, new BigDecimal("200.00"), "INR",
+                "STRIPE", "pi_paid", "correlation", "trace");
+    }
     private PaymentRefundCompletedEvent refundEvent(UUID orderId, UUID paymentId, boolean fullRefund) {
         BigDecimal total = fullRefund ? new BigDecimal("200.00") : new BigDecimal("50.00");
-        return new PaymentRefundCompletedEvent(UUID.randomUUID(), paymentId, orderId, UUID.randomUUID(), total, total,
+        return new PaymentRefundCompletedEvent(UUID.randomUUID(), paymentId, orderId, userId, total, total,
                 new BigDecimal("200.00"), "INR", null, null);
     }
 

@@ -27,7 +27,7 @@ public class RazorpayPaymentGateway implements PaymentGateway {
 
     @Override
     public boolean isEnabled() {
-        return properties.getProvider().getRazorpay().isEnabled();
+        return false;
     }
 
     @Override

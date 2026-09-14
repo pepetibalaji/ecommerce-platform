@@ -28,7 +28,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Getter
@@ -88,8 +88,16 @@ public class PaymentAttempt {
     private PaymentProvider provider;
 
     @Size(max = 150, message = "Idempotency key must not exceed 150 characters")
-    @Column(name = "idempotency_key", length = 150)
+    @jakarta.validation.constraints.NotBlank
+    @Column(name = "idempotency_key", nullable = false, length = 150)
     private String idempotencyKey;
+
+    // Persist the intended provider request so a timeout/restart replays identical parameters.
+    @Column(name = "success_url", columnDefinition = "TEXT")
+    private String successUrl;
+
+    @Column(name = "cancel_url", columnDefinition = "TEXT")
+    private String cancelUrl;
 
     @Size(max = 255, message = "Provider session id must not exceed 255 characters")
     @Column(name = "provider_session_id", length = 255)
@@ -117,19 +125,23 @@ public class PaymentAttempt {
     private String failureReason;
 
     @Column(name = "expires_at")
-    private LocalDateTime expiresAt;
+    private Instant expiresAt;
 
     @NotNull(message = "Created timestamp is required")
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @NotNull(message = "Updated timestamp is required")
     @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     @PrePersist
     void prePersist() {
-        LocalDateTime now = LocalDateTime.now();
+        Instant now = Instant.now();
+
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            idempotencyKey = "checkout:" + UUID.randomUUID();
+        }
 
         if (createdAt == null) {
             createdAt = now;
@@ -150,6 +162,6 @@ public class PaymentAttempt {
 
     @PreUpdate
     void preUpdate() {
-        updatedAt = LocalDateTime.now();
+        updatedAt = Instant.now();
     }
 }

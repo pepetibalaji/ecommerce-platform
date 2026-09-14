@@ -115,7 +115,7 @@ public class SecurityConfig {
         configuration.setAllowedHeaders(List.of(
                 "Authorization", "Content-Type", "Accept", "X-Requested-With", "Idempotency-Key"
         ));
-        configuration.setExposedHeaders(List.of("X-Trace-Id", "X-Span-Id"));
+        configuration.setExposedHeaders(List.of("X-Trace-Id", "X-Span-Id", "Retry-After"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
 

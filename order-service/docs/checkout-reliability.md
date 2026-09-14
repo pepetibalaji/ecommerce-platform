@@ -21,3 +21,7 @@ A customer can cancel a `PENDING` order, which records an audit entry and queues
 `POST /api/v1/admin/orders/{id}/refund-requests` is the command-oriented administrative path and requires an actor and reason. `GET /api/v1/admin/orders/{id}/audit` exposes immutable lifecycle audit entries to admins. The generic HTTP status mutation endpoint remains absent.
 
 `GET /api/v1/admin/orders/reconciliation/outboxes` provides state counts for order-created, inventory-release, checkout-compensation, and refund-request outboxes. `PENDING`, `FAILED`, and `MANUAL_REVIEW` counts are the operational reconciliation signals; rows are never silently discarded after terminal failure.
+
+## Payment reliability integration
+
+See [payment lifecycle](payment-lifecycle.md) for signed Order lookup, durable pending cancellation/expiry, refund review states, event replay and the authenticated browser return contract.

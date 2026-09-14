@@ -4,7 +4,7 @@ import com.ecommerce.payment.enums.PaymentProvider;
 import lombok.Builder;
 import lombok.Getter;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Getter
 @Builder
@@ -20,5 +20,5 @@ public class CheckoutSessionResult {
 
     private String checkoutUrl;
 
-    private LocalDateTime expiresAt;
+    private Instant expiresAt;
 }

@@ -7,7 +7,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -57,7 +57,7 @@ public interface PaymentWebhookEventRepository extends JpaRepository<PaymentWebh
             @Param("eventType") String eventType,
             @Param("processingStatus") String processingStatus,
             @Param("payloadHash") String payloadHash,
-            @Param("receivedAt") LocalDateTime receivedAt,
-            @Param("processedAt") LocalDateTime processedAt
+            @Param("receivedAt") Instant receivedAt,
+            @Param("processedAt") Instant processedAt
     );
 }

@@ -15,8 +15,9 @@ import java.util.concurrent.CompletableFuture;
 @RequiredArgsConstructor
 public class PaymentRefundRequestOutcomePublisher {
 
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final com.ecommerce.payment.outbox.PaymentOutboxStore outbox;
 
+    @org.springframework.transaction.annotation.Transactional
     public CompletableFuture<SendResult<String, Object>> publishRejected(
             PaymentRefundRequestedEvent request,
             String reason
@@ -29,7 +30,8 @@ public class PaymentRefundRequestOutcomePublisher {
                 request.getCorrelationId(),
                 request.getTraceId()
         );
-        return kafkaTemplate.send(KafkaTopics.PAYMENT_REFUND_REQUEST_REJECTED,
-                request.getOrderId().toString(), event);
+        outbox.enqueue("refund-request:" + request.getRefundRequestId() + ":rejected", request.getPaymentId(),
+                request.getOrderId(), KafkaTopics.PAYMENT_REFUND_REQUEST_REJECTED, event);
+        return CompletableFuture.completedFuture(null);
     }
 }

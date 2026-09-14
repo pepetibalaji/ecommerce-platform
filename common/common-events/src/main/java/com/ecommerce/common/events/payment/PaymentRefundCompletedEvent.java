@@ -16,6 +16,9 @@ public class PaymentRefundCompletedEvent extends AbstractDomainEvent {
   private BigDecimal totalRefundedAmount;
   private BigDecimal paymentAmount;
   private String currency;
+  private String provider;
+  public String getProvider() { return provider; }
+  public void setProvider(String value) { provider = value; }
   private boolean fullRefund;
 
   public PaymentRefundCompletedEvent() {

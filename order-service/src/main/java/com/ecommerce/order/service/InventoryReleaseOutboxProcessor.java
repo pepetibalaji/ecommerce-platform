@@ -55,11 +55,16 @@ public class InventoryReleaseOutboxProcessor {
                 log.info("Completed inventory-release command. commandId={}, orderId={}, reservationId={}, reason={}",
                         command.getId(), command.getOrderId(), command.getReservationId(), command.getReason());
             } catch (RuntimeException exception) {
-                if (exception.getMessage() != null
-                        && exception.getMessage().contains("Deducted inventory reservations cannot be released")) {
-                    command.markManualReview(exception.getMessage(), now);
-                    log.error("Refund/cancellation release requires fulfilment review; reservation was already deducted. commandId={}, orderId={}, reservationId={}",
-                            command.getId(), command.getOrderId(), command.getReservationId());
+                if (exception instanceof com.ecommerce.common.grpc.exception.GrpcClientException grpc
+                        && java.util.Set.of(io.grpc.Status.Code.FAILED_PRECONDITION,
+                                io.grpc.Status.Code.NOT_FOUND, io.grpc.Status.Code.INVALID_ARGUMENT)
+                                .contains(grpc.getStatusCode())) {
+                    // Inventory intentionally returns stable statuses, not implementation message text.
+                    // A deducted/missing/mismatched reservation requires an operator; retry cannot repair it.
+                    command.markManualReview("INVENTORY_RELEASE_REQUIRES_REVIEW", now);
+                    paymentOutcomeMetrics.inventoryReleaseTerminalFailure(command.getReason().name().toLowerCase());
+                    log.error("Refund/cancellation release requires fulfilment review. commandId={}, orderId={}, reservationId={}, grpcStatus={}",
+                            command.getId(), command.getOrderId(), command.getReservationId(), grpc.getStatusCode());
                     continue;
                 }
                 int nextAttempt = command.getAttemptCount() + 1;

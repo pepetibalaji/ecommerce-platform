@@ -26,6 +26,7 @@ public class PaymentOrderCreatedConsumer {
             OrderCreatedEvent event,
             @Header(value = KafkaHeaders.RECEIVED_KEY, required = false) String key
     ) {
+        validateEnvelope(event, key);
         try {
             putMdc("correlationId", event.getCorrelationId());
             putMdc("traceId", event.getTraceId());
@@ -57,6 +58,18 @@ public class PaymentOrderCreatedConsumer {
             MDC.remove("traceId");
             MDC.remove("eventId");
             MDC.remove("orderId");
+        }
+    }
+
+    private void validateEnvelope(OrderCreatedEvent event, String key) {
+        if (event == null || event.getEventId() == null || event.getOrderId() == null || event.getUserId() == null
+                || !"1.0".equals(event.getSchemaVersion()) || !"ORDER_CREATED".equals(event.getEventType())
+                || !"order-service".equals(event.getSource()) || event.getOccurredAt() == null
+                || event.getOccurredAt().isAfter(java.time.Instant.now().plusSeconds(60))
+                || event.getTotalAmount() == null || event.getTotalAmount().signum() <= 0
+                || event.getCurrency() == null || !event.getCurrency().matches("[A-Z]{3}")
+                || (key != null && !key.equals(event.getOrderId().toString()))) {
+            throw new com.ecommerce.common.exception.BadRequestException("Malformed or unsupported Order event");
         }
     }
 
