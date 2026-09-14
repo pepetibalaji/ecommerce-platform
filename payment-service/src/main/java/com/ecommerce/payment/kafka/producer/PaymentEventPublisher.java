@@ -9,5 +9,9 @@ public interface PaymentEventPublisher {
 
     void publishPaymentFailed(Payment payment);
 
+    void publishPaymentExpired(Payment payment);
+
+    void publishRefundFailed(Payment payment, PaymentRefund refund);
+
     void publishRefundCompleted(Payment payment, PaymentRefund refund, java.math.BigDecimal totalRefundedAmount);
 }

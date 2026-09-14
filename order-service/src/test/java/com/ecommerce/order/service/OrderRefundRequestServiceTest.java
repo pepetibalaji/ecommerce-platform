@@ -53,7 +53,7 @@ class OrderRefundRequestServiceTest {
     @Test
     void enqueueFullRefund_createsAuditedDurableCommandOnce() {
         UUID actorId = UUID.randomUUID();
-        when(repository.findByOrderId(order.getId())).thenReturn(Optional.empty());
+        when(repository.findByOrderIdAndCommandType(order.getId(), "REFUND")).thenReturn(Optional.empty());
         when(repository.save(any(OrderRefundRequestOutbox.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         OrderRefundRequestOutbox outbox = service.enqueueFullRefund(
@@ -73,7 +73,7 @@ class OrderRefundRequestServiceTest {
         OrderRefundRequestOutbox existing = new OrderRefundRequestOutbox(
                 order.getId(), order.getPaymentId(), order.getUserId(), UUID.randomUUID(), "CUSTOMER",
                 order.getTotalAmount(), order.getCurrency(), "Initial reason", NOW);
-        when(repository.findByOrderId(order.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByOrderIdAndCommandType(order.getId(), "REFUND")).thenReturn(Optional.of(existing));
 
         OrderRefundRequestOutbox result = service.enqueueFullRefund(
                 order, UUID.randomUUID(), "CUSTOMER", "Retry after timeout");
@@ -86,7 +86,7 @@ class OrderRefundRequestServiceTest {
     @Test
     void enqueueFullRefund_rejectsConfirmedOrderWithoutPaymentReference() {
         order.setPaymentId(null);
-        when(repository.findByOrderId(order.getId())).thenReturn(Optional.empty());
+        when(repository.findByOrderIdAndCommandType(order.getId(), "REFUND")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.enqueueFullRefund(
                 order, UUID.randomUUID(), "CUSTOMER", "Reason"))
@@ -95,5 +95,31 @@ class OrderRefundRequestServiceTest {
 
         verify(repository, never()).save(any());
         verify(auditService, never()).record(any(), any(), any(), any(), any(), any());
+    }
+    @Test
+    void cancellationBeforePreparationKeepsAuditWithoutRequiringPaymentId() {
+        order.setPaymentId(null);
+        UUID actor = order.getUserId();
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        var command = service.enqueueCancellation(order, actor, "CUSTOMER", "Cancel before redirect", false);
+        assertThat(command.getCommandType()).isEqualTo("CANCELLATION");
+        assertThat(command.getPaymentId()).isNull();
+        assertThat(command.getRequestedBy()).isEqualTo(actor);
+        assertThat(command.getCreatedAt()).isEqualTo(NOW);
+        assertThat(command.getAmount()).isEqualByComparingTo(order.getTotalAmount());
+        verify(auditService).record(order.getId(), "CANCELLATION_REQUESTED", actor, "CUSTOMER",
+                "Cancel before redirect", command.getId());
+    }
+
+    @Test
+    void expiryAndCustomerCancellationAreSeparateIdempotentCommands() {
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        var expiry = service.enqueueCancellation(order, null, "ORDER_SYSTEM", "Payment window expired", true);
+        when(repository.findByOrderIdAndCommandType(order.getId(), "EXPIRY")).thenReturn(Optional.of(expiry));
+        assertThat(service.enqueueCancellation(order, null, "ORDER_SYSTEM", "retry", true)).isSameAs(expiry);
+        var cancellation = service.enqueueCancellation(order, order.getUserId(), "CUSTOMER", "cancel", false);
+        assertThat(cancellation.getId()).isNotEqualTo(expiry.getId());
+        assertThat(expiry.getCommandType()).isEqualTo("EXPIRY");
+        assertThat(cancellation.getCommandType()).isEqualTo("CANCELLATION");
     }
 }

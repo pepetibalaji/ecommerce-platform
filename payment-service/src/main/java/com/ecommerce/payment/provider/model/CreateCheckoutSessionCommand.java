@@ -44,4 +44,6 @@ public class CreateCheckoutSessionCommand {
     @NotBlank(message = "Idempotency key is required")
     @Size(max = 150, message = "Idempotency key must not exceed 150 characters")
     private String idempotencyKey;
+
+    private java.time.Instant expiresAt;
 }

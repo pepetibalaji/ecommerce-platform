@@ -19,7 +19,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Locale;
 
 @Component
@@ -48,10 +48,10 @@ public class SandboxPaymentGateway implements PaymentGateway {
 
         return CheckoutSessionResult.builder()
                 .provider(PaymentProvider.SANDBOX)
-                .providerSessionId("sandbox-session-" + command.getPaymentId())
-                .providerPaymentIntentId("sandbox-intent-" + command.getPaymentId())
+                .providerSessionId("sandbox-session-" + java.util.UUID.nameUUIDFromBytes(command.getIdempotencyKey().getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                .providerPaymentIntentId("sandbox-intent-" + java.util.UUID.nameUUIDFromBytes(command.getIdempotencyKey().getBytes(java.nio.charset.StandardCharsets.UTF_8)))
                 .checkoutUrl(checkoutUrl)
-                .expiresAt(LocalDateTime.now().plusMinutes(30))
+                .expiresAt(command.getExpiresAt() == null ? Instant.now().plusSeconds(1800) : command.getExpiresAt())
                 .build();
     }
 
@@ -113,10 +113,15 @@ public class SandboxPaymentGateway implements PaymentGateway {
     public RefundGatewayResponse refund(RefundGatewayRequest request) {
         return new RefundGatewayResponse(
                 true,
-                "sandbox-refund-" + request.paymentId(),
+                "sandbox-refund-" + java.util.UUID.nameUUIDFromBytes(request.idempotencyKey().getBytes(java.nio.charset.StandardCharsets.UTF_8)),
                 "processing",
                 null
         );
+    }
+
+    @Override
+    public RefundGatewayResponse retrieveRefund(String providerRefundId) {
+        return new RefundGatewayResponse(true, providerRefundId, "processing", null);
     }
 
     private String required(JsonNode event, String field) {
@@ -139,7 +144,8 @@ public class SandboxPaymentGateway implements PaymentGateway {
         return switch (eventType) {
             case "payment.succeeded", "checkout.session.completed" -> ProviderPaymentStatus.SUCCESS;
             case "payment.failed" -> ProviderPaymentStatus.FAILED;
-            case "payment.cancelled", "checkout.session.expired" -> ProviderPaymentStatus.CANCELLED;
+            case "payment.cancelled" -> ProviderPaymentStatus.CANCELLED;
+            case "payment.expired", "checkout.session.expired" -> ProviderPaymentStatus.EXPIRED;
             case "payment.processing" -> ProviderPaymentStatus.PROCESSING;
             default -> ProviderPaymentStatus.IGNORED;
         };

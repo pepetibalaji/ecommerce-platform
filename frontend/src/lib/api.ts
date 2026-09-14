@@ -50,6 +50,7 @@ function isErrorEnvelope(value: Record<string, unknown>) {
 function structuredError(value: unknown): {
   code?: string;
   retryable?: boolean;
+  retryAfterSeconds?: number;
   details?: unknown;
   traceId?: string;
 } | undefined {
@@ -57,6 +58,7 @@ function structuredError(value: unknown): {
   return {
     code: typeof value.code === "string" ? value.code : undefined,
     retryable: typeof value.retryable === "boolean" ? value.retryable : undefined,
+    retryAfterSeconds: typeof value.retryAfterSeconds === "number" && Number.isFinite(value.retryAfterSeconds) ? value.retryAfterSeconds : undefined,
     details: "details" in value ? value.details : undefined,
     traceId: typeof value.traceId === "string" ? value.traceId : undefined,
   };
@@ -212,7 +214,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     const envelope = structuredError(parsed);
     throw new ApiError(safeMessage(parsed, fallback), response.status, {
       code: envelope?.code,
-      retryAfter,
+      retryAfter: envelope?.retryAfterSeconds ?? retryAfter,
       fields: fieldErrors(parsed),
       retryable: envelope?.retryable,
       details: envelope?.details,
@@ -285,7 +287,7 @@ export const api = {
     adminOutboxReconciliation: (token: string) => request<OrderOutboxReconciliation>("/api/v1/admin/orders/reconciliation/outboxes", { token }),
   },
   payments: {
-    refresh: (token: string, orderId: string) => request<unknown>(`/api/v1/payments/orders/${encodeURIComponent(orderId)}/refresh`, { method: "POST", token }).then(paymentFromWire),
+    refresh: (token: string, orderId: string) => request<unknown>(`/api/v1/payments/orders/${encodeURIComponent(orderId)}`, { token }).then(paymentFromWire),
     byOrder: (token: string, orderId: string) => request<unknown>(`/api/v1/payments/orders/${orderId}`, { token }).then(paymentFromWire),
     checkoutSession: (token: string, orderId: string) => request<unknown>(`/api/v1/payments/orders/${orderId}/checkout-session`, { method: "POST", token }).then(paymentFromWire),
     mine: (token: string, query = "page=0&size=10") => request<unknown>(`/api/v1/payments/me?${query}`, { token }).then(paymentPageFromWire),
@@ -443,16 +445,16 @@ async function mockRequest<T>(path: string, options: RequestOptions): Promise<T>
   if (pathname.startsWith("/api/v1/payments/orders/") && pathname.endsWith("/checkout-session")) {
     const orderId = pathname.split("/")[5];
     const payment = mockPayments.find((entry) => entry.orderId === orderId);
-    if (!payment) throw new ApiError("Payment is still being prepared. Please refresh shortly.", 404);
+    if (!payment) throw new ApiError("Payment is still being prepared. Please refresh shortly.", 404, { code: "PAYMENT_PREPARING", retryable: true, retryAfter: 2 });
     const origin = typeof window === "undefined" ? "http://localhost:5173" : window.location.origin;
-    // Mock mode has no provider. Completing this synthetic session makes the demo return flow usable;
-    // real mode never infers success from this browser step.
-    payment.status = "SUCCESS";
+    // A mock browser redirect, like a real redirect, carries no proof of payment.
+    payment.status = "REQUIRES_CUSTOMER_ACTION";
+    payment.expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
     return { ...payment, checkoutUrl: `${origin}/payment/return?orderId=${encodeURIComponent(orderId)}&paymentId=${encodeURIComponent(payment.id)}` } as T;
   }
   if (pathname.startsWith("/api/v1/payments/orders/")) {
     const payment = mockPayments.find((entry) => entry.orderId === pathname.split("/")[5]);
-    if (!payment) throw new ApiError("Payment is still being prepared. Please refresh shortly.", 404);
+    if (!payment) throw new ApiError("Payment is still being prepared. Please refresh shortly.", 404, { code: "PAYMENT_PREPARING", retryable: true, retryAfter: 2 });
     return payment as T;
   }
   if (pathname === "/api/v1/payments/me") return pageOf(mockPayments, page, size) as T;

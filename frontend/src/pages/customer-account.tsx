@@ -4,11 +4,11 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useAuth } from "../auth/AuthProvider";
 import { useCart } from "../cart/CartProvider";
 import { ApiError, type BrowserSession, type Order, type Payment, type Product, type ShippingAddress } from "../domain";
-import { api } from "../lib/api";
+import { api, useMocks } from "../lib/api";
 import { createIdempotencyKey, formatDate, formatMoney, messageForError, toPage } from "../lib/format";
 import { useResource } from "../lib/hooks";
 import { useInfinitePage } from "../lib/useInfinitePage";
-import { pollPaymentConfirmation } from "../lib/payment-confirmation";
+import { pollPaymentConfirmation, approvedCheckoutUrl, paymentPreparationDelay } from "../lib/payment-confirmation";
 import { Alert, Button, EmptyState, Field, InfiniteListFooter, LoadingBlock, PageError, ProductImage, SafeLink, SelectField, StatusBadge } from "../components/ui";
 
 const emptyAddress: ShippingAddress = {
@@ -22,7 +22,7 @@ const emptyAddress: ShippingAddress = {
   country: "IN",
 };
 
-const paymentPollDelays = [700, 1_000, 1_600, 2_400, 3_600];
+const preparationAttempts = 5;
 
 function wait(milliseconds: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
@@ -33,21 +33,28 @@ function shortOrderId(orderId: string) {
 }
 
 function paymentIsTerminal(payment: Payment | null, order: Order | null = null) {
-  if (payment) return ["SUCCESS", "FAILED", "CANCELLED", "REFUNDED", "REFUND_FAILED", "PAYMENT_EXPIRED", "EXPIRED"].includes(payment.status);
+  if (["REFUND_FAILED", "REFUND_REQUIRES_FULFILMENT_REVIEW"].includes(order?.status ?? "")) return true;
+  if (payment?.status === "SUCCESS") return order?.status === "CONFIRMED";
+  if (payment) return [ "FAILED", "CANCELLED", "REFUNDED", "REFUND_FAILED", "PAYMENT_EXPIRED", "EXPIRED"].includes(payment.status);
   return ["PAYMENT_FAILED", "PAYMENT_EXPIRED", "CANCELLED", "REFUNDED", "REFUND_REQUIRES_FULFILMENT_REVIEW"].includes(order?.status ?? "");
 }
 
 function paymentMessage(payment: Payment | null, order: Order | null) {
-  const status: string = payment?.status ?? order?.status ?? "PENDING";
+  const orderWorkflow = ["CANCELLATION_REQUESTED", "REFUND_REQUESTED", "REFUND_FAILED", "REFUND_REQUIRES_FULFILMENT_REVIEW"].includes(order?.status ?? "");
+  const status: string = orderWorkflow ? order!.status : payment?.status ?? order?.status ?? "PENDING";
   switch (status) {
     case "SUCCESS": return { tone: "success" as const, title: "Payment confirmed", text: "Your payment has been confirmed by the platform. Your order status may take a moment to update." };
+    case "PAYMENT_FAILED":
     case "FAILED": return { tone: "danger" as const, title: "Payment was not completed", text: "The payment was not confirmed. Review your cart before starting a new checkout." };
     case "CANCELLED": return { tone: "warning" as const, title: "Payment was cancelled", text: "No completed payment is shown for this order. Review your cart before starting again." };
     case "PAYMENT_EXPIRED":
     case "EXPIRED": return { tone: "warning" as const, title: "Payment time expired", text: "This payment can no longer be used. Return to your cart and start a new checkout intent." };
+    case "CANCELLATION_REQUESTED": return { tone: "info" as const, title: "Cancellation is being processed", text: "We are confirming payment status before completing your cancellation." };
     case "REFUND_REQUESTED":
     case "REFUND_PROCESSING": return { tone: "info" as const, title: "Refund is being processed", text: "The platform is processing the refund. Check this order later for the authoritative result." };
+    case "PARTIALLY_REFUNDED": return { tone: "info" as const, title: "Partial refund completed", text: "A partial refund has been confirmed. Review your order for the remaining payment status." };
     case "REFUNDED": return { tone: "success" as const, title: "Refund completed", text: "The platform shows that this payment has been refunded." };
+    case "REFUND_REQUIRES_FULFILMENT_REVIEW":
     case "REFUND_FAILED": return { tone: "danger" as const, title: "Refund needs attention", text: "The refund has not completed. Please use the support path for this order." };
     default: return { tone: "info" as const, title: "Verifying payment", text: "We are waiting for the authoritative order and payment result. A return from the payment provider alone is not confirmation." };
   }
@@ -162,6 +169,12 @@ function checkoutFailure(error: unknown): CheckoutErrorState {
 }
 
 function cancellationMessage(order: Order) {
+  if (order.status === "CANCELLATION_REQUESTED") {
+    return "Your cancellation request is being processed. We are confirming the payment outcome before completing it.";
+  }
+  if (order.status === "REFUND_FAILED") {
+    return "Your refund needs attention. Contact support so the existing refund can be reviewed.";
+  }
   if (order.status === "REFUND_REQUESTED" || order.cancellationReasonCode === "REFUND_IN_PROGRESS") {
     return "Your cancellation was accepted and a refund has been requested. The final refund result will appear here after the payment service confirms it.";
   }
@@ -266,14 +279,17 @@ function PaymentPreparation({ order, token, onReviewOrder }: { order: Order; tok
   const [phase, setPhase] = useState<"preparing" | "ready" | "unavailable">("preparing");
   const [error, setError] = useState<string | null>(null);
   const started = useRef(false);
+  const preparing = useRef(false);
+  const [redirecting, setRedirecting] = useState(false);
 
   const prepare = useCallback(async () => {
+    if (preparing.current) return;
+    preparing.current = true;
     setPhase("preparing");
     setError(null);
-    for (let attempt = 0; attempt < paymentPollDelays.length; attempt += 1) {
+    try {
+    for (let attempt = 0; attempt < preparationAttempts; attempt += 1) {
       try {
-        const nextPayment = await api.payments.byOrder(token, order.id);
-        setPayment(nextPayment);
         const session = await api.payments.checkoutSession(token, order.id);
         setPayment(session);
         if (session.checkoutUrl) {
@@ -284,8 +300,9 @@ function PaymentPreparation({ order, token, onReviewOrder }: { order: Order; tok
         setPhase("unavailable");
         return;
       } catch (caught) {
-        if (caught instanceof ApiError && caught.status === 404 && attempt + 1 < paymentPollDelays.length) {
-          await wait(paymentPollDelays[attempt]);
+        const delay = caught instanceof ApiError ? paymentPreparationDelay(caught, attempt) : null;
+        if (delay !== null) {
+          await wait(delay);
           continue;
         }
         setError(messageForError(caught));
@@ -295,6 +312,7 @@ function PaymentPreparation({ order, token, onReviewOrder }: { order: Order; tok
     }
     setError("Payment is still being prepared. Do not create another order; check this order again shortly.");
     setPhase("unavailable");
+    } finally { preparing.current = false; }
   }, [order.id, token]);
 
   useEffect(() => {
@@ -305,18 +323,18 @@ function PaymentPreparation({ order, token, onReviewOrder }: { order: Order; tok
 
   function continueToProvider() {
     const checkoutUrl = payment?.checkoutUrl;
-    if (!checkoutUrl) return;
+    if (!checkoutUrl || redirecting) return;
     try {
-      const parsed = new URL(checkoutUrl);
-      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error("Unsupported URL protocol");
-      window.location.assign(parsed.toString());
+      const target = approvedCheckoutUrl(checkoutUrl, payment?.expiresAt, { developmentOrigin: useMocks ? window.location.origin : undefined, sandbox: import.meta.env.DEV && payment?.provider?.toUpperCase() === "SANDBOX" });
+      setRedirecting(true);
+      window.location.assign(target);
     } catch {
       setError("The secure payment link could not be opened. Check your order status and try again.");
       setPhase("unavailable");
     }
   }
 
-  return <section className="payment-page payment-preparing"><span className="eyebrow">Order {shortOrderId(order.id)}</span><h1>{phase === "ready" ? "Your payment is ready" : "Preparing secure payment"}</h1>{phase === "preparing" ? <><LoadingBlock label="Confirming your order and preparing payment" /><p>Do not refresh or place another order while this is in progress.</p></> : null}{phase === "ready" ? <><Alert tone="info" title="Continue securely">You will leave Pepekart for the payment provider. We verify the final payment result after you return.</Alert><Button onClick={continueToProvider}>Continue to secure payment</Button><Button variant="ghost" onClick={onReviewOrder}>Review order instead</Button></> : null}{phase === "unavailable" ? <><Alert tone="warning" title="Payment is not ready yet">{error}</Alert><div className="button-row"><Button variant="secondary" onClick={() => { started.current = true; void prepare(); }}>Check payment again</Button><Button variant="ghost" onClick={() => navigate(`/payment/return?orderId=${encodeURIComponent(order.id)}`)}>View payment status</Button><Button variant="ghost" onClick={onReviewOrder}>View order</Button></div></> : null}</section>;
+  return <section className="payment-page payment-preparing"><span className="eyebrow">Order {shortOrderId(order.id)}</span><h1>{phase === "ready" ? "Your payment is ready" : "Preparing secure payment"}</h1>{phase === "preparing" ? <><LoadingBlock label="Confirming your order and preparing payment" /><p>Do not refresh or place another order while this is in progress.</p></> : null}{phase === "ready" ? <><Alert tone="info" title="Continue securely">You will leave Pepekart for the payment provider. We verify the final payment result after you return.</Alert><Button disabled={redirecting} onClick={continueToProvider}>Continue to secure payment</Button><Button variant="ghost" onClick={onReviewOrder}>Review order instead</Button></> : null}{phase === "unavailable" ? <><Alert tone="warning" title="Payment is not ready yet">{error}</Alert><div className="button-row"><Button variant="secondary" onClick={() => { started.current = true; void prepare(); }}>Check payment again</Button><Button variant="ghost" onClick={() => navigate(`/payment/return?orderId=${encodeURIComponent(order.id)}`)}>View payment status</Button><Button variant="ghost" onClick={onReviewOrder}>View order</Button></div></> : null}</section>;
 }
 
 type VerificationState = { order: Order | null; payment: Payment | null; loading: boolean; error: string | null; stopped: boolean; attempts: number };
@@ -336,8 +354,8 @@ export function PaymentReturnPage() {
       const order = await api.orders.byId(accessToken, orderId);
       if (cancelled()) return null;
       let payment: Payment | null = null;
-      try { payment = await api.payments.refresh(accessToken, orderId); }
-      catch (caught) { if (!(caught instanceof ApiError && caught.status === 404)) throw caught; }
+      try { payment = await api.payments.byOrder(accessToken, orderId); }
+      catch (caught) { if (!(caught instanceof ApiError && caught.code === "PAYMENT_PREPARING")) throw caught; }
       const result = { order, payment, terminal: paymentIsTerminal(payment, order) };
       if (cancelled()) return null;
       setState((current) => ({ ...current, order, payment, loading: false, error: null }));
@@ -378,7 +396,7 @@ export function PaymentReturnPage() {
   return <section className="payment-page"><span className="eyebrow">Order {state.order ? shortOrderId(state.order.id) : ""}</span><h1>{status.title}</h1><Alert tone={status.tone} title={status.title}>{status.text}</Alert>{state.error ? <Alert tone="warning" title="Status update delayed">{state.error}</Alert> : null}{!paymentIsTerminal(state.payment, state.order) && !state.error ? <div className="payment-polling"><LoadingBlock label={state.stopped ? "Automatic checks paused" : "Checking the latest payment result"} />{state.stopped ? <p>We stopped automatic checks to avoid repeated requests. Refresh when you are ready.</p> : <p>Checking securely. Provider return details are never used as payment confirmation.</p>}</div> : null}<div className="order-status-grid"><div><span>Order status</span><StatusBadge value={state.order?.status} /></div><div><span>Payment status</span><StatusBadge value={state.payment?.status === "REQUIRES_CUSTOMER_ACTION" ? "AWAITING_CONFIRMATION" : state.payment?.status ?? "PREPARING"} /></div></div><div className="button-row"><Button variant="secondary" disabled={state.loading} onClick={() => setVerificationRun((run) => run + 1)}>Refresh status</Button>{state.order ? <Link className="button button-primary" to={`/orders/${state.order.id}`}>View order</Link> : null}{needsNewCheckout ? <Link className="button button-ghost" to="/cart">Return to cart</Link> : <Link className="button button-ghost" to="/orders">Order history</Link>}</div></section>;
 }
 
-const orderStatusOptions = ["", "PENDING", "CONFIRMED", "PAYMENT_FAILED", "PAYMENT_EXPIRED", "CANCELLED", "REFUND_REQUESTED", "PARTIALLY_REFUNDED", "REFUNDED", "REFUND_REQUIRES_FULFILMENT_REVIEW"];
+const orderStatusOptions = ["", "PENDING", "CONFIRMED", "PAYMENT_FAILED", "PAYMENT_EXPIRED", "CANCELLATION_REQUESTED", "CANCELLED", "REFUND_REQUESTED", "REFUND_FAILED", "PARTIALLY_REFUNDED", "REFUNDED", "REFUND_REQUIRES_FULFILMENT_REVIEW"];
 
 export function OrdersPage() {
   const { accessToken } = useAuth();
@@ -437,7 +455,7 @@ export function OrderDetailPage() {
   if (error || !order) return <EmptyState title="Order not found" message="This order may no longer be available in your account." action={<Link className="button button-primary" to="/orders">Return to orders</Link>} />;
   const paymentStatus = paymentMessage(data?.payment ?? null, order);
   const shipping = order.shippingAddress;
-  const lifecycleNotice = ["REFUND_REQUESTED", "REFUND_REQUIRES_FULFILMENT_REVIEW", "PAYMENT_EXPIRED"].includes(order.status) || Boolean(order.cancellationReasonCode)
+  const lifecycleNotice = ["CANCELLATION_REQUESTED", "REFUND_REQUESTED", "REFUND_FAILED", "REFUND_REQUIRES_FULFILMENT_REVIEW", "PAYMENT_EXPIRED"].includes(order.status) || Boolean(order.cancellationReasonCode)
     ? cancellationMessage(order)
     : null;
   return <section className="order-detail-page">

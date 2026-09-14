@@ -18,7 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Service
@@ -103,7 +103,7 @@ public class PaymentWebhookEventServiceImpl implements PaymentWebhookEventServic
     public PaymentWebhookEventResponse markProcessed(UUID webhookEventId) {
         PaymentWebhookEvent event = getWebhookEventEntityById(webhookEventId);
         event.setProcessingStatus(WebhookProcessingStatus.PROCESSED);
-        event.setProcessedAt(LocalDateTime.now());
+        event.setProcessedAt(Instant.now());
 
         PaymentWebhookEvent savedEvent = paymentWebhookEventRepository.save(event);
         return paymentWebhookEventMapper.toResponse(savedEvent);
@@ -113,7 +113,7 @@ public class PaymentWebhookEventServiceImpl implements PaymentWebhookEventServic
     public PaymentWebhookEventResponse markIgnored(UUID webhookEventId) {
         PaymentWebhookEvent event = getWebhookEventEntityById(webhookEventId);
         event.setProcessingStatus(WebhookProcessingStatus.IGNORED);
-        event.setProcessedAt(LocalDateTime.now());
+        event.setProcessedAt(Instant.now());
 
         PaymentWebhookEvent savedEvent = paymentWebhookEventRepository.save(event);
         return paymentWebhookEventMapper.toResponse(savedEvent);
@@ -123,7 +123,7 @@ public class PaymentWebhookEventServiceImpl implements PaymentWebhookEventServic
     public PaymentWebhookEventResponse markFailed(UUID webhookEventId) {
         PaymentWebhookEvent event = getWebhookEventEntityById(webhookEventId);
         event.setProcessingStatus(WebhookProcessingStatus.FAILED);
-        event.setProcessedAt(LocalDateTime.now());
+        event.setProcessedAt(Instant.now());
 
         PaymentWebhookEvent savedEvent = paymentWebhookEventRepository.save(event);
         return paymentWebhookEventMapper.toResponse(savedEvent);

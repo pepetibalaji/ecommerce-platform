@@ -718,14 +718,15 @@ empty and unavailable states—not just happy-path screens.
     fulfilment rules, full shipping snapshots without a fictitious address ID,
     immutable item response snapshots, stable errors, bounded pagination, and
     UTC-aware timestamps.
-11. **Payment ticket dependency:** the Payment Service production-hardening ticket
-    must be completed before production payment integration: transactional payment
+11. **Payment release dependency:** the current reliability branch implements transactional payment
     outcome outbox, concurrency-safe checkout sessions and attempt idempotency,
     automatic payment expiry, Order-to-Payment cancellation/refund orchestration,
     durable refund retry/reconciliation, trusted Order validation, frontend return
     routes, provider/webhook hardening, stable errors, bounded pagination, and
-    UTC-aware timestamps. Razorpay remains disabled until its adapter is complete
-    and staging-verified.
+    UTC-aware timestamps. Deployment still requires matching Order/Payment configuration,
+    migration review, broker authentication/ACLs and a real Stripe staging exercise;
+    see the [Payment rollout runbook](../payment-service/docs/production-reliability.md).
+    Razorpay remains disabled until its adapter is complete and staging-verified.
 12. **Notification ticket dependency:** the Notification Service production-
     hardening ticket must be completed before a customer notification inbox or
     preference UI is added: multi-instance-safe delivery claims, Kafka retry/DLT

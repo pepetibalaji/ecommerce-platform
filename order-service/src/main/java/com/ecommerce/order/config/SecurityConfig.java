@@ -48,6 +48,8 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
                 .authorizeHttpRequests(auth -> auth
+                        // This narrow read endpoint authenticates a scoped HMAC inside its controller.
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/internal/v1/payment-orders/*").permitAll()
                         .requestMatchers(SWAGGER_WHITELIST)
                         .permitAll()
 

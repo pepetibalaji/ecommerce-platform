@@ -52,7 +52,7 @@ groups:
           description: "More than five payment outcome retries occurred in the last ten minutes."
 
       - alert: OrderPaymentOutcomeConsumerLag
-        expr: sum(kafka_consumergroup_lag{consumergroup="order-service-payment-outcomes",topic=~"payment-success|payment-failed"}) > 100
+        expr: sum(kafka_consumergroup_lag{consumergroup="order-service-payment-outcomes",topic=~"payment-success|payment-failed|payment-expired|payment-refund-completed|payment-refund-failed"}) > 100
         for: 10m
         labels:
           severity: warning
@@ -151,3 +151,55 @@ groups:
         annotations:
           summary: "Inventory product lifecycle consumer lag is high"
           description: "Inventory lifecycle synchronization is delayed."
+
+  - name: ecommerce-payment-reliability
+    rules:
+      - alert: PaymentOutboxTerminalFailure
+        expr: payment_outbox_dead_count > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Payment outcomes need manual delivery recovery"
+          description: "Inspect payment_event_outbox DEAD rows. Restore Kafka and replay existing event IDs through the authenticated operations endpoint."
+      - alert: PaymentWebhookInvalidSignature
+        expr: sum(increase(payment_webhook_invalid_signature_count_total[5m])) > 10
+        labels:
+          severity: warning
+        annotations:
+          summary: "Payment webhook signatures are being rejected"
+          description: "Check provider endpoint secrets and overlap rotation; investigate unexpected traffic."
+      - alert: PaymentWebhookUnresolved
+        expr: sum(increase(payment_webhook_unresolved_total[15m])) > 5
+        labels:
+          severity: warning
+        annotations:
+          summary: "Verified payment webhooks cannot be matched"
+          description: "Inspect safe webhook metadata, checkout reservation keys and provider identifiers."
+      - alert: PaymentWebhookStateConflict
+        expr: sum(increase(payment_webhook_state_conflict_total[5m])) > 0 or sum(increase(payment_webhook_transition_failed_total[5m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Payment state transition requires review"
+          description: "Inspect late success, amount mismatch or failed database transitions without changing terminal state from a browser return."
+      - alert: PaymentWebhookDuplicateAnomaly
+        expr: sum(increase(payment_webhook_duplicate_anomaly_total[5m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "A provider event ID arrived with different payload hashes"
+      - alert: PaymentRefundManualReview
+        expr: sum(increase(payment_refund_manual_review_count_total[5m])) > 0 or sum(increase(payment_cancellation_manual_review_count_total[5m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Payment cancellation or refund requires operations review"
+          description: "Reserve uncertain refund amounts. Reconcile the original provider ID/key; never create a replacement refund after uncertain acceptance."
+      - alert: PaymentCommandDeadLetter
+        expr: sum(increase(payment_command_dlq_total[5m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "An Order command exhausted Payment retries"
+          description: "Inspect the topic-specific .DLT and trusted Order lookup availability; replay the unchanged command after correction."

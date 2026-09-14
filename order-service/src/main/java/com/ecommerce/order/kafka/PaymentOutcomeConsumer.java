@@ -89,6 +89,22 @@ public class PaymentOutcomeConsumer {
         } finally { clearMdc(); }
     }
 
+    @KafkaListener(topics = KafkaTopics.PAYMENT_EXPIRED,
+            groupId = "${order.payment-outcome-consumer-group:order-service-payment-outcomes}")
+    public void onPaymentExpired(com.ecommerce.common.events.payment.PaymentExpiredEvent event) {
+        populateMdc(event.getCorrelationId(), event.getTraceId(), event.getEventId(), event.getOrderId(), event.getPaymentId());
+        try { paymentOutcomeMetrics.consumed("expiry"); orderService.handlePaymentExpired(event); }
+        finally { clearMdc(); }
+    }
+
+    @KafkaListener(topics = KafkaTopics.PAYMENT_REFUND_FAILED,
+            groupId = "${order.payment-outcome-consumer-group:order-service-payment-outcomes}")
+    public void onRefundFailed(com.ecommerce.common.events.payment.PaymentRefundFailedEvent event) {
+        populateMdc(event.getCorrelationId(), event.getTraceId(), event.getEventId(), event.getOrderId(), event.getPaymentId());
+        try { orderService.handleRefundFailed(event); }
+        finally { clearMdc(); }
+    }
+
     private void populateMdc(
             String correlationId,
             String traceId,

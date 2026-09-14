@@ -30,7 +30,7 @@ public class OrderRefundRequestService {
             String actorType,
             String reason
     ) {
-        return repository.findByOrderId(order.getId()).orElseGet(() -> {
+        return repository.findByOrderIdAndCommandType(order.getId(), "REFUND").orElseGet(() -> {
             if (order.getPaymentId() == null) {
                 throw new IllegalStateException("Confirmed order has no payment id: " + order.getId());
             }
@@ -55,6 +55,19 @@ public class OrderRefundRequestService {
                     outbox.getId()
             );
             return outbox;
+        });
+    }
+    @Transactional
+    public OrderRefundRequestOutbox enqueueCancellation(Order order, UUID actorId, String actorType,
+            String reason, boolean expiryRequested) {
+        return repository.findByOrderIdAndCommandType(order.getId(), expiryRequested ? "EXPIRY" : "CANCELLATION").orElseGet(() -> {
+            var command = new OrderRefundRequestOutbox(order.getId(), order.getPaymentId(), order.getUserId(),
+                    actorId, actorType, order.getTotalAmount(), order.getCurrency(), reason, Instant.now(clock));
+            command.asCancellation(expiryRequested);
+            command = repository.save(command);
+            auditService.record(order.getId(), expiryRequested ? "PAYMENT_EXPIRY_REQUESTED" : "CANCELLATION_REQUESTED",
+                    actorId, actorType, reason, command.getId());
+            return command;
         });
     }
 }

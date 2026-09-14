@@ -87,6 +87,14 @@ public class OrderEventPublisher {
             OrderRefundRequestOutbox request
     ) {
         Objects.requireNonNull(request, "Refund request outbox row must not be null");
+        if (!"REFUND".equals(request.getCommandType())) {
+            var event = new com.ecommerce.common.events.payment.PaymentCancellationRequestedEvent(
+                    request.getId(), request.getOrderId(), request.getUserId(), request.getRequestedBy(),
+                    request.getActorType(), request.getAmount(), request.getCurrency(), request.getReason(),
+                    request.getCreatedAt(), request.getCorrelationId(), request.getTraceId());
+            event.setExpiryRequested("EXPIRY".equals(request.getCommandType()));
+            return kafkaTemplate.send(KafkaTopics.PAYMENT_CANCELLATION_REQUESTED, request.getOrderId().toString(), event);
+        }
         PaymentRefundRequestedEvent event = new PaymentRefundRequestedEvent(
                 request.getId(),
                 request.getPaymentId(),
@@ -98,8 +106,8 @@ public class OrderEventPublisher {
                 request.getCurrency(),
                 request.getReason(),
                 request.getCreatedAt(),
-                null,
-                null
+                request.getCorrelationId(),
+                request.getTraceId()
         );
         return kafkaTemplate.send(KafkaTopics.PAYMENT_REFUND_REQUESTED, request.getOrderId().toString(), event);
     }

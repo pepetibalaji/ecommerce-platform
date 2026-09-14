@@ -32,7 +32,7 @@ import lombok.Setter;
 import lombok.ToString;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Getter
@@ -115,15 +115,70 @@ public class PaymentRefund {
 
     @NotNull(message = "Created timestamp is required")
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @NotNull(message = "Updated timestamp is required")
     @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
+    @Column(name = "provider_payment_intent_id", length = 255)
+    private String providerPaymentIntentId;
+
+    @Column(name = "provider_idempotency_key", length = 150)
+    private String providerIdempotencyKey;
+
+    @Column(name = "refund_request_id")
+    private UUID refundRequestId;
+
+    @Column(name = "requested_by")
+    private UUID requestedBy;
+
+    @Column(name = "actor_type", length = 40)
+    private String actorType;
+
+    @Column(name = "correlation_id", length = 128)
+    private String correlationId;
+
+    @Column(name = "trace_id", length = 128)
+    private String traceId;
+
+    @Column(name = "requested_at", nullable = false)
+    private Instant requestedAt;
+
+    @Column(name = "attempt_count", nullable = false)
+    private int attemptCount;
+
+    @Column(name = "next_attempt_at", nullable = false)
+    private Instant nextAttemptAt;
+
+    @Column(name = "lease_until")
+    private Instant leaseUntil;
+
+    @Column(name = "lease_token")
+    private UUID leaseToken;
+
+    @Column(name = "first_provider_attempt_at")
+    private Instant firstProviderAttemptAt;
+
+    @Column(name = "completed_at")
+    private Instant completedAt;
+
+    @Column(name = "last_reconciled_by")
+    private UUID lastReconciledBy;
+
+    @Column(name = "last_reconciled_at")
+    private Instant lastReconciledAt;
+
+    @Column(name = "reconciliation_reason", columnDefinition = "TEXT")
+    private String reconciliationReason;
+
+    @Column(name = "reconciliation_count", nullable = false)
+    private int reconciliationCount;
     @PrePersist
     void prePersist() {
-        LocalDateTime now = LocalDateTime.now();
+        Instant now = Instant.now();
+        if (requestedAt == null) requestedAt = now;
+        if (nextAttemptAt == null) nextAttemptAt = now;
 
         if (createdAt == null) {
             createdAt = now;
@@ -142,7 +197,7 @@ public class PaymentRefund {
 
     @PreUpdate
     void preUpdate() {
-        updatedAt = LocalDateTime.now();
+        updatedAt = Instant.now();
         normalizeCurrency();
     }
 

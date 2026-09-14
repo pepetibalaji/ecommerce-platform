@@ -8,6 +8,8 @@ import com.ecommerce.payment.entity.Payment;
 import com.ecommerce.payment.kafka.producer.PaymentRefundRequestOutcomePublisher;
 import com.ecommerce.payment.repository.PaymentRepository;
 import com.ecommerce.payment.service.PaymentRefundService;
+import com.ecommerce.payment.service.RefundAudit;
+import com.ecommerce.payment.exception.PaymentApiException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
@@ -19,8 +21,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 
 /**
- * Handles the order-side cancellation command. Provider calls are delegated to the existing
- * payment refund flow, whose idempotency key is deterministically derived from refundRequestId.
+ * Validates the Order command and persists durable refund work; no provider I/O runs in this listener.
  */
 @Component
 @RequiredArgsConstructor
@@ -33,7 +34,9 @@ public class PaymentRefundRequestedConsumer {
 
     @KafkaListener(
             topics = KafkaTopics.PAYMENT_REFUND_REQUESTED,
-            groupId = "${payment.refund-request-consumer-group:payment-service-refund-requests}"
+            groupId = "${payment.refund-request-consumer-group:payment-service-refund-requests}",
+            properties = {"spring.json.value.default.type=com.ecommerce.common.events.payment.PaymentRefundRequestedEvent",
+                    "spring.json.use.type.headers=false"}
     )
     public void onRefundRequested(
             PaymentRefundRequestedEvent event,
@@ -56,7 +59,7 @@ public class PaymentRefundRequestedConsumer {
                     event.getAmount(),
                     event.getCurrency(),
                     event.getReason(),
-                    "order-refund-request:" + event.getRefundRequestId()
+                    "order-refund-request:" + event.getRefundRequestId(), new RefundAudit(event.getRefundRequestId(), event.getRequestedBy(), event.getActorType(), event.getCorrelationId(), event.getTraceId(), event.getOccurredAt())
             );
             log.info("Processed payment-refund-requested. key={}, refundRequestId={}, orderId={}, paymentId={}, status={}",
                     key, event.getRefundRequestId(), event.getOrderId(), event.getPaymentId(), result.status());
@@ -64,20 +67,22 @@ public class PaymentRefundRequestedConsumer {
             if ("REFUND_FAILED".equals(result.status())) {
                 publishRejectionOrRetry(event, result.failureReason());
             }
+        } catch (PaymentApiException exception) {
+            publishRejectionOrRetry(event, "PAYMENT_REFUND_NOT_ALLOWED");
         } catch (BadRequestException | ResourceNotFoundException exception) {
             // These are terminal business refusals, not transient Kafka processing failures.
             log.warn("Refusing payment-refund-requested. refundRequestId={}, orderId={}, paymentId={}, reason={}",
                     event == null ? null : event.getRefundRequestId(),
                     event == null ? null : event.getOrderId(),
                     event == null ? null : event.getPaymentId(), exception.getMessage());
-            publishRejectionOrRetry(event, exception.getMessage());
+            publishRejectionOrRetry(event, "PAYMENT_REFUND_NOT_ALLOWED");
         } finally {
             clearMdc();
         }
     }
 
     private void validate(PaymentRefundRequestedEvent event) {
-        if (event == null || event.getRefundRequestId() == null || event.getPaymentId() == null
+        if (event == null || !"1.0".equals(event.getSchemaVersion()) || !com.ecommerce.common.events.core.EventSources.ORDER_SERVICE.equals(event.getSource()) || event.getOccurredAt() == null || event.getRefundRequestId() == null || event.getPaymentId() == null
                 || event.getOrderId() == null || event.getUserId() == null || event.getAmount() == null
                 || event.getCurrency() == null || event.getCurrency().isBlank()) {
             throw new BadRequestException("Refund request event is missing a required field");

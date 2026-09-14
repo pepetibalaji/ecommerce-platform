@@ -30,6 +30,8 @@ public class KafkaConsumerConfig {
                 }
         );
 
+        // Never acknowledge an outcome when its dead-letter handoff also failed.
+        recoverer.setFailIfSendResultIsError(true);
         DefaultErrorHandler errorHandler = new DefaultErrorHandler(
                 recoverer,
                 new FixedBackOff(RETRY_INTERVAL_MILLIS, MAX_RETRIES)

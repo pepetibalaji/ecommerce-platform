@@ -1,182 +1,66 @@
 package com.ecommerce.payment.kafka.producer;
 
-import com.ecommerce.common.events.payment.PaymentFailedEvent;
-import com.ecommerce.common.events.payment.PaymentSuccessEvent;
-import com.ecommerce.common.events.payment.PaymentRefundCompletedEvent;
+import com.ecommerce.common.events.payment.*;
 import com.ecommerce.common.events.topic.KafkaTopics;
-import com.ecommerce.payment.entity.Payment;
-import com.ecommerce.payment.entity.PaymentAttempt;
-import com.ecommerce.payment.entity.PaymentRefund;
-import java.math.BigDecimal;
+import com.ecommerce.payment.entity.*;
 import com.ecommerce.payment.enums.PaymentAttemptStatus;
+import com.ecommerce.payment.outbox.PaymentOutboxStore;
 import com.ecommerce.payment.repository.PaymentAttemptRepository;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Component;
-
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import java.math.BigDecimal;
 import java.util.List;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 
-@Slf4j
+/** Compatibility name; persists in the caller transaction, delivers through the worker. */
 @Component
 @RequiredArgsConstructor
+@Transactional(propagation = Propagation.MANDATORY)
 public class KafkaPaymentEventPublisher implements PaymentEventPublisher {
+    private final PaymentOutboxStore outbox;
+    private final PaymentAttemptRepository attempts;
 
-    private final KafkaTemplate<String, Object> kafkaTemplate;
-    private final PaymentAttemptRepository paymentAttemptRepository;
-
-    @Override
     public void publishPaymentSuccess(Payment payment) {
-        String key = payment.getOrderId().toString();
-        String transactionId = resolveTransactionId(payment.getId());
-
-        PaymentSuccessEvent event = new PaymentSuccessEvent(
-                payment.getId(),
-                payment.getOrderId(),
-                payment.getUserId(),
-                payment.getAmount(),
-                payment.getCurrency(),
-                payment.getProvider() == null ? null : payment.getProvider().name(),
-                transactionId,
-                payment.getCorrelationId(),
-                payment.getTraceId()
-        );
-
-        CompletableFuture<SendResult<String, Object>> future =
-                kafkaTemplate.send(KafkaTopics.PAYMENT_SUCCESS, key, event);
-
-        future.whenComplete((result, exception) -> {
-            if (exception != null) {
-                log.error(
-                        "Failed to publish payment-success. topic={}, key={}, eventId={}, paymentId={}, orderId={}, correlationId={}, traceId={}",
-                        KafkaTopics.PAYMENT_SUCCESS,
-                        key,
-                        event.getEventId(),
-                        payment.getId(),
-                        payment.getOrderId(),
-                        payment.getCorrelationId(),
-                        payment.getTraceId(),
-                        exception
-                );
-                return;
-            }
-
-            log.info(
-                    "Published payment-success. topic={}, partition={}, offset={}, key={}, eventId={}, paymentId={}, orderId={}, transactionId={}, correlationId={}, traceId={}",
-                    result.getRecordMetadata().topic(),
-                    result.getRecordMetadata().partition(),
-                    result.getRecordMetadata().offset(),
-                    key,
-                    event.getEventId(),
-                    payment.getId(),
-                    payment.getOrderId(),
-                    transactionId,
-                    payment.getCorrelationId(),
-                    payment.getTraceId()
-            );
-        });
+        String transaction = attempts.findTopByPayment_IdAndStatusInOrderByCreatedAtDesc(payment.getId(),
+                List.of(PaymentAttemptStatus.SUCCESS)).map(PaymentAttempt::getProviderPaymentIntentId).orElse(null);
+        var event = new PaymentSuccessEvent(payment.getId(),payment.getOrderId(),payment.getUserId(),payment.getAmount(),
+                payment.getCurrency(),payment.getProvider().name(),transaction,payment.getCorrelationId(),payment.getTraceId());
+        outbox.enqueue(resultKey(payment),payment.getId(),payment.getOrderId(),KafkaTopics.PAYMENT_SUCCESS,event);
     }
 
-    @Override
     public void publishPaymentFailed(Payment payment) {
-        String key = payment.getOrderId().toString();
-
-        PaymentFailedEvent event = new PaymentFailedEvent(
-                payment.getId(),
-                payment.getOrderId(),
-                payment.getUserId(),
-                payment.getAmount(),
-                payment.getCurrency(),
-                payment.getProvider() == null ? null : payment.getProvider().name(),
-                payment.getStatus() == null ? null : payment.getStatus().name(),
-                payment.getFailureReason(),
-                payment.getCorrelationId(),
-                payment.getTraceId()
-        );
-
-        CompletableFuture<SendResult<String, Object>> future =
-                kafkaTemplate.send(KafkaTopics.PAYMENT_FAILED, key, event);
-
-        future.whenComplete((result, exception) -> {
-            if (exception != null) {
-                log.error(
-                        "Failed to publish payment-failed. topic={}, key={}, eventId={}, paymentId={}, orderId={}, status={}, correlationId={}, traceId={}",
-                        KafkaTopics.PAYMENT_FAILED,
-                        key,
-                        event.getEventId(),
-                        payment.getId(),
-                        payment.getOrderId(),
-                        payment.getStatus(),
-                        payment.getCorrelationId(),
-                        payment.getTraceId(),
-                        exception
-                );
-                return;
-            }
-
-            log.info(
-                    "Published payment-failed. topic={}, partition={}, offset={}, key={}, eventId={}, paymentId={}, orderId={}, status={}, correlationId={}, traceId={}",
-                    result.getRecordMetadata().topic(),
-                    result.getRecordMetadata().partition(),
-                    result.getRecordMetadata().offset(),
-                    key,
-                    event.getEventId(),
-                    payment.getId(),
-                    payment.getOrderId(),
-                    payment.getStatus(),
-                    payment.getCorrelationId(),
-                    payment.getTraceId()
-            );
-        });
+        var event = new PaymentFailedEvent(payment.getId(),payment.getOrderId(),payment.getUserId(),payment.getAmount(),
+                payment.getCurrency(),payment.getProvider().name(),"PAYMENT_"+payment.getStatus().name(),"PAYMENT_"+payment.getStatus().name(),
+                payment.getCorrelationId(),payment.getTraceId());
+        outbox.enqueue(resultKey(payment),payment.getId(),payment.getOrderId(),KafkaTopics.PAYMENT_FAILED,event);
     }
 
-    @Override
-    public void publishRefundCompleted(Payment payment, PaymentRefund refund, BigDecimal totalRefundedAmount) {
-        PaymentRefundCompletedEvent event = new PaymentRefundCompletedEvent(refund.getId(), payment.getId(),
-                payment.getOrderId(), payment.getUserId(), refund.getAmount(), totalRefundedAmount, payment.getAmount(),
-                payment.getCurrency(), payment.getCorrelationId(), payment.getTraceId());
-        kafkaTemplate.send(KafkaTopics.PAYMENT_REFUND_COMPLETED, payment.getOrderId().toString(), event)
-                .whenComplete((result, exception) -> {
-                    if (exception != null) {
-                        log.error("Failed to publish provider-confirmed refund. refundId={}, paymentId={}, orderId={}",
-                                refund.getId(), payment.getId(), payment.getOrderId(), exception);
-                    } else {
-                        log.info("Published payment-refund-completed. eventId={}, refundId={}, orderId={}, fullRefund={}",
-                                event.getEventId(), refund.getId(), payment.getOrderId(), event.isFullRefund());
-                    }
-                });
+    public void publishPaymentExpired(Payment payment) {
+        var event = new PaymentExpiredEvent(payment.getId(),payment.getOrderId(),payment.getUserId(),payment.getAmount(),
+                payment.getCurrency(),payment.getProvider().name(),payment.getCorrelationId(),payment.getTraceId());
+        outbox.enqueue(resultKey(payment),payment.getId(),payment.getOrderId(),KafkaTopics.PAYMENT_EXPIRED,event);
     }
 
-    private String resolveTransactionId(UUID paymentId) {
-        return paymentAttemptRepository
-                .findTopByPayment_IdAndStatusInOrderByCreatedAtDesc(
-                        paymentId,
-                        List.of(PaymentAttemptStatus.SUCCESS)
-                )
-                .map(this::bestProviderTransactionId)
-                .orElse(null);
+    public void publishRefundCompleted(Payment payment, PaymentRefund refund, BigDecimal total) {
+        // Repair legacy paid rows before the refund outcome can overtake their missing success.
+        publishPaymentSuccess(payment);
+        var event = new PaymentRefundCompletedEvent(refund.getId(),payment.getId(),payment.getOrderId(),payment.getUserId(),
+                refund.getAmount(),total,payment.getAmount(),payment.getCurrency(),correlation(payment,refund),trace(payment,refund));
+        event.setProvider(payment.getProvider().name());
+        outbox.enqueue("refund:"+refund.getId()+":completed",payment.getId(),payment.getOrderId(),KafkaTopics.PAYMENT_REFUND_COMPLETED,event);
     }
 
-    private String bestProviderTransactionId(PaymentAttempt attempt) {
-        if (hasText(attempt.getProviderChargeId())) {
-            return attempt.getProviderChargeId();
-        }
-
-        if (hasText(attempt.getProviderPaymentIntentId())) {
-            return attempt.getProviderPaymentIntentId();
-        }
-
-        if (hasText(attempt.getProviderSessionId())) {
-            return attempt.getProviderSessionId();
-        }
-
-        return attempt.getId() == null ? null : attempt.getId().toString();
+    public void publishRefundFailed(Payment payment, PaymentRefund refund) {
+        publishPaymentSuccess(payment);
+        var event = new PaymentRefundFailedEvent(refund.getId(),payment.getId(),payment.getOrderId(),payment.getUserId(),
+                refund.getAmount(),payment.getCurrency(),payment.getProvider().name(),refund.getStatus().name(),
+                correlation(payment,refund),trace(payment,refund));
+        event.setRefundRequestId(refund.getRefundRequestId());
+        outbox.enqueue("refund:"+refund.getId()+":failed",payment.getId(),payment.getOrderId(),KafkaTopics.PAYMENT_REFUND_FAILED,event);
     }
 
-    private boolean hasText(String value) {
-        return value != null && !value.isBlank();
-    }
+    private String resultKey(Payment payment) { return "payment:"+payment.getId()+":result"; }
+    private String correlation(Payment p, PaymentRefund r) { return r.getCorrelationId()==null?p.getCorrelationId():r.getCorrelationId(); }
+    private String trace(Payment p, PaymentRefund r) { return r.getTraceId()==null?p.getTraceId():r.getTraceId(); }
 }

@@ -16,7 +16,7 @@ import com.ecommerce.order.observability.PaymentOutcomeMetrics;
 @Component @RequiredArgsConstructor @Slf4j
 public class PendingPaymentExpiryProcessor {
     private final OrderRepository orderRepository;
-    private final InventoryReleaseOutboxService inventoryReleaseOutboxService;
+    private final OrderRefundRequestService paymentCommands;
     private final Clock clock;
     private final PaymentOutcomeMetrics metrics;
     @Value("${order.payment-expiry.batch-size:25}") private int batchSize;
@@ -24,11 +24,8 @@ public class PendingPaymentExpiryProcessor {
     @Transactional
     public void expirePendingOrders() {
         for (var order : orderRepository.lockExpiredPending(Instant.now(clock), Math.max(1, batchSize))) {
-            inventoryReleaseOutboxService.enqueueFor(order, InventoryReleaseReason.PAYMENT_EXPIRED);
-            order.setStatus(OrderStatus.PAYMENT_EXPIRED);
-            orderRepository.save(order);
-            metrics.pendingPaymentExpired();
-            log.info("Expired pending payment and queued inventory release. orderId={}", order.getId());
+            paymentCommands.enqueueCancellation(order, null, "ORDER_SYSTEM", "Payment window expired", true);
+            log.info("Requested authoritative payment expiry. orderId={}", order.getId());
         }
     }
 }

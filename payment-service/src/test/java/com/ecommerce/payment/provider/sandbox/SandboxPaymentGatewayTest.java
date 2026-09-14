@@ -32,8 +32,8 @@ class SandboxPaymentGatewayTest {
                 .build());
 
         assertThat(result.getProvider()).isEqualTo(PaymentProvider.SANDBOX);
-        assertThat(result.getProviderSessionId()).isEqualTo("sandbox-session-" + paymentId);
-        assertThat(result.getProviderPaymentIntentId()).isEqualTo("sandbox-intent-" + paymentId);
+        assertThat(result.getProviderSessionId()).isEqualTo("sandbox-session-" + UUID.nameUUIDFromBytes("sandbox-1".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        assertThat(result.getProviderPaymentIntentId()).isEqualTo("sandbox-intent-" + UUID.nameUUIDFromBytes("sandbox-1".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         assertThat(result.getCheckoutUrl()).contains("paymentId=" + paymentId).contains("orderId=" + orderId);
     }
 

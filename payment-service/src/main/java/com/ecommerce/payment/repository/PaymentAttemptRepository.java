@@ -5,7 +5,7 @@ import com.ecommerce.payment.enums.PaymentAttemptStatus;
 import com.ecommerce.payment.enums.PaymentProvider;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -30,7 +30,7 @@ public interface PaymentAttemptRepository extends JpaRepository<PaymentAttempt, 
     Optional<PaymentAttempt> findTopByPayment_IdAndStatusInAndExpiresAtAfterOrderByCreatedAtDesc(
             UUID paymentId,
             Collection<PaymentAttemptStatus> statuses,
-            LocalDateTime now
+            Instant now
     );
 
     Optional<PaymentAttempt> findByProviderAndProviderSessionId(

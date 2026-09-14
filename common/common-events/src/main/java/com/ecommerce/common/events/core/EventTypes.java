@@ -13,6 +13,9 @@ public final class EventTypes {
 
   public static final String PAYMENT_SUCCESS = "PAYMENT_SUCCESS";
   public static final String PAYMENT_FAILED = "PAYMENT_FAILED";
+  public static final String PAYMENT_EXPIRED = "PAYMENT_EXPIRED";
+  public static final String PAYMENT_REFUND_FAILED = "PAYMENT_REFUND_FAILED";
+  public static final String PAYMENT_CANCELLATION_REQUESTED = "PAYMENT_CANCELLATION_REQUESTED";
   public static final String PAYMENT_REFUND_COMPLETED = "PAYMENT_REFUND_COMPLETED";
   public static final String PAYMENT_REFUND_REQUESTED = "PAYMENT_REFUND_REQUESTED";
   public static final String PAYMENT_REFUND_REQUEST_REJECTED = "PAYMENT_REFUND_REQUEST_REJECTED";

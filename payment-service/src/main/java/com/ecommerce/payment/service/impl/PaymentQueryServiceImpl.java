@@ -1,6 +1,8 @@
 package com.ecommerce.payment.service.impl;
 
-import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.payment.exception.PaymentApiException;
+import com.ecommerce.payment.exception.PaymentErrorCode;
+import com.ecommerce.payment.config.PaymentPagination;
 import com.ecommerce.common.exception.UnauthorizedException;
 import com.ecommerce.payment.dto.response.AdminPaymentResponse;
 import com.ecommerce.payment.dto.response.PaymentAttemptResponse;
@@ -43,16 +45,14 @@ public class PaymentQueryServiceImpl implements PaymentQueryService {
 
     @Override
     public Page<PaymentResponse> getMyPayments(UUID userId, Pageable pageable) {
-        return paymentRepository.findByUserId(userId, pageable)
+        return paymentRepository.findByUserId(userId, PaymentPagination.bounded(pageable))
                 .map(paymentMapper::toResponse);
     }
 
     @Override
     public PaymentResponse getPaymentByOrderIdForUser(UUID orderId, UUID userId) {
         Payment payment = paymentRepository.findByOrderId(orderId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Payment not found for order: " + orderId
-                ));
+                .orElseThrow(() -> new PaymentApiException(PaymentErrorCode.PAYMENT_PREPARING));
 
         validateOwnership(payment, userId);
 
@@ -69,8 +69,8 @@ public class PaymentQueryServiceImpl implements PaymentQueryService {
     @Override
     public Page<AdminPaymentResponse> getAdminPayments(PaymentStatus status, Pageable pageable) {
         Page<Payment> payments = status == null
-                ? paymentRepository.findAll(pageable)
-                : paymentRepository.findByStatus(status, pageable);
+                ? paymentRepository.findAll(PaymentPagination.bounded(pageable))
+                : paymentRepository.findByStatus(status, PaymentPagination.bounded(pageable));
 
         return payments.map(this::toAdminPaymentResponse);
     }
@@ -83,9 +83,7 @@ public class PaymentQueryServiceImpl implements PaymentQueryService {
 
     private Payment getPaymentEntity(UUID paymentId) {
         return paymentRepository.findById(paymentId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Payment not found: " + paymentId
-                ));
+                .orElseThrow(() -> new PaymentApiException(PaymentErrorCode.PAYMENT_NOT_FOUND));
     }
 
     private AdminPaymentResponse toAdminPaymentResponse(Payment payment) {
@@ -118,9 +116,7 @@ public class PaymentQueryServiceImpl implements PaymentQueryService {
 
     private void validateOwnership(Payment payment, UUID userId) {
         if (!payment.getUserId().equals(userId)) {
-            throw new UnauthorizedException(
-                    "User is not allowed to access payment: " + payment.getId()
-            );
+            throw new PaymentApiException(PaymentErrorCode.PAYMENT_NOT_OWNED);
         }
     }
 }

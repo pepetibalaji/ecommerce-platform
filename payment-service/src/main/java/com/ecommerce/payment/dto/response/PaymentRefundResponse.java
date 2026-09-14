@@ -12,7 +12,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Data
@@ -49,8 +49,20 @@ public class PaymentRefundResponse {
     private String failureReason;
 
     @NotNull(message = "Created timestamp is required")
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @NotNull(message = "Updated timestamp is required")
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
+    private UUID refundRequestId;
+    private UUID requestedBy;
+    private String actorType;
+    private String correlationId;
+    private Instant requestedAt;
+    private Instant completedAt;
+    private int attemptCount;
+    private Instant nextAttemptAt;
+    private UUID lastReconciledBy;
+    private Instant lastReconciledAt;
+    private String reconciliationReason;
+    private int reconciliationCount;
 }

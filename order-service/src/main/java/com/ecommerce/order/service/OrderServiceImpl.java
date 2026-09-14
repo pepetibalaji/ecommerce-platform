@@ -6,6 +6,8 @@ import com.ecommerce.common.events.order.OrderItemEvent;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import com.ecommerce.common.events.payment.PaymentFailedEvent;
+import com.ecommerce.common.events.payment.PaymentExpiredEvent;
+import com.ecommerce.common.events.payment.PaymentRefundFailedEvent;
 import com.ecommerce.common.events.payment.PaymentSuccessEvent;
 import com.ecommerce.common.events.payment.PaymentRefundCompletedEvent;
 import com.ecommerce.common.events.payment.PaymentRefundRequestRejectedEvent;
@@ -338,10 +340,8 @@ public class OrderServiceImpl implements OrderService {
         }
 
         if (order.getStatus() == OrderStatus.PENDING) {
-            inventoryReleaseOutboxService.enqueueFor(order, InventoryReleaseReason.CANCELLED);
-            order.setStatus(OrderStatus.CANCELLED);
-            audit(order.getId(), "CUSTOMER_CANCELLATION_COMPLETED", userId,
-                    "CUSTOMER", reason, null);
+            orderRefundRequestService.enqueueCancellation(order, userId, "CUSTOMER", reason, false);
+            order.setStatus(OrderStatus.CANCELLATION_REQUESTED);
             return toResponse(orderRepository.save(order));
         }
 
@@ -350,7 +350,7 @@ public class OrderServiceImpl implements OrderService {
             return toResponse(orderRepository.save(order));
         }
 
-        if (order.getStatus() == OrderStatus.REFUND_REQUESTED) {
+        if (order.getStatus() == OrderStatus.REFUND_REQUESTED || order.getStatus() == OrderStatus.CANCELLATION_REQUESTED) {
             // A retry after a browser timeout must not enqueue another provider refund.
             return toResponse(order);
         }
@@ -389,6 +389,10 @@ public class OrderServiceImpl implements OrderService {
         Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
 
+        if (request.getStatus() != order.getStatus()) {
+            throw new OrderApiException("ORDER_STATE_CONFLICT", HttpStatus.CONFLICT,
+                    "Payment lifecycle changes must use the cancellation or refund workflow.", false, List.of());
+        }
         validateStatusTransition(order.getStatus(), request.getStatus());
 
         if (request.getStatus() == OrderStatus.CANCELLED) {
@@ -424,7 +428,14 @@ public class OrderServiceImpl implements OrderService {
             return;
         }
 
-        if (order.getStatus() == OrderStatus.PENDING) {
+        validateOutcomeTotals(order, event.getUserId(), event.getAmount(), event.getCurrency(), event.getPaymentId());
+        if (order.getStatus() == OrderStatus.CANCELLATION_REQUESTED) {
+            // Payment owns the already-durable cancellation command and will refund a success race.
+            order.setPaymentId(event.getPaymentId());
+            order.setPaymentConfirmedAt(now());
+            order.setStatus(OrderStatus.REFUND_REQUESTED);
+            orderRepository.save(order);
+        } else if (order.getStatus() == OrderStatus.PENDING) {
             order.setStatus(OrderStatus.CONFIRMED);
             order.setPaymentId(event.getPaymentId());
             order.setPaymentConfirmedAt(now());
@@ -465,12 +476,14 @@ public class OrderServiceImpl implements OrderService {
             return;
         }
 
-        if (order.getStatus() == OrderStatus.PENDING) {
-            inventoryReleaseOutboxService.enqueueFor(order, InventoryReleaseReason.PAYMENT_FAILED);
-            order.setStatus(OrderStatus.PAYMENT_FAILED);
+        validateOutcomeTotals(order, event.getUserId(), event.getAmount(), event.getCurrency(), event.getPaymentId());
+        if (order.getStatus() == OrderStatus.PENDING || order.getStatus() == OrderStatus.CANCELLATION_REQUESTED) {
+            boolean cancelled = "PAYMENT_CANCELLED".equals(event.getFailureCode());
+            inventoryReleaseOutboxService.enqueueFor(order, cancelled ? InventoryReleaseReason.CANCELLED : InventoryReleaseReason.PAYMENT_FAILED);
+            order.setStatus(cancelled ? OrderStatus.CANCELLED : OrderStatus.PAYMENT_FAILED);
             order.setPaymentId(event.getPaymentId());
             order.setPaymentFailedAt(now());
-            order.setPaymentFailureReason(event.getFailureReason());
+            order.setPaymentFailureReason("Payment was not completed.");
             orderRepository.save(order);
             paymentOutcomeMetrics.orderUpdated("failure");
         } else if (order.getStatus() != OrderStatus.PAYMENT_FAILED) {
@@ -494,14 +507,32 @@ public class OrderServiceImpl implements OrderService {
             paymentOutcomeMetrics.duplicateIgnored();
             return;
         }
+        validateOutcomeTotals(order, event.getUserId(), event.getPaymentAmount(), event.getCurrency(), event.getPaymentId());
+        if (event.getAmount() == null || event.getAmount().signum() <= 0 || event.getTotalRefundedAmount() == null
+                || event.getAmount().compareTo(event.getTotalRefundedAmount()) > 0
+                || event.getTotalRefundedAmount().compareTo(event.getPaymentAmount()) > 0
+                || event.isFullRefund() != (event.getTotalRefundedAmount().compareTo(event.getPaymentAmount()) == 0)) {
+            throw new BadRequestException("Inconsistent refund outcome totals");
+        }
         OrderStatus statusBeforeOutcome = order.getStatus();
+        if (order.getStatus() == OrderStatus.REFUNDED) {
+            // A reconstructed event may have a different event ID; it must never downgrade a full refund.
+            recordProcessedEvent(event.getEventId(), event.getEventType(), event.getOrderId());
+            return;
+        }
+        if (!event.isFullRefund() && order.getStatus() == OrderStatus.PENDING) {
+            // Separate Kafka topics may deliver a partial refund before its original success.
+            // Retry after the success consumer has established the paid/fulfilment lifecycle.
+            throw new IllegalStateException("Partial refund is awaiting the original payment success outcome");
+        }
+        order.setPaymentId(event.getPaymentId());
         if (!event.isFullRefund()) {
             if (order.getStatus() == OrderStatus.CONFIRMED) {
                 order.setStatus(OrderStatus.PARTIALLY_REFUNDED);
                 orderRepository.save(order);
                 audit(order.getId(), "REFUND_PARTIALLY_COMPLETED", null,
                         "PAYMENT_SYSTEM", null, event.getRefundId());
-            } else if (order.getStatus() == OrderStatus.REFUND_REQUESTED) {
+            } else if (order.getStatus() == OrderStatus.REFUND_REQUESTED || order.getStatus() == OrderStatus.CANCELLATION_REQUESTED) {
                 // A cancellation requests the complete payment amount. A partial outcome cannot
                 // release the reservation and is surfaced for an operations decision.
                 order.setStatus(OrderStatus.REFUND_REQUIRES_FULFILMENT_REVIEW);
@@ -510,7 +541,10 @@ public class OrderServiceImpl implements OrderService {
                         "PAYMENT_SYSTEM", null, event.getRefundId());
             }
         } else if (order.getStatus() == OrderStatus.CONFIRMED
+                || order.getStatus() == OrderStatus.PENDING
+                || order.getStatus() == OrderStatus.REFUND_FAILED
                 || order.getStatus() == OrderStatus.REFUND_REQUESTED
+                || order.getStatus() == OrderStatus.CANCELLATION_REQUESTED
                 || order.getStatus() == OrderStatus.PARTIALLY_REFUNDED) {
             inventoryReleaseOutboxService.enqueueFor(order, InventoryReleaseReason.FULL_REFUND);
             order.setStatus(OrderStatus.REFUNDED);
@@ -551,6 +585,62 @@ public class OrderServiceImpl implements OrderService {
             paymentOutcomeMetrics.lateEventIgnored("refund_request_rejected");
         }
         recordProcessedEvent(event.getEventId(), event.getEventType(), event.getOrderId());
+    }
+
+    @Override
+    public void handlePaymentExpired(PaymentExpiredEvent event) {
+        validatePaymentEvent(event == null ? null : event.getEventId(), event == null ? null : event.getOrderId(),
+                event == null ? null : event.getPaymentId());
+        var order = orderRepository.findByIdForUpdate(event.getOrderId()).orElseThrow(() -> orderNotFound(event.getOrderId()));
+        if (orderProcessedEventRepository.existsByEventId(event.getEventId())) {
+            paymentOutcomeMetrics.duplicateIgnored();
+            return;
+        }
+        validateOutcomeTotals(order, event.getUserId(), event.getAmount(), event.getCurrency(), event.getPaymentId());
+        if (order.getStatus() == OrderStatus.PENDING || order.getStatus() == OrderStatus.CANCELLATION_REQUESTED) {
+            order.setStatus(OrderStatus.PAYMENT_EXPIRED);
+            order.setPaymentId(event.getPaymentId());
+            order.setPaymentFailedAt(now());
+            order.setPaymentFailureReason("Payment time expired.");
+            inventoryReleaseOutboxService.enqueueFor(order, InventoryReleaseReason.PAYMENT_EXPIRED);
+            orderRepository.save(order);
+            paymentOutcomeMetrics.pendingPaymentExpired();
+            audit(order.getId(), "PAYMENT_EXPIRED", null, "PAYMENT_SYSTEM", null, null);
+        } else {
+            paymentOutcomeMetrics.lateEventIgnored("expiry");
+        }
+        recordProcessedEvent(event.getEventId(), event.getEventType(), event.getOrderId());
+    }
+
+    @Override
+    public void handleRefundFailed(PaymentRefundFailedEvent event) {
+        validatePaymentEvent(event == null ? null : event.getEventId(), event == null ? null : event.getOrderId(),
+                event == null ? null : event.getPaymentId());
+        var order = orderRepository.findByIdForUpdate(event.getOrderId()).orElseThrow(() -> orderNotFound(event.getOrderId()));
+        if (orderProcessedEventRepository.existsByEventId(event.getEventId())) {
+            paymentOutcomeMetrics.duplicateIgnored();
+            return;
+        }
+        if (!order.getUserId().equals(event.getUserId()) || (order.getPaymentId() != null && !order.getPaymentId().equals(event.getPaymentId()))) {
+            throw new BadRequestException("Refund outcome ownership mismatch");
+        }
+        if (order.getStatus() == OrderStatus.REFUND_REQUESTED || order.getStatus() == OrderStatus.CANCELLATION_REQUESTED
+                || order.getStatus() == OrderStatus.PENDING || order.getStatus() == OrderStatus.CONFIRMED || order.getStatus() == OrderStatus.PARTIALLY_REFUNDED) {
+            order.setStatus(OrderStatus.REFUND_FAILED);
+            order.setPaymentId(event.getPaymentId());
+            orderRepository.save(order);
+            audit(order.getId(), "REFUND_FAILED", null, "PAYMENT_SYSTEM", "Refund requires operations review", event.getRefundRequestId());
+            paymentOutcomeMetrics.refundRequestRejected();
+        }
+        recordProcessedEvent(event.getEventId(), event.getEventType(), event.getOrderId());
+    }
+
+    private void validateOutcomeTotals(Order order, UUID userId, BigDecimal amount, String currency, UUID paymentId) {
+        if (!order.getUserId().equals(userId) || amount == null || order.getTotalAmount().compareTo(amount) != 0
+                || !order.getCurrency().equals(currency)
+                || (order.getPaymentId() != null && !order.getPaymentId().equals(paymentId))) {
+            throw new BadRequestException("Payment outcome does not match immutable order data");
+        }
     }
 
     private void requestFullRefund(Order order, UUID actorId, String actorType, String reason) {
@@ -836,7 +926,7 @@ public class OrderServiceImpl implements OrderService {
                     );
                 }
             }
-            case REFUND_REQUESTED, PARTIALLY_REFUNDED, REFUNDED, REFUND_REQUIRES_FULFILMENT_REVIEW -> throw new BadRequestException(
+            case CANCELLATION_REQUESTED, REFUND_REQUESTED, REFUND_FAILED, PARTIALLY_REFUNDED, REFUNDED, REFUND_REQUIRES_FULFILMENT_REVIEW -> throw new BadRequestException(
                     "Refunded orders require fulfilment/manual reconciliation before state changes");
             case PAYMENT_FAILED, PAYMENT_EXPIRED -> throw new BadRequestException(
                     "Payment failed orders cannot change state"

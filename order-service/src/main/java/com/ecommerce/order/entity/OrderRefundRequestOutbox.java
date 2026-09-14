@@ -26,11 +26,20 @@ public class OrderRefundRequestOutbox {
     @Id
     private UUID id;
 
-    @Column(name = "order_id", nullable = false, unique = true)
+    @Column(name = "order_id", nullable = false)
     private UUID orderId;
 
-    @Column(name = "payment_id", nullable = false)
+    @Column(name = "payment_id")
     private UUID paymentId;
+    @Column(name = "command_type", nullable = false)
+    private String commandType = "REFUND";
+    @Column(name = "correlation_id")
+    private String correlationId;
+    @Column(name = "trace_id")
+    private String traceId;
+    public void asCancellation(boolean expiryRequested) {
+        commandType = expiryRequested ? "EXPIRY" : "CANCELLATION";
+    }
 
     @Column(name = "user_id", nullable = false)
     private UUID userId;
@@ -92,6 +101,9 @@ public class OrderRefundRequestOutbox {
         this.status = RefundRequestStatus.PENDING;
         this.nextAttemptAt = now;
         this.createdAt = now;
+        this.correlationId = org.slf4j.MDC.get("correlationId");
+        if (this.correlationId == null) this.correlationId = orderId.toString();
+        this.traceId = org.slf4j.MDC.get("traceId");
     }
 
     public void published(Instant now) {

@@ -1,35 +1,27 @@
 package com.ecommerce.payment.controller;
 
+import com.ecommerce.payment.config.CheckoutUrlPolicy;
+import com.ecommerce.payment.config.PaymentProviderProperties;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import java.net.URI;
+import java.util.UUID;
 
+/** Legacy provider returns are informational redirects only; providers use frontend URLs directly. */
+@Deprecated
 @RestController
+@RequiredArgsConstructor
 @RequestMapping("/public/payments")
 public class PaymentPublicController {
+    private final PaymentProviderProperties properties;
+    private final CheckoutUrlPolicy urls;
 
-    @org.springframework.beans.factory.annotation.Value("${payment.checkout.frontend-return-url:http://localhost:5173/payment/return}")
-    private String frontendReturnUrl;
-
-    @GetMapping("/success")
-    public ResponseEntity<Void> success(
-            @RequestParam java.util.UUID orderId,
-            @RequestParam(required = false) java.util.UUID paymentId
-    ) {
-        return redirect(orderId, paymentId);
-    }
-
-    @GetMapping("/cancel")
-    public ResponseEntity<Void> cancel(
-            @RequestParam java.util.UUID orderId,
-            @RequestParam(required = false) java.util.UUID paymentId
-    ) {
-        return redirect(orderId, paymentId);
-    }
-
-    private ResponseEntity<Void> redirect(java.util.UUID orderId, java.util.UUID paymentId) {
-        var location = org.springframework.web.util.UriComponentsBuilder.fromUriString(frontendReturnUrl)
-                .queryParam("orderId", orderId);
-        if (paymentId != null) location.queryParam("paymentId", paymentId);
-        return ResponseEntity.status(303).location(location.build().toUri()).build();
+    @GetMapping({"/success", "/cancel"})
+    public ResponseEntity<Void> redirect(@RequestParam UUID orderId, @RequestParam UUID paymentId) {
+        String location = properties.getCheckout().getSuccessUrl().replace("{ORDER_ID}", orderId.toString())
+                .replace("{PAYMENT_ID}", paymentId.toString());
+        urls.validateReturnUrl(location);
+        return ResponseEntity.status(303).header("Deprecation", "true").location(URI.create(location)).build();
     }
 }

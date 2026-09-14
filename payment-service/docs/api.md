@@ -1,40 +1,86 @@
-# Payment Service API and contracts
+# Payment API and frontend contract
 
-Customer base path: `/api/v1/payments`; admin base path: `/api/v1/admin/payments`. Customer/admin endpoints require bearer JWT. Customer ownership comes from JWT `userId`; admin routes require `ADMIN` from `roles`, `role`, or `authorities` JWT claim. Webhooks and provider return pages are public.
+All paths below include their complete prefix. Customer APIs require a bearer JWT and use its `userId` for ownership. Admin APIs require `ADMIN`. Browser clients cannot create arbitrary Payment records.
 
-## Customer endpoints
+| Method and path | Contract |
+| --- | --- |
+| `POST /api/v1/payments/orders/{orderId}/checkout-session` | Create or reuse one owned, unexpired checkout attempt after trusted Order validation. |
+| `GET /api/v1/payments/orders/{orderId}` | Read the caller's authoritative Payment state. Missing preparation returns `PAYMENT_PREPARING`. |
+| `GET /api/v1/payments/{paymentId}` | Read an owned payment, or `PAYMENT_NOT_FOUND`. |
+| `GET /api/v1/payments/me?page=0&size=20` | Owned payment page. |
+| `POST /api/v1/payments/orders/{orderId}/refresh` | Compatibility read of owned persisted state. It cannot contact a provider or confirm/fail a payment. |
+| `GET /api/v1/admin/payments?status=&page=0&size=20` | Admin payment page, optionally filtered by state. |
+| `GET /api/v1/admin/payments/{paymentId}` | Admin detail including attempts and refunds. |
+| `POST /api/v1/admin/payments/{paymentId}/refund` | Return `202` after durably reserving refund work. |
+| `POST /api/v1/admin/payments/{paymentId}/refunds/{refundId}/reconcile` | Return `202` after audited reconciliation of manual-review work: retrieve a known provider refund, or safely replay unknown acceptance while still inside the original 23-hour window. Body: `{"reason":"operator investigation reference"}`. |
 
-| Method and path | Behavior | Success |
+Pagination requires `page >= 0` and `1 <= size <= 50`; invalid values return `400`. Sorting is always `createdAt DESC, id DESC`. Customer payment fields are `paymentId`, `orderId`, `userId`, `amount`, `currency`, `status`, `provider`, `createdAt`, and `updatedAt`. Internal failure text is not serialized. Timestamps are UTC/offset aware.
+
+## Checkout and browser return
+
+A successful checkout response contains only:
+
+```json
+{
+  "paymentId": "c34caa2b-1eed-4d8f-972e-9b836ceac73c",
+  "orderId": "bcf0ea26-aab5-4e76-a765-62a237af398e",
+  "status": "REQUIRES_CUSTOMER_ACTION",
+  "provider": "STRIPE",
+  "checkoutUrl": "https://checkout.stripe.com/c/pay/cs_example",
+  "expiresAt": "2026-09-14T12:30:00Z"
+}
+```
+
+Requests serialize on the Payment row. A committed attempt stores its unique provider idempotency key and immutable provider request parameters before provider execution. Retried/time-out requests replay that same attempt. Terminal, processing, cancelled, expired, refund-state, and cancellation-pending payments cannot start checkout.
+
+Provider returns target `https://<approved-frontend-origin>/payment/return?orderId={ORDER_ID}&paymentId={PAYMENT_ID}`. The backend validates exact approved HTTPS provider hosts before returning checkout URLs; the frontend also validates URLs and expiry.
+
+On return, authenticate normally and poll `GET /api/v1/orders/{orderId}` and the Payment GET endpoint. A redirect/query parameter never proves payment. Current frontend polling is bounded to 25 checks over about two minutes, stops on navigation or a terminal outcome, and offers an explicit status retry when exhausted. Payment preparation allows at most four delayed retries; honor `retryAfterSeconds` with a small bounded delay. Disable duplicate redirect actions during the checkout request.
+
+Legacy `GET /public/payments/success` and `/cancel` accept UUID `orderId` and `paymentId`, return `303` to the validated frontend route, and include `Deprecation: true`. They never mutate state.
+
+## Stable errors
+
+```json
+{
+  "code": "PAYMENT_PREPARING",
+  "message": "Payment is being prepared. Please wait a moment.",
+  "retryable": true,
+  "retryAfterSeconds": 2,
+  "traceId": "request-trace-id"
+}
+```
+
+Use `code`, never message parsing. Retryable errors include a matching `Retry-After` header. Provider exception messages and secrets are never returned.
+
+| Code | HTTP | Retryable |
 | --- | --- | --- |
-| `POST /payments/orders/{orderId}/checkout-session` | Owner starts or reuses a non-expired active provider checkout attempt. Payment must already have been prepared from `order-created`. | `200` checkout session |
-| `GET /payments/me` | Pages only caller-owned payments. | `200` page |
-| `GET /payments/orders/{orderId}` | Gets only caller-owned payment for order. | `200` payment |
-| `POST /payments/orders/{orderId}/refresh` | Owner verifies an active Stripe payment using its saved checkout session; rate-limited to one provider check per five seconds. Never creates a charge. | `200` payment |
-| `GET /payments/{paymentId}` | Gets only caller-owned payment. | `200` payment |
+| PAYMENT_PREPARING | 404 | Yes, 2 seconds |
+| PAYMENT_NOT_FOUND | 404 | No |
+| PAYMENT_NOT_OWNED | 403 | No |
+| PAYMENT_CHECKOUT_ALREADY_ACTIVE | 409 | Yes, 2 seconds; existing safe sessions are normally returned directly |
+| PAYMENT_ALREADY_COMPLETED | 409 | No |
+| PAYMENT_PROCESSING | 409 | Yes, 2 seconds; poll status |
+| PAYMENT_EXPIRED | 409 | No |
+| PAYMENT_CANCELLED | 409 | No |
+| PAYMENT_PROVIDER_UNAVAILABLE | 503 | Yes, 2 seconds |
+| PAYMENT_PROVIDER_CONFIGURATION_ERROR | 503 | No |
+| PAYMENT_CHECKOUT_SESSION_EXPIRED | 409 | No |
+| PAYMENT_REFUND_NOT_ALLOWED | 409 | No |
+| PAYMENT_REFUND_IN_PROGRESS | 409 | Yes, 5 seconds |
+| PAYMENT_REFUND_FAILED | 409 | No; contact support |
+| PAYMENT_STATE_CONFLICT | 409 | Yes, 2 seconds; refresh status |
+| PAYMENT_INVALID_REQUEST | 400 | No |
+| PAYMENT_WEBHOOK_INVALID | 400 | No; invalid signature or event |
 
-Checkout response contains `paymentId`, `orderId`, status, provider, `checkoutUrl`, and expiry. An active `CREATED`/`REQUIRES_CUSTOMER_ACTION` attempt with future expiry is reused. New checkout is rejected for SUCCESS, PROCESSING, or refund/refunded payment states. Provider success and cancellation URLs must return the browser to the frontend's `/payment/return?orderId=&paymentId=` route; that screen reads authoritative Order and Payment API state.
+## Webhooks and refunds
 
-## Provider and public endpoints
+`POST /api/v1/payments/webhooks/stripe` verifies `Stripe-Signature` against the exact raw body. Requests are size-limited and provider-rate-limited before processing. A unique `(provider, providerEventId)` inbox retains a payload hash and a sanitized verified envelope. Razorpay remains disabled. Sandbox is available only in explicit development/test profiles.
 
-| Method/path | Access | Contract |
-| --- | --- | --- |
-| `POST /payments/webhooks/stripe` | Stripe | Raw payload plus required `Stripe-Signature`; adapter verifies it. |
-| `POST /payments/webhooks/razorpay` | Razorpay | Raw payload plus optional `X-Razorpay-Signature`; adapter validation decides acceptance. |
-| `GET /public/payments/success?orderId=&paymentId=` | Public | Legacy `303` redirect to the configured frontend verification page; does not claim success or change payment state. |
-| `GET /public/payments/cancel?orderId=&paymentId=` | Public | Legacy `303` redirect to the configured frontend verification page; does not claim cancellation or change payment state. |
+Only verified provider webhooks can confirm/fail a payment. Supported Stripe Checkout outcomes include immediate/delayed success, delayed failure, and explicit expiry. Terminal state cannot be overwritten by a late webhook; late success after cancellation/expiry/failure is flagged for review.
 
-Provider confirmation comes from a verified webhook or the owner-authorized refresh endpoint's authenticated Stripe lookup. Provider event IDs are unique per provider, so replayed callbacks are acknowledged without repeat processing. Refresh returns `404` for missing or non-owned payments and a safe `503` when confirmation is temporarily unavailable. See [confirmation recovery and deployment](confirmation-recovery.md).
+Admin refund body: `orderId`, positive `amount` with at most two decimal places, `currency`, optional `reason`, and `idempotencyKey`. Repeated keys must describe the same request. Successful, pending, and uncertain/manual-review amounts remain reserved to prevent over-refunds. Partial admin refunds are supported. Customer cancellation of a confirmed Order requests its entire immutable total; a partially refunded Order requires admin handling. A pending cancellation that races with payment success requests the remaining balance through the original cancellation worker. Refund provider execution and reconciliation run through durable work. See the [Order cancellation policy](../../order-service/docs/payment-lifecycle.md).
 
-## Admin endpoints
+Legacy gRPC operations return `FAILED_PRECONDITION`; use these authenticated HTTP endpoints or the durable Order command contracts.
 
-| Method/path | Behavior | Success |
-| --- | --- | --- |
-| `GET /admin/payments?status=&page=&size=` | Pages all payments, optionally by `PaymentStatus`. | `200` page |
-| `GET /admin/payments/{paymentId}` | Retrieves payment detail. | `200` payment |
-| `POST /admin/payments/{paymentId}/refund` | Requests provider refund. | `202` refund response |
-
-Refund body contains order ID, positive amount (max two decimal places), 3-letter currency, optional reason, and idempotency key. Payment/order/currency must match; total nonfailed refunds cannot exceed payment amount. A repeated idempotency key returns/reuses its refund record.
-
-Payment states: `PENDING`, `REQUIRES_CUSTOMER_ACTION`, `PROCESSING`, `SUCCESS`, `FAILED`, `CANCELLED`, `REFUND_REQUESTED`, `REFUND_PROCESSING`, `REFUNDED`, `REFUND_FAILED`. Common errors: missing resource `404`, wrong customer owner `401`, invalid state/request `400`, invalid webhook signature/provider error `4xx/5xx` as adapter throws, insufficient role `403`.
-
-OpenAPI: `/v3/api-docs`; Swagger UI: `/swagger-ui.html`.
+OpenAPI: `/v3/api-docs`; Swagger UI: `/swagger-ui.html`. Operations endpoints and recovery procedures are in [the runbook](production-reliability.md).

@@ -113,13 +113,16 @@ class InventoryReleaseOutboxProcessorTest {
         InventoryReleaseOutbox command = pendingCommand(InventoryReleaseReason.FULL_REFUND);
         when(inventoryReleaseOutboxRepository.lockNextPending(25, Instant.parse("2026-08-27T10:00:00Z")))
                 .thenReturn(List.of(command));
-        doThrow(new RuntimeException("Deducted inventory reservations cannot be released"))
+        doThrow(new com.ecommerce.common.grpc.exception.GrpcClientException("inventory-service",
+                io.grpc.Status.Code.FAILED_PRECONDITION, "INVENTORY_PRECONDITION_FAILED", null))
                 .when(inventoryGrpcClient)
                 .releaseStock(command.getProductId(), command.getQuantity(), command.getReservationId());
 
         inventoryReleaseOutboxProcessor.processPendingReleases();
 
         assertThat(command.getStatus()).isEqualTo(InventoryReleaseStatus.MANUAL_REVIEW);
+        assertThat(command.getLastError()).isEqualTo("INVENTORY_RELEASE_REQUIRES_REVIEW");
+        verify(paymentOutcomeMetrics).inventoryReleaseTerminalFailure("full_refund");
         assertThat(command.getAttemptCount()).isZero();
         verify(paymentOutcomeMetrics, never()).inventoryReleaseFailed("full_refund");
     }
@@ -143,6 +146,20 @@ class InventoryReleaseOutboxProcessorTest {
                 firstCommand.getProductId(), secondCommand.getQuantity(), secondCommand.getReservationId());
     }
 
+    @Test
+    void missingReservationRequiresManualReviewInsteadOfRepeatingRelease() {
+        InventoryReleaseOutbox command = pendingCommand(InventoryReleaseReason.FULL_REFUND);
+        when(inventoryReleaseOutboxRepository.lockNextPending(25, Instant.parse("2026-08-27T10:00:00Z")))
+                .thenReturn(List.of(command));
+        doThrow(new com.ecommerce.common.grpc.exception.GrpcClientException("inventory-service",
+                io.grpc.Status.Code.NOT_FOUND, "INVENTORY_NOT_FOUND", null))
+                .when(inventoryGrpcClient)
+                .releaseStock(command.getProductId(), command.getQuantity(), command.getReservationId());
+        inventoryReleaseOutboxProcessor.processPendingReleases();
+        assertThat(command.getStatus()).isEqualTo(InventoryReleaseStatus.MANUAL_REVIEW);
+        assertThat(command.getAttemptCount()).isZero();
+        verify(paymentOutcomeMetrics).inventoryReleaseTerminalFailure("full_refund");
+    }
     private InventoryReleaseOutbox pendingCommand(InventoryReleaseReason reason) {
         return new InventoryReleaseOutbox(
                 UUID.randomUUID(),

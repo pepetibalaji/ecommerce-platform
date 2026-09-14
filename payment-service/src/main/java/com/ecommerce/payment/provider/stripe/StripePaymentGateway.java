@@ -31,8 +31,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+
 import java.util.Locale;
 import java.util.Optional;
 
@@ -58,8 +57,8 @@ public class StripePaymentGateway implements PaymentGateway {
 
         long amountInMinorUnit = toMinorUnit(command.getAmount());
 
-        String successUrl = replacePlaceholders(properties.getCheckout().getSuccessUrl(), command);
-        String cancelUrl = replacePlaceholders(properties.getCheckout().getCancelUrl(), command);
+        String successUrl = command.getSuccessUrl() == null ? replacePlaceholders(properties.getCheckout().getSuccessUrl(), command) : command.getSuccessUrl();
+        String cancelUrl = command.getCancelUrl() == null ? replacePlaceholders(properties.getCheckout().getCancelUrl(), command) : command.getCancelUrl();
 
         SessionCreateParams.LineItem.PriceData.ProductData productData =
                 SessionCreateParams.LineItem.PriceData.ProductData.builder()
@@ -85,16 +84,22 @@ public class StripePaymentGateway implements PaymentGateway {
                         .setSuccessUrl(successUrl)
                         .setCancelUrl(cancelUrl)
                         .setClientReferenceId(command.getPaymentId().toString())
+                        .setPaymentIntentData(SessionCreateParams.PaymentIntentData.builder()
+                                .putMetadata("paymentId", command.getPaymentId().toString())
+                                .putMetadata("attemptIdempotencyKey", command.getIdempotencyKey()).build())
+                        .setExpiresAt(command.getExpiresAt() == null ? null : command.getExpiresAt().getEpochSecond())
                         .addLineItem(lineItem)
                         .putMetadata("paymentId", command.getPaymentId().toString())
                         .putMetadata("orderId", command.getOrderId().toString())
                         .putMetadata("userId", command.getUserId().toString())
+                        .putMetadata("attemptIdempotencyKey", command.getIdempotencyKey())
                         .build();
 
         RequestOptions requestOptions =
                 RequestOptions.builder()
                         .setApiKey(properties.getProvider().getStripe().getApiKey())
                         .setIdempotencyKey(command.getIdempotencyKey())
+                        .setConnectTimeout(timeoutMs()).setReadTimeout(timeoutMs()).setMaxNetworkRetries(0)
                         .build();
 
         try {
@@ -105,12 +110,11 @@ public class StripePaymentGateway implements PaymentGateway {
                     .providerSessionId(session.getId())
                     .providerPaymentIntentId(session.getPaymentIntent())
                     .checkoutUrl(session.getUrl())
-                    .expiresAt(toLocalDateTime(session.getExpiresAt()))
+                    .expiresAt(toInstant(session.getExpiresAt()))
                     .build();
         } catch (StripeException exception) {
-            throw new BadRequestException(
-                    "Failed to create Stripe checkout session: " + exception.getMessage()
-            );
+            throw new com.ecommerce.payment.exception.PaymentApiException(
+                    com.ecommerce.payment.exception.PaymentErrorCode.PAYMENT_PROVIDER_UNAVAILABLE, exception);
         }
     }
 
@@ -119,11 +123,7 @@ public class StripePaymentGateway implements PaymentGateway {
         validateStripeConfig();
 
         try {
-            Webhook.constructEvent(
-                    payload,
-                    signature,
-                    properties.getProvider().getStripe().getWebhookSecret()
-            );
+            verifiedEvent(payload, signature);
         } catch (SignatureVerificationException exception) {
             throw new BadRequestException("Invalid Stripe webhook signature");
         } catch (RuntimeException exception) {
@@ -137,11 +137,7 @@ public class StripePaymentGateway implements PaymentGateway {
 
         Event event;
         try {
-            event = Webhook.constructEvent(
-                    payload,
-                    signature,
-                    properties.getProvider().getStripe().getWebhookSecret()
-            );
+            event = verifiedEvent(payload, signature);
         } catch (SignatureVerificationException exception) {
             throw new BadRequestException("Invalid Stripe webhook signature");
         } catch (RuntimeException exception) {
@@ -153,17 +149,34 @@ public class StripePaymentGateway implements PaymentGateway {
 
         if (objectOptional.isEmpty()) {
             if (eventType.startsWith("checkout.session.")) {
-                // Signature has already been verified. Retrieve using this SDK's API version
-                // instead of silently losing a completion from a different webhook API version.
+                // The envelope signature is verified. Read only the stable fields of the signed
+                // checkout object; an SDK version mismatch must not turn a browser/status lookup
+                // into payment proof or require a network call before retaining the verified event.
                 com.fasterxml.jackson.databind.JsonNode raw;
                 try { raw = new com.fasterxml.jackson.databind.ObjectMapper().readTree(event.getDataObjectDeserializer().getRawJson()); }
                 catch (com.fasterxml.jackson.core.JsonProcessingException invalid) { throw new BadRequestException("Invalid Stripe checkout event"); }
-                if (!raw.path("id").isTextual() || !"checkout.session".equals(raw.path("object").asText()))
+                if (!raw.path("id").isTextual() || !raw.path("id").asText().startsWith("cs_")
+                        || !"checkout.session".equals(raw.path("object").asText()))
                     throw new BadRequestException("Invalid Stripe checkout event");
-                var current = getPaymentStatus(raw.path("id").asText());
-                return current.toBuilder().providerEventId(event.getId()).eventType(eventType)
-                        .status("checkout.session.async_payment_failed".equals(eventType) && current.getStatus() != ProviderPaymentStatus.SUCCESS
-                                ? ProviderPaymentStatus.FAILED : current.getStatus()).build();
+                ProviderPaymentStatus signedStatus = switch (eventType) {
+                    case "checkout.session.completed", "checkout.session.async_payment_succeeded" ->
+                            "paid".equals(raw.path("payment_status").asText()) ? ProviderPaymentStatus.SUCCESS : ProviderPaymentStatus.PROCESSING;
+                    case "checkout.session.async_payment_failed" -> ProviderPaymentStatus.FAILED;
+                    case "checkout.session.expired" -> ProviderPaymentStatus.EXPIRED;
+                    default -> ProviderPaymentStatus.IGNORED;
+                };
+                String paymentId = raw.path("metadata").path("paymentId").asText(null);
+                java.util.UUID metadataId = null;
+                if (paymentId != null) {
+                    try { metadataId = java.util.UUID.fromString(paymentId); }
+                    catch (IllegalArgumentException invalid) { throw new BadRequestException("Invalid Stripe payment metadata"); }
+                }
+                return ProviderWebhookEvent.builder().provider(PaymentProvider.STRIPE).providerEventId(event.getId())
+                        .eventType(eventType).status(signedStatus).providerSessionId(raw.path("id").asText())
+                        .providerPaymentIntentId(raw.path("payment_intent").isTextual() ? raw.path("payment_intent").asText() : null)
+                        .paymentId(metadataId).attemptIdempotencyKey(raw.path("metadata").path("attemptIdempotencyKey").asText(null))
+                        .amount(raw.path("amount_total").isNumber() ? raw.path("amount_total").decimalValue().movePointLeft(2) : null)
+                        .currency(raw.path("currency").asText(null)).build();
             }
             return ignored(event.getId(), eventType, "Unsupported Stripe event object");
         }
@@ -180,6 +193,8 @@ public class StripePaymentGateway implements PaymentGateway {
                     .provider(PaymentProvider.STRIPE)
                     .providerEventId(event.getId())
                     .eventType(eventType)
+                    .paymentId(paymentId(session)).attemptIdempotencyKey(attemptKey(session))
+                    .amount(session.getAmountTotal() == null ? null : BigDecimal.valueOf(session.getAmountTotal()).movePointLeft(2)).currency(session.getCurrency())
                     .status(status)
                     .providerSessionId(session.getId())
                     .providerPaymentIntentId(session.getPaymentIntent())
@@ -188,7 +203,8 @@ public class StripePaymentGateway implements PaymentGateway {
 
         if ("checkout.session.async_payment_failed".equals(eventType) && stripeObject instanceof Session session) {
             return ProviderWebhookEvent.builder().provider(PaymentProvider.STRIPE).providerEventId(event.getId())
-                    .eventType(eventType).providerSessionId(session.getId()).providerPaymentIntentId(session.getPaymentIntent())
+                    .eventType(eventType).paymentId(paymentId(session)).attemptIdempotencyKey(attemptKey(session))
+                    .amount(session.getAmountTotal() == null ? null : BigDecimal.valueOf(session.getAmountTotal()).movePointLeft(2)).currency(session.getCurrency()).providerSessionId(session.getId()).providerPaymentIntentId(session.getPaymentIntent())
                     .status(ProviderPaymentStatus.FAILED).failureReason("Stripe delayed payment failed").build();
         }
 
@@ -197,7 +213,9 @@ public class StripePaymentGateway implements PaymentGateway {
                     .provider(PaymentProvider.STRIPE)
                     .providerEventId(event.getId())
                     .eventType(eventType)
-                    .status(ProviderPaymentStatus.CANCELLED)
+                    .status(ProviderPaymentStatus.EXPIRED)
+                    .paymentId(paymentId(session)).attemptIdempotencyKey(attemptKey(session))
+                    .amount(session.getAmountTotal() == null ? null : BigDecimal.valueOf(session.getAmountTotal()).movePointLeft(2)).currency(session.getCurrency())
                     .providerSessionId(session.getId())
                     .providerPaymentIntentId(session.getPaymentIntent())
                     .failureReason("Stripe checkout session expired")
@@ -215,6 +233,10 @@ public class StripePaymentGateway implements PaymentGateway {
                     .eventType(eventType)
                     .status(ProviderPaymentStatus.FAILED)
                     .providerPaymentIntentId(paymentIntent.getId())
+                    .paymentId(metadataPaymentId(paymentIntent.getMetadata()))
+                    .attemptIdempotencyKey(paymentIntent.getMetadata() == null ? null : paymentIntent.getMetadata().get("attemptIdempotencyKey"))
+                    .amount(paymentIntent.getAmount() == null ? null : BigDecimal.valueOf(paymentIntent.getAmount()).movePointLeft(2))
+                    .currency(paymentIntent.getCurrency())
                     .failureReason(failureReason)
                     .build();
         }
@@ -252,10 +274,12 @@ public class StripePaymentGateway implements PaymentGateway {
                     .setApiKey(properties.getProvider().getStripe().getApiKey())
                     .setConnectTimeout(timeout).setReadTimeout(timeout).setMaxNetworkRetries(0).build());
             ProviderPaymentStatus status = "paid".equals(session.getPaymentStatus()) ? ProviderPaymentStatus.SUCCESS
-                    : "expired".equals(session.getStatus()) ? ProviderPaymentStatus.CANCELLED
+                    : "expired".equals(session.getStatus()) ? ProviderPaymentStatus.EXPIRED
                     : "complete".equals(session.getStatus()) ? ProviderPaymentStatus.PROCESSING : ProviderPaymentStatus.IGNORED;
             return ProviderWebhookEvent.builder().provider(PaymentProvider.STRIPE)
                     .providerEventId("lookup:" + session.getId() + ":" + status).eventType("stripe.checkout.reconciled")
+                    .paymentId(paymentId(session)).attemptIdempotencyKey(attemptKey(session))
+                    .amount(session.getAmountTotal() == null ? null : BigDecimal.valueOf(session.getAmountTotal()).movePointLeft(2)).currency(session.getCurrency())
                     .providerSessionId(session.getId()).providerPaymentIntentId(session.getPaymentIntent()).status(status).build();
         } catch (StripeException exception) {
             throw new com.ecommerce.payment.exception.PaymentConfirmationUnavailableException();
@@ -285,6 +309,7 @@ public class StripePaymentGateway implements PaymentGateway {
             RequestOptions requestOptions = RequestOptions.builder()
                     .setApiKey(properties.getProvider().getStripe().getApiKey())
                     .setIdempotencyKey(request.idempotencyKey())
+                    .setConnectTimeout(timeoutMs()).setReadTimeout(timeoutMs()).setMaxNetworkRetries(0)
                     .build();
 
             Refund refund = Refund.create(params, requestOptions);
@@ -296,19 +321,9 @@ public class StripePaymentGateway implements PaymentGateway {
                     null
             );
         } catch (StripeException exception) {
-            return new RefundGatewayResponse(
-                    false,
-                    null,
-                    "FAILED",
-                    exception.getMessage()
-            );
-        } catch (RuntimeException exception) {
-            return new RefundGatewayResponse(
-                    false,
-                    null,
-                    "FAILED",
-                    exception.getMessage()
-            );
+            // A timeout may follow provider acceptance. Preserve uncertainty and replay the durable key.
+            throw new com.ecommerce.payment.exception.PaymentApiException(
+                    com.ecommerce.payment.exception.PaymentErrorCode.PAYMENT_PROVIDER_UNAVAILABLE, exception);
         }
     }
 
@@ -346,28 +361,28 @@ public class StripePaymentGateway implements PaymentGateway {
 
     private void validateStripeConfig() {
         if (!properties.getProvider().getStripe().isEnabled()) {
-            throw new BadRequestException("Stripe provider is disabled");
+            throw new com.ecommerce.payment.exception.PaymentApiException(com.ecommerce.payment.exception.PaymentErrorCode.PAYMENT_PROVIDER_CONFIGURATION_ERROR);
         }
 
         if (properties.getProvider().getStripe().getApiKey() == null
                 || properties.getProvider().getStripe().getApiKey().isBlank()) {
-            throw new BadRequestException("Stripe API key is not configured");
+            throw new com.ecommerce.payment.exception.PaymentApiException(com.ecommerce.payment.exception.PaymentErrorCode.PAYMENT_PROVIDER_CONFIGURATION_ERROR);
         }
 
         if (properties.getProvider().getStripe().getWebhookSecret() == null
                 || properties.getProvider().getStripe().getWebhookSecret().isBlank()) {
-            throw new BadRequestException("Stripe webhook secret is not configured");
+            throw new com.ecommerce.payment.exception.PaymentApiException(com.ecommerce.payment.exception.PaymentErrorCode.PAYMENT_PROVIDER_CONFIGURATION_ERROR);
         }
     }
 
     private void validateStripeApiKeyConfig() {
         if (!properties.getProvider().getStripe().isEnabled()) {
-            throw new BadRequestException("Stripe provider is disabled");
+            throw new com.ecommerce.payment.exception.PaymentApiException(com.ecommerce.payment.exception.PaymentErrorCode.PAYMENT_PROVIDER_CONFIGURATION_ERROR);
         }
 
         if (properties.getProvider().getStripe().getApiKey() == null
                 || properties.getProvider().getStripe().getApiKey().isBlank()) {
-            throw new BadRequestException("Stripe API key is not configured");
+            throw new com.ecommerce.payment.exception.PaymentApiException(com.ecommerce.payment.exception.PaymentErrorCode.PAYMENT_PROVIDER_CONFIGURATION_ERROR);
         }
     }
 
@@ -384,14 +399,55 @@ public class StripePaymentGateway implements PaymentGateway {
                 .replace("{PAYMENT_ID}", command.getPaymentId().toString());
     }
 
-    private LocalDateTime toLocalDateTime(Long epochSeconds) {
-        if (epochSeconds == null) {
-            return LocalDateTime.now().plusMinutes(30);
-        }
+    private Instant toInstant(Long epochSeconds) {
+        return epochSeconds == null ? null : Instant.ofEpochSecond(epochSeconds);
+    }
 
-        return LocalDateTime.ofInstant(
-                Instant.ofEpochSecond(epochSeconds),
-                ZoneOffset.UTC
-        );
+    private int timeoutMs() {
+        return (int) Math.min(10000, properties.getProvider().getStripe().getTimeoutMs());
+    }
+
+    private java.util.UUID paymentId(Session session) {
+        return metadataPaymentId(session.getMetadata());
+    }
+
+    private java.util.UUID metadataPaymentId(java.util.Map<String, String> metadata) {
+        String value = metadata == null ? null : metadata.get("paymentId");
+        if (value == null) return null;
+        try { return java.util.UUID.fromString(value); }
+        catch (IllegalArgumentException invalid) { return null; }
+    }
+
+    private String attemptKey(Session session) {
+        return session.getMetadata() == null ? null : session.getMetadata().get("attemptIdempotencyKey");
+    }
+
+    @Override
+    public RefundGatewayResponse retrieveRefund(String providerRefundId) {
+        validateStripeApiKeyConfig();
+        try {
+            Refund refund = Refund.retrieve(providerRefundId, RequestOptions.builder()
+                    .setApiKey(properties.getProvider().getStripe().getApiKey())
+                    .setConnectTimeout(timeoutMs()).setReadTimeout(timeoutMs()).setMaxNetworkRetries(0).build());
+            return new RefundGatewayResponse(true, refund.getId(), refund.getStatus(), refund.getFailureReason());
+        } catch (StripeException exception) {
+            throw new com.ecommerce.payment.exception.PaymentApiException(
+                    com.ecommerce.payment.exception.PaymentErrorCode.PAYMENT_PROVIDER_UNAVAILABLE, exception);
+        }
+    }
+
+    private Event verifiedEvent(String payload, String signature) throws SignatureVerificationException {
+        java.util.List<String> secrets = new java.util.ArrayList<>();
+        secrets.add(properties.getProvider().getStripe().getWebhookSecret());
+        secrets.addAll(properties.getProvider().getStripe().getPreviousWebhookSecrets());
+        SignatureVerificationException last = null;
+        for (String secret : secrets) {
+            if (secret == null || secret.isBlank()) continue;
+            try { return Webhook.constructEvent(payload, signature, secret); }
+            catch (SignatureVerificationException invalid) { last = invalid; }
+        }
+        if (last != null) throw last;
+        throw new com.ecommerce.payment.exception.PaymentApiException(
+                com.ecommerce.payment.exception.PaymentErrorCode.PAYMENT_PROVIDER_CONFIGURATION_ERROR);
     }
 }

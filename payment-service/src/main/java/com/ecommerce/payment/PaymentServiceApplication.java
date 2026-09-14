@@ -10,6 +10,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
         "com.ecommerce.common"
 })
 @EnableConfigurationProperties(PaymentProviderProperties.class)
+@org.springframework.scheduling.annotation.EnableScheduling
 public class PaymentServiceApplication {
 
     public static void main(String[] args) {
