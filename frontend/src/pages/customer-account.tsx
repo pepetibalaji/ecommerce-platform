@@ -32,9 +32,9 @@ function shortOrderId(orderId: string) {
   return orderId.length > 10 ? `#${orderId.slice(-8).toUpperCase()}` : `#${orderId}`;
 }
 
-function paymentIsTerminal(payment: Payment | null) {
-  if (!payment) return false;
-  return ["SUCCESS", "FAILED", "CANCELLED", "REFUNDED", "REFUND_FAILED", "PAYMENT_EXPIRED", "EXPIRED"].includes(payment.status);
+function paymentIsTerminal(payment: Payment | null, order: Order | null = null) {
+  if (payment) return ["SUCCESS", "FAILED", "CANCELLED", "REFUNDED", "REFUND_FAILED", "PAYMENT_EXPIRED", "EXPIRED"].includes(payment.status);
+  return ["PAYMENT_FAILED", "PAYMENT_EXPIRED", "CANCELLED", "REFUNDED", "REFUND_REQUIRES_FULFILMENT_REVIEW"].includes(order?.status ?? "");
 }
 
 function paymentMessage(payment: Payment | null, order: Order | null) {
@@ -63,17 +63,131 @@ function ProductSummary({ product }: { product: Product }) {
 
 type CheckoutIntent = { key: string; fingerprint: string };
 
+type CheckoutErrorState = {
+  title: string;
+  message: string;
+  code?: string;
+  details: string[];
+  traceId?: string;
+  refreshCart: boolean;
+  refreshCatalogue: boolean;
+  requiresNewIntent: boolean;
+};
+
+type StructuredCheckoutError = ApiError & { details?: unknown; traceId?: unknown };
+
+const cartReviewErrorCodes = new Set([
+  "CHECKOUT_ITEM_PRODUCT_NOT_FOUND",
+  "CHECKOUT_ITEM_PRODUCT_UNAVAILABLE",
+  "CHECKOUT_ITEM_INSUFFICIENT_STOCK",
+  "CHECKOUT_ITEM_QUANTITY_LIMIT",
+  "CHECKOUT_ORDER_QUANTITY_LIMIT",
+]);
+
+function checkoutDetailLines(details: unknown): string[] {
+  if (!Array.isArray(details)) return [];
+  return details.flatMap((detail) => {
+    if (!detail || typeof detail !== "object" || Array.isArray(detail)) {
+      return typeof detail === "string" && detail.trim() ? [detail] : [];
+    }
+    const value = detail as Record<string, unknown>;
+    const message = typeof value.message === "string" && value.message.trim() ? value.message.trim() : null;
+    if (message) return [message];
+    const product = [value.productName, value.productId].find((candidate): candidate is string => typeof candidate === "string" && Boolean(candidate.trim()));
+    const requested = typeof value.requestedQuantity === "number" ? `requested ${value.requestedQuantity}` : null;
+    const available = typeof value.availableQuantity === "number" ? `available ${value.availableQuantity}` : null;
+    const maximum = value.maximumQuantity ?? value.maxQuantity;
+    const limit = typeof maximum === "number" ? `limit ${maximum}` : null;
+    const parts = [product, requested, available, limit].filter((part): part is string => Boolean(part));
+    return parts.length ? [parts.join(" — ")] : [];
+  });
+}
+
+function checkoutFailure(error: unknown): CheckoutErrorState {
+  const apiError = error instanceof ApiError ? error as StructuredCheckoutError : null;
+  const code = apiError?.code?.toUpperCase();
+  const details = checkoutDetailLines(apiError?.details);
+  const traceId = typeof apiError?.traceId === "string" && apiError.traceId.trim() ? apiError.traceId : undefined;
+  const message = messageForError(error);
+
+  if (code === "IDEMPOTENCY_KEY_REUSED") {
+    return {
+      title: "Start a new checkout attempt",
+      message: "This checkout key belongs to a different request. To avoid a duplicate order, it will not be retried automatically. Review the cart and address, then explicitly start a new checkout attempt.",
+      code,
+      details,
+      traceId,
+      refreshCart: false,
+      refreshCatalogue: false,
+      requiresNewIntent: true,
+    };
+  }
+
+  if (cartReviewErrorCodes.has(code ?? "")) {
+    return {
+      title: "Cart needs review",
+      message: `${message} We refreshed your cart and item details. Update the affected item before submitting again.`,
+      code,
+      details,
+      traceId,
+      refreshCart: true,
+      refreshCatalogue: true,
+      requiresNewIntent: false,
+    };
+  }
+
+  if (apiError?.retryable) {
+    return {
+      title: "Checkout is temporarily unavailable",
+      message: `${message} It is safe to retry: this checkout keeps the same idempotency key and payload.`,
+      code,
+      details,
+      traceId,
+      refreshCart: false,
+      refreshCatalogue: false,
+      requiresNewIntent: false,
+    };
+  }
+
+  return {
+    title: "Checkout needs attention",
+    message,
+    code,
+    details,
+    traceId,
+    refreshCart: false,
+    refreshCatalogue: false,
+    requiresNewIntent: false,
+  };
+}
+
+function cancellationMessage(order: Order) {
+  if (order.status === "REFUND_REQUESTED" || order.cancellationReasonCode === "REFUND_IN_PROGRESS") {
+    return "Your cancellation was accepted and a refund has been requested. The final refund result will appear here after the payment service confirms it.";
+  }
+  if (order.status === "REFUND_REQUIRES_FULFILMENT_REVIEW") {
+    return "This cancellation needs fulfilment review before the refund can be completed. The support team will use the order history to resolve it.";
+  }
+  if (order.status === "PAYMENT_EXPIRED") {
+    return "The payment window expired. This order can no longer be paid; review your cart before starting a new checkout.";
+  }
+  if (order.cancellationReasonCode === "ORDER_CANCELLATION_NOT_ALLOWED") {
+    return "This order is no longer eligible for self-service cancellation.";
+  }
+  return "This order is not currently eligible for cancellation.";
+}
+
 export function CheckoutPage() {
   const { accessToken } = useAuth();
   const { cart, isLoading: cartLoading, error: cartError, refresh: refreshCart } = useCart();
   const navigate = useNavigate();
   const [address, setAddress] = useState<ShippingAddress>(emptyAddress);
   const [submitting, setSubmitting] = useState(false);
-  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [checkoutError, setCheckoutError] = useState<CheckoutErrorState | null>(null);
   const [createdOrder, setCreatedOrder] = useState<Order | null>(null);
   const intent = useRef<CheckoutIntent | null>(null);
   const cartSignature = (cart?.items ?? []).map((item) => `${item.productId}:${item.quantity}`).sort().join("|");
-  const { data: products, loading: productLoading } = useResource(
+  const { data: products, loading: productLoading, reload: refreshProducts } = useResource(
     () => Promise.all((cart?.items ?? []).map((item) => api.products.byId(item.productId).catch(() => null))).then((values) => values.filter((value): value is Product => Boolean(value))),
     [cartSignature],
   );
@@ -86,7 +200,20 @@ export function CheckoutPage() {
   function setAddressValue(field: keyof ShippingAddress, value: string) {
     setAddress((current) => ({ ...current, [field]: value }));
     setCheckoutError(null);
+    // The request fingerprint below decides whether a new key is needed. Clearing it
+    // for every keystroke would unexpectedly discard a safe retry when a user edits
+    // and then restores the same address.
+  }
+
+  function refreshCheckoutData(includeCatalogue: boolean) {
+    const reloads = [refreshCart(), ...(includeCatalogue ? [refreshProducts()] : [])];
+    void Promise.allSettled(reloads);
+  }
+
+  function startNewCheckoutIntent() {
+    // This is intentionally the only same-payload path that discards a conflicted key.
     intent.current = null;
+    setCheckoutError(null);
   }
 
   async function submit(event: FormEvent) {
@@ -100,11 +227,9 @@ export function CheckoutPage() {
       const order = await api.orders.create(accessToken, cart.items.map((item) => ({ productId: item.productId, quantity: item.quantity })), address, currency, intent.current.key);
       setCreatedOrder(order);
     } catch (error) {
-      const safeError = messageForError(error);
-      setCheckoutError(error instanceof ApiError && (error.status === 400 || error.status === 409)
-        ? `${safeError} Your cart and address were kept unchanged. Review your cart, then submit a new checkout intent if you make changes.`
-        : safeError);
-      if (error instanceof ApiError && (error.status === 400 || error.status === 409)) void refreshCart();
+      const failure = checkoutFailure(error);
+      setCheckoutError(failure);
+      if (failure.refreshCart) refreshCheckoutData(failure.refreshCatalogue);
     } finally {
       setSubmitting(false);
     }
@@ -118,7 +243,7 @@ export function CheckoutPage() {
   return <section className="checkout-page">
     <div className="page-heading"><div><span className="eyebrow">Secure checkout</span><h1>Where should we send your order?</h1><p>Enter an address for this order only. Addresses are not stored in this release.</p></div><SafeLink to="/cart">Return to cart</SafeLink></div>
     {mixedCurrencies ? <Alert tone="warning" title="Cart needs review">This cart contains items in more than one currency. Review the cart before checkout can continue.</Alert> : null}
-    {checkoutError ? <Alert tone="danger" title="Checkout needs attention" action={<Button variant="secondary" onClick={() => void refreshCart()}>Refresh cart</Button>}>{checkoutError}</Alert> : null}
+    {checkoutError ? <Alert tone={checkoutError.requiresNewIntent ? "warning" : "danger"} title={checkoutError.title} action={<div className="button-row">{checkoutError.requiresNewIntent ? <Button variant="secondary" onClick={startNewCheckoutIntent}>Start new checkout attempt</Button> : null}{checkoutError.refreshCart ? <Button variant="secondary" onClick={() => refreshCheckoutData(checkoutError.refreshCatalogue)}>Refresh cart and items</Button> : null}</div>}><div><p>{checkoutError.message}</p>{checkoutError.details.length ? <ul>{checkoutError.details.map((detail, index) => <li key={`${detail}-${index}`}>{detail}</li>)}</ul> : null}{checkoutError.code ? <p className="muted">Error code: {checkoutError.code}{checkoutError.traceId ? ` · Support reference: ${checkoutError.traceId}` : ""}</p> : null}</div></Alert> : null}
     <div className="checkout-layout">
       <form className="checkout-form form-stack" onSubmit={submit}>
         <h2>Shipping address</h2>
@@ -128,7 +253,7 @@ export function CheckoutPage() {
         <div className="form-grid"><Field label="City" autoComplete="shipping address-level2" value={address.city} onChange={(event) => setAddressValue("city", event.target.value)} required /><Field label="State / region" autoComplete="shipping address-level1" value={address.state} onChange={(event) => setAddressValue("state", event.target.value)} required /></div>
         <div className="form-grid"><Field label="Postal code" autoComplete="shipping postal-code" value={address.postalCode} onChange={(event) => setAddressValue("postalCode", event.target.value)} required /><Field label="Country code" autoComplete="shipping country" maxLength={2} value={address.country} onChange={(event) => setAddressValue("country", event.target.value.toUpperCase())} required /></div>
         <Alert title="Final confirmation">When you place the order, the platform checks current price, eligibility, and availability. You are not charged on this page.</Alert>
-        <Button type="submit" loading={submitting} disabled={mixedCurrencies || productLoading}>Place order and continue to payment</Button>
+        <Button type="submit" loading={submitting} disabled={mixedCurrencies || productLoading || checkoutError?.requiresNewIntent}>Place order and continue to payment</Button>
       </form>
       <aside className="summary-card checkout-summary"><h2>Order summary</h2>{productLoading ? <LoadingBlock label="Loading item details" /> : <div className="checkout-product-list">{cart.items.map((item) => { const product = productsById.get(item.productId); return product ? <div key={item.itemId} className="checkout-product-row"><ProductSummary product={product} /><span>× {item.quantity}</span></div> : <div key={item.itemId} className="checkout-product-row"><span>Product details unavailable</span><span>× {item.quantity}</span></div>; })}</div>}<div className="summary-total"><span>Estimated total</span><strong>{formatMoney(estimatedTotal, currency)}</strong></div><p>Final item prices and the total come from the order response after validation.</p></aside>
     </div>
@@ -213,7 +338,7 @@ export function PaymentReturnPage() {
       let payment: Payment | null = null;
       try { payment = await api.payments.refresh(accessToken, orderId); }
       catch (caught) { if (!(caught instanceof ApiError && caught.status === 404)) throw caught; }
-      const result = { order, payment, terminal: paymentIsTerminal(payment) };
+      const result = { order, payment, terminal: paymentIsTerminal(payment, order) };
       if (cancelled()) return null;
       setState((current) => ({ ...current, order, payment, loading: false, error: null }));
       return result;
@@ -224,7 +349,7 @@ export function PaymentReturnPage() {
     }
   }, [accessToken, orderId]);
 
-  const needsNewCheckout = ["FAILED", "CANCELLED", "PAYMENT_EXPIRED", "EXPIRED"].includes(String(state.payment?.status ?? ""));
+  const needsNewCheckout = ["FAILED", "CANCELLED", "PAYMENT_EXPIRED", "EXPIRED", "PAYMENT_FAILED"].includes(String(state.payment?.status ?? state.order?.status ?? ""));
 
   useEffect(() => {
     if (state.payment?.status === "SUCCESS") void refreshCart();
@@ -250,10 +375,10 @@ export function PaymentReturnPage() {
   if (state.loading && !state.order) return <LoadingBlock label="Verifying your payment" />;
   if (state.error && !state.order) return <PageError message={state.error} retry={() => setVerificationRun(run => run + 1)} />;
   const status = paymentMessage(state.payment, state.order);
-  return <section className="payment-page"><span className="eyebrow">Order {state.order ? shortOrderId(state.order.id) : ""}</span><h1>{status.title}</h1><Alert tone={status.tone} title={status.title}>{status.text}</Alert>{state.error ? <Alert tone="warning" title="Status update delayed">{state.error}</Alert> : null}{!paymentIsTerminal(state.payment) && !state.error ? <div className="payment-polling"><LoadingBlock label={state.stopped ? "Automatic checks paused" : "Checking the latest payment result"} />{state.stopped ? <p>We stopped automatic checks to avoid repeated requests. Refresh when you are ready.</p> : <p>Checking securely. Provider return details are never used as payment confirmation.</p>}</div> : null}<div className="order-status-grid"><div><span>Order status</span><StatusBadge value={state.order?.status} /></div><div><span>Payment status</span><StatusBadge value={state.payment?.status === "REQUIRES_CUSTOMER_ACTION" ? "AWAITING_CONFIRMATION" : state.payment?.status ?? "PREPARING"} /></div></div><div className="button-row"><Button variant="secondary" disabled={state.loading} onClick={() => setVerificationRun((run) => run + 1)}>Refresh status</Button>{state.order ? <Link className="button button-primary" to={`/orders/${state.order.id}`}>View order</Link> : null}{needsNewCheckout ? <Link className="button button-ghost" to="/cart">Return to cart</Link> : <Link className="button button-ghost" to="/orders">Order history</Link>}</div></section>;
+  return <section className="payment-page"><span className="eyebrow">Order {state.order ? shortOrderId(state.order.id) : ""}</span><h1>{status.title}</h1><Alert tone={status.tone} title={status.title}>{status.text}</Alert>{state.error ? <Alert tone="warning" title="Status update delayed">{state.error}</Alert> : null}{!paymentIsTerminal(state.payment, state.order) && !state.error ? <div className="payment-polling"><LoadingBlock label={state.stopped ? "Automatic checks paused" : "Checking the latest payment result"} />{state.stopped ? <p>We stopped automatic checks to avoid repeated requests. Refresh when you are ready.</p> : <p>Checking securely. Provider return details are never used as payment confirmation.</p>}</div> : null}<div className="order-status-grid"><div><span>Order status</span><StatusBadge value={state.order?.status} /></div><div><span>Payment status</span><StatusBadge value={state.payment?.status === "REQUIRES_CUSTOMER_ACTION" ? "AWAITING_CONFIRMATION" : state.payment?.status ?? "PREPARING"} /></div></div><div className="button-row"><Button variant="secondary" disabled={state.loading} onClick={() => setVerificationRun((run) => run + 1)}>Refresh status</Button>{state.order ? <Link className="button button-primary" to={`/orders/${state.order.id}`}>View order</Link> : null}{needsNewCheckout ? <Link className="button button-ghost" to="/cart">Return to cart</Link> : <Link className="button button-ghost" to="/orders">Order history</Link>}</div></section>;
 }
 
-const orderStatusOptions = ["", "PENDING", "CONFIRMED", "PAYMENT_FAILED", "CANCELLED", "PARTIALLY_REFUNDED", "REFUNDED", "REFUND_REQUIRES_FULFILMENT_REVIEW"];
+const orderStatusOptions = ["", "PENDING", "CONFIRMED", "PAYMENT_FAILED", "PAYMENT_EXPIRED", "CANCELLED", "REFUND_REQUESTED", "PARTIALLY_REFUNDED", "REFUNDED", "REFUND_REQUIRES_FULFILMENT_REVIEW"];
 
 export function OrdersPage() {
   const { accessToken } = useAuth();
@@ -281,6 +406,7 @@ export function OrderDetailPage() {
   const [confirmCancellation, setConfirmCancellation] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
   const { data, loading, error, reload, setData } = useResource(async () => {
     const order = await api.orders.byId(accessToken ?? "", orderId);
     let payment: Payment | null = null;
@@ -293,9 +419,13 @@ export function OrderDetailPage() {
     if (!accessToken || !order) return;
     setCancelling(true);
     setActionError(null);
+    setActionNotice(null);
     try {
       const updated = await api.orders.cancel(accessToken, order.id);
       setData((current) => current ? { ...current, order: updated } : { order: updated, payment: null });
+      setActionNotice(updated.status === "REFUND_REQUESTED"
+        ? cancellationMessage(updated)
+        : "Your cancellation request was accepted. Refresh this order to see the latest authoritative status.");
       setConfirmCancellation(false);
     } catch (caught) {
       setActionError(messageForError(caught));
@@ -307,7 +437,44 @@ export function OrderDetailPage() {
   if (error || !order) return <EmptyState title="Order not found" message="This order may no longer be available in your account." action={<Link className="button button-primary" to="/orders">Return to orders</Link>} />;
   const paymentStatus = paymentMessage(data?.payment ?? null, order);
   const shipping = order.shippingAddress;
-  return <section className="order-detail-page"><div className="page-heading"><div><SafeLink to="/orders">← Back to orders</SafeLink><span className="eyebrow">{shortOrderId(order.id)} · {formatDate(order.createdAt)}</span><h1>Order details</h1></div><StatusBadge value={order.status} /></div>{actionError ? <Alert tone="danger" title="Cancellation needs attention">{actionError}</Alert> : null}<div className="order-detail-layout"><div className="order-detail-main"><section className="detail-card"><h2>Items</h2><div className="order-item-list">{order.items.map((item, index) => <div key={item.id ?? `${item.productId}-${index}`} className="order-item"><div><strong>{item.productName ?? "Product"}</strong><span>Quantity {item.quantity}</span></div><div><span>{formatMoney(item.price, order.currency)} each</span><strong>{formatMoney(item.lineTotal ?? item.price * item.quantity, order.currency)}</strong></div></div>)}</div><div className="detail-total"><span>Order total</span><strong>{formatMoney(order.totalAmount, order.currency)}</strong></div></section><section className="detail-card"><h2>Payment</h2><StatusBadge value={data?.payment?.status ?? "PREPARING"} /><p>{paymentStatus.text}</p><Link className="link" to={`/payment/return?orderId=${encodeURIComponent(order.id)}`}>Check payment status</Link></section>{shipping ? <section className="detail-card"><h2>Shipping address</h2><address>{shipping.recipientName}<br />{shipping.line1}<br />{shipping.line2 ? <>{shipping.line2}<br /></> : null}{shipping.city}, {shipping.state} {shipping.postalCode}<br />{shipping.country}<br />{shipping.phone}</address><p className="muted">This is the address snapshot for this order.</p></section> : <section className="detail-card"><h2>Shipping address</h2><p>The address snapshot is not available in this order response.</p></section>}</div><aside className="summary-card"><h2>Order actions</h2>{order.cancelAllowed ? <>{confirmCancellation ? <><Alert tone="warning" title="Cancel this order?">This sends a cancellation request. The final outcome is shown only after the platform updates the order.</Alert><Button variant="danger" loading={cancelling} onClick={() => void cancelOrder()}>Yes, request cancellation</Button><Button variant="ghost" disabled={cancelling} onClick={() => setConfirmCancellation(false)}>Keep order</Button></> : <Button variant="secondary" onClick={() => setConfirmCancellation(true)}>Cancel order</Button>}</> : <p>This order is not currently eligible for cancellation.</p>}<Button variant="ghost" onClick={() => void reload()}>Refresh order</Button></aside></div></section>;
+  const lifecycleNotice = ["REFUND_REQUESTED", "REFUND_REQUIRES_FULFILMENT_REVIEW", "PAYMENT_EXPIRED"].includes(order.status) || Boolean(order.cancellationReasonCode)
+    ? cancellationMessage(order)
+    : null;
+  return <section className="order-detail-page">
+    <div className="page-heading">
+      <div><SafeLink to="/orders">← Back to orders</SafeLink><span className="eyebrow">{shortOrderId(order.id)} · {formatDate(order.createdAt)}</span><h1>Order details</h1></div>
+      <StatusBadge value={order.status} />
+    </div>
+    {actionError ? <Alert tone="danger" title="Cancellation needs attention">{actionError}</Alert> : null}
+    {actionNotice ? <Alert tone="info" title="Cancellation update">{actionNotice}</Alert> : null}
+    {lifecycleNotice && !actionNotice ? <Alert tone={order.status === "REFUND_REQUIRES_FULFILMENT_REVIEW" ? "warning" : "info"} title={order.status === "REFUND_REQUESTED" ? "Refund in progress" : "Order update"}>{lifecycleNotice}</Alert> : null}
+    <div className="order-detail-layout">
+      <div className="order-detail-main">
+        <section className="detail-card">
+          <h2>Items</h2>
+          <div className="order-item-list">
+            {order.items.map((item, index) => <div key={item.id ?? `${item.productId}-${index}`} className="order-item">
+              <div><strong>{item.productName ?? "Product"}</strong><span>Quantity {item.quantity}</span></div>
+              <div><span>{formatMoney(item.unitPrice, order.currency)} each</span><strong>{formatMoney(item.lineTotal ?? item.unitPrice * item.quantity, order.currency)}</strong></div>
+            </div>)}
+          </div>
+          <div className="detail-total"><span>Order total</span><strong>{formatMoney(order.totalAmount, order.currency)}</strong></div>
+        </section>
+        <section className="detail-card">
+          <h2>Payment</h2>
+          <StatusBadge value={data?.payment?.status ?? "PREPARING"} />
+          <p>{paymentStatus.text}</p>
+          <Link className="link" to={`/payment/return?orderId=${encodeURIComponent(order.id)}`}>Check payment status</Link>
+        </section>
+        {shipping ? <section className="detail-card"><h2>Shipping address</h2><address>{shipping.recipientName}<br />{shipping.line1}<br />{shipping.line2 ? <>{shipping.line2}<br /></> : null}{shipping.city}, {shipping.state} {shipping.postalCode}<br />{shipping.country}<br />{shipping.phone}</address><p className="muted">This is the address snapshot for this order.</p></section> : <section className="detail-card"><h2>Shipping address</h2><p>The address snapshot is not available in this order response.</p></section>}
+      </div>
+      <aside className="summary-card">
+        <h2>Order actions</h2>
+        {order.cancelAllowed ? <>{confirmCancellation ? <><Alert tone="warning" title="Cancel this order?">This sends a cancellation request. For a paid order, the platform requests a refund and records the final outcome asynchronously.</Alert><Button variant="danger" loading={cancelling} onClick={() => void cancelOrder()}>Yes, request cancellation</Button><Button variant="ghost" disabled={cancelling} onClick={() => setConfirmCancellation(false)}>Keep order</Button></> : <Button variant="secondary" onClick={() => setConfirmCancellation(true)}>Cancel order</Button>}</> : <p>{cancellationMessage(order)}</p>}
+        <Button variant="ghost" onClick={() => void reload()}>Refresh order</Button>
+      </aside>
+    </div>
+  </section>;
 }
 
 type SessionRecord = BrowserSession;

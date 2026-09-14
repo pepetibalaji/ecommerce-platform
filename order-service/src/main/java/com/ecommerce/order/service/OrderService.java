@@ -10,6 +10,7 @@ import com.ecommerce.order.entity.OrderStatus;
 import com.ecommerce.common.events.payment.PaymentFailedEvent;
 import com.ecommerce.common.events.payment.PaymentSuccessEvent;
 import com.ecommerce.common.events.payment.PaymentRefundCompletedEvent;
+import com.ecommerce.common.events.payment.PaymentRefundRequestRejectedEvent;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -27,6 +28,15 @@ public interface OrderService {
 
     OrderResponse cancelOrder(UUID userId, UUID orderId);
 
+    default OrderResponse cancelOrder(UUID userId, UUID orderId, String reason) {
+        return cancelOrder(userId, orderId);
+    }
+
+    /** Admin-only command exposed by AdminOrderController; it requests, never completes, a refund. */
+    default OrderResponse requestRefund(UUID adminId, UUID orderId, String reason) {
+        throw new UnsupportedOperationException("Refund requests are not supported");
+    }
+
     Page<OrderResponse> getAdminOrders(Pageable pageable, OrderStatus status);
 
     OrderResponse updateOrderStatus(UUID orderId, UpdateOrderStatusRequest request);
@@ -38,4 +48,6 @@ public interface OrderService {
     void handlePaymentFailure(PaymentFailedEvent event);
 
     void handleRefundCompleted(PaymentRefundCompletedEvent event);
+
+    void handleRefundRequestRejected(PaymentRefundRequestRejectedEvent event);
 }

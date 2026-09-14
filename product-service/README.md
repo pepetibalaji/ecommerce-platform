@@ -2,7 +2,7 @@
 
 ## What this service is
 
-Product Service owns the catalog and runs on port `8082`. It is the current authority for product details, seller ownership, active status, and unit price. Customers can browse; sellers manage their own catalog; administrators can manage every product.
+Product Service owns the catalogue and runs REST on `8082` plus an internal Product snapshot gRPC endpoint on `9092`. It is authoritative for product details, seller ownership, active status, and list price; Inventory is authoritative for stock and reservations.
 
 ## Technology
 
@@ -20,7 +20,8 @@ MongoDB `product_db` stores products and catalog indexes. Other services must no
 ```text
 Public customer -> Gateway -> Product Service -> MongoDB -> product response
 Seller/admin -> Gateway + JWT -> Product Service -> validate/save -> MongoDB
-                                                       -> Kafka product-created -> Inventory provisioning
+                                                       -> Kafka product.lifecycle.v1 -> Inventory metadata synchronization
+Inventory reconciliation -> Product snapshot gRPC -> Product Service authoritative lifecycle snapshot
 ```
 
 ## Run locally

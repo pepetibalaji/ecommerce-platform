@@ -18,6 +18,7 @@ import com.ecommerce.order.entity.OrderStatus;
 import com.ecommerce.order.entity.InventoryReleaseReason;
 import com.ecommerce.order.grpc.InventoryGrpcClient;
 import com.ecommerce.order.catalog.ProductSellerClient;
+import com.ecommerce.order.api.OrderApiException;
 import com.ecommerce.order.config.CheckoutProperties;
 import com.ecommerce.order.kafka.OrderEventPublisher;
 import com.ecommerce.order.repository.OrderRepository;
@@ -41,8 +42,9 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -142,7 +144,7 @@ class OrderServiceTest {
                     Order order = invocation.getArgument(0);
                     order.setId(orderId);
 
-                    LocalDateTime now = LocalDateTime.now();
+                    Instant now = Instant.now();
                     order.setCreatedAt(now);
                     order.setUpdatedAt(now);
 
@@ -287,10 +289,15 @@ class OrderServiceTest {
         request.setItems(List.of(request.getItems().getFirst(), createOrderItemRequest(2, new BigDecimal("100.00"))));
         when(checkoutProperties.maximumQuantityFor(productId)).thenReturn(3);
 
-        BadRequestException exception = assertThrows(BadRequestException.class,
+        OrderApiException exception = assertThrows(OrderApiException.class,
                 () -> orderService.createOrder(userId, request));
 
-        assertThat(exception.getMessage()).contains("CHECKOUT_ITEM_QUANTITY_LIMIT", productId.toString());
+        assertThat(exception.getCode()).isEqualTo("CHECKOUT_ITEM_QUANTITY_LIMIT");
+        assertThat(exception.getDetails()).isEqualTo(List.of(Map.of(
+                "productId", productId,
+                "requestedQuantity", 4,
+                "maximumQuantity", 3
+        )));
         verifyNoInteractions(inventoryGrpcClient);
         verify(orderRepository, never()).save(any());
     }
@@ -321,7 +328,7 @@ class OrderServiceTest {
                     Order order = invocation.getArgument(0);
                     order.setId(orderId);
 
-                    LocalDateTime now = LocalDateTime.now();
+                    Instant now = Instant.now();
                     order.setCreatedAt(now);
                     order.setUpdatedAt(now);
 
@@ -356,7 +363,7 @@ class OrderServiceTest {
         request.setItems(List.of(item));
 
         assertThrows(
-                BadRequestException.class,
+                OrderApiException.class,
                 () -> orderService.createOrder(userId, request)
         );
 
@@ -387,10 +394,16 @@ class OrderServiceTest {
         when(inventoryGrpcClient.getInventory(productId))
                 .thenReturn(inventoryDetails);
 
-        assertThrows(
-                BadRequestException.class,
+        OrderApiException exception = assertThrows(
+                OrderApiException.class,
                 () -> orderService.createOrder(userId, request)
         );
+        assertThat(exception.getCode()).isEqualTo("CHECKOUT_ITEM_INSUFFICIENT_STOCK");
+        assertThat(exception.getDetails()).isEqualTo(List.of(Map.of(
+                "productId", productId,
+                "requestedQuantity", 20,
+                "availableQuantity", 10
+        )));
 
         verify(inventoryGrpcClient, never())
                 .reserveStock(any(), anyInt(), any(UUID.class));
@@ -408,7 +421,7 @@ class OrderServiceTest {
                 UUID.randomUUID();
 
         Order order =
-                existingOrder(orderId, OrderStatus.CONFIRMED);
+                existingOrder(orderId, OrderStatus.PENDING);
 
         OrderItem item =
                 existingOrderItem(order);
@@ -453,10 +466,11 @@ class OrderServiceTest {
         when(orderRepository.findById(orderId))
                 .thenReturn(Optional.of(order));
 
-        assertThrows(
-                ResourceNotFoundException.class,
+        OrderApiException exception = assertThrows(
+                OrderApiException.class,
                 () -> orderService.getOrderById(userId, orderId)
         );
+        assertThat(exception.getCode()).isEqualTo("ORDER_NOT_FOUND");
     }
 
     @Test
@@ -861,8 +875,7 @@ class OrderServiceTest {
             UUID orderId,
             OrderStatus status
     ) {
-        LocalDateTime now =
-                LocalDateTime.now();
+        Instant now = Instant.now();
 
         Order order =
                 new Order();

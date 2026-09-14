@@ -92,10 +92,12 @@ export interface ShippingAddress {
 export type OrderStatus =
   | "PENDING"
   | "CONFIRMED"
+  | "REFUND_REQUESTED"
   | "PARTIALLY_REFUNDED"
   | "REFUNDED"
   | "REFUND_REQUIRES_FULFILMENT_REVIEW"
   | "PAYMENT_FAILED"
+  | "PAYMENT_EXPIRED"
   | "CANCELLED";
 
 export interface OrderItem {
@@ -103,7 +105,8 @@ export interface OrderItem {
   productId: string;
   productName?: string;
   quantity: number;
-  price: number;
+  /** Server-calculated snapshot price at the time the order was created. */
+  unitPrice: number;
   lineTotal?: number;
 }
 
@@ -117,13 +120,54 @@ export interface Order {
   paymentId?: string | null;
   paymentConfirmedAt?: string | null;
   paymentFailedAt?: string | null;
+  paymentFailureReason?: string | null;
   createdAt?: string;
   updatedAt?: string;
   shippingAddress?: ShippingAddress;
   items: OrderItem[];
   cancelAllowed?: boolean;
-  sellerSubtotal?: number;
-  sellerTotalAmount?: number;
+  /** Explains why cancellation was accepted, rejected, or requires review. */
+  cancellationReasonCode?: string | null;
+}
+
+/**
+ * Seller-scoped order view. It deliberately excludes customer-wide totals and
+ * payment state; the line currency is supplied for fulfilment totals.
+ */
+export interface SellerOrder {
+  id: string;
+  status: OrderStatus;
+  createdAt?: string;
+  shippingAddress?: ShippingAddress;
+  currency: string;
+  sellerTotalAmount: number;
+  items: OrderItem[];
+}
+
+export interface OrderLifecycleAudit {
+  id: string;
+  action: string;
+  actorId?: string | null;
+  actorType?: string | null;
+  reason?: string | null;
+  refundRequestId?: string | null;
+  createdAt: string;
+}
+
+export interface OutboxStatusCounts {
+  pending: number;
+  published: number;
+  completed: number;
+  failed: number;
+  manualReview: number;
+}
+
+export interface OrderOutboxReconciliation {
+  observedAt: string;
+  orderCreated: OutboxStatusCounts;
+  inventoryRelease: OutboxStatusCounts;
+  checkoutCompensation: OutboxStatusCounts;
+  refundRequest: OutboxStatusCounts;
 }
 
 export type PaymentStatus =
@@ -179,15 +223,29 @@ export class ApiError extends Error {
   readonly code?: string;
   readonly retryAfter?: number;
   readonly fields?: FieldErrors;
+  /** Service-provided structured details (for example, checkout line failures). */
+  readonly details?: unknown;
+  readonly traceId?: string;
   readonly retryable: boolean;
 
-  constructor(message: string, status: number, options?: { code?: string; retryAfter?: number; fields?: FieldErrors }) {
+  constructor(message: string, status: number, options?: {
+    code?: string;
+    retryAfter?: number;
+    fields?: FieldErrors;
+    retryable?: boolean;
+    details?: unknown;
+    traceId?: string;
+  }) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = options?.code;
     this.retryAfter = options?.retryAfter;
     this.fields = options?.fields;
-    this.retryable = status === 0 || status === 409 || status === 429 || status === 503 || status === 504;
+    this.details = options?.details;
+    this.traceId = options?.traceId;
+    // A structured service value takes precedence; notably, a 409 does not
+    // necessarily mean that retrying is safe (for example, key reuse).
+    this.retryable = options?.retryable ?? (status === 0 || status === 429 || status >= 500);
   }
 }

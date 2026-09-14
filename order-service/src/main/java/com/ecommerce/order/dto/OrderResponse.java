@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,15 +27,19 @@ public class OrderResponse {
 
     private UUID paymentId;
 
-    private LocalDateTime paymentConfirmedAt;
+    private Instant paymentConfirmedAt;
 
-    private LocalDateTime paymentFailedAt;
+    private Instant paymentFailedAt;
 
     private String paymentFailureReason;
 
-    private LocalDateTime createdAt;
+    private boolean cancelAllowed;
 
-    private LocalDateTime updatedAt;
+    private String cancellationReasonCode;
+
+    private Instant createdAt;
+
+    private Instant updatedAt;
 
     private ShippingAddressResponse shippingAddress;
 
@@ -47,12 +51,12 @@ public class OrderResponse {
             BigDecimal totalAmount,
             String currency,
             OrderStatus status,
-            LocalDateTime createdAt,
-            LocalDateTime updatedAt,
+            Instant createdAt,
+            Instant updatedAt,
             ShippingAddressResponse shippingAddress,
             List<OrderItemResponse> items
     ) {
-        this(id, userId, totalAmount, currency, status, null, null, null, null,
+        this(id, userId, totalAmount, currency, status, null, null, null, null, false, null,
                 createdAt, updatedAt, shippingAddress, items);
     }
 }

@@ -1,4 +1,4 @@
-import { ApiError, type AuthSession, type BrowserSession, type Cart, type CatalogueFacets, type Inventory, type NotificationRecord, type Order, type Page, type Payment, type Product, type RefundResult, type Role, type ShippingAddress, type User } from "../domain";
+import { ApiError, type AuthSession, type BrowserSession, type Cart, type CatalogueFacets, type Inventory, type NotificationRecord, type Order, type OrderLifecycleAudit, type OrderOutboxReconciliation, type Page, type Payment, type Product, type RefundResult, type Role, type SellerOrder, type ShippingAddress, type User } from "../domain";
 import { mockAdmin, mockCart, mockCustomer, mockInventory, mockNotifications, mockOrders, mockPayments, mockProducts, mockSeller, mockUsers, pageOf } from "./mock-data";
 
 const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || "http://localhost:8080";
@@ -16,28 +16,65 @@ type RequestOptions = Omit<RequestInit, "body" | "headers"> & {
 type SessionRecoveryHandler = () => Promise<string | null>;
 let sessionRecoveryHandler: SessionRecoveryHandler | null = null;
 
+const mockOrderAudits = new Map<string, OrderLifecycleAudit[]>([
+  [mockOrders[1].id, [{
+    id: "audit-00000000-0000-4000-8000-000000000001",
+    action: "REFUND_REQUESTED",
+    actorId: mockCustomer.id,
+    actorType: "CUSTOMER",
+    reason: "Customer cancellation request",
+    refundRequestId: "refund-request-00000000-0000-4000-8000-000000000001",
+    createdAt: "2026-09-02T09:00:00Z",
+  }]],
+]);
+
 /** Registers the single session owner that may rotate a browser access token. */
 export function configureSessionRecovery(handler: SessionRecoveryHandler | null) {
   sessionRecoveryHandler = handler;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+const errorEnvelopeProperties = [
+  "code", "message", "retryable", "details", "traceId", "fieldErrors",
+  "timestamp", "status", "error", "path", "type", "title", "detail", "instance",
+  "errors", "violations",
+];
+
+function isErrorEnvelope(value: Record<string, unknown>) {
+  return errorEnvelopeProperties.some((key) => key in value);
+}
+
+function structuredError(value: unknown): {
+  code?: string;
+  retryable?: boolean;
+  details?: unknown;
+  traceId?: string;
+} | undefined {
+  if (!isRecord(value) || !isErrorEnvelope(value)) return undefined;
+  return {
+    code: typeof value.code === "string" ? value.code : undefined,
+    retryable: typeof value.retryable === "boolean" ? value.retryable : undefined,
+    details: "details" in value ? value.details : undefined,
+    traceId: typeof value.traceId === "string" ? value.traceId : undefined,
+  };
+}
+
 function fieldErrors(value: unknown): Record<string, string> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const envelope = value as Record<string, unknown>;
-  const fields = "fieldErrors" in envelope ? envelope.fieldErrors
-    : ["timestamp", "status", "error", "message", "path", "type", "title", "detail", "instance"].some(key => key in envelope)
-      ? undefined : envelope;
+  if (!isRecord(value)) return undefined;
+  const fields = "fieldErrors" in value ? value.fieldErrors : isErrorEnvelope(value) ? undefined : value;
   if (!fields || typeof fields !== "object" || Array.isArray(fields)) return undefined;
   const entries = Object.entries(fields).filter(([, message]) => typeof message === "string" && message.trim());
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 function safeMessage(value: unknown, fallback: string) {
-  if (value && typeof value === "object") {
-    const candidate = value as { detail?: unknown; title?: unknown; message?: unknown };
-    if (typeof candidate.detail === "string" && candidate.detail.trim()) return candidate.detail;
-    if (typeof candidate.title === "string" && candidate.title.trim()) return candidate.title;
-    if (typeof candidate.message === "string" && candidate.message.trim()) return candidate.message;
+  if (isRecord(value)) {
+    if (typeof value.detail === "string" && value.detail.trim()) return value.detail;
+    if (typeof value.title === "string" && value.title.trim()) return value.title;
+    if (typeof value.message === "string" && value.message.trim()) return value.message;
   }
   return fallback;
 }
@@ -48,6 +85,70 @@ function paymentFromWire(value: unknown): Payment {
   const id = raw.id ?? raw.paymentId;
   if (!id || !raw.orderId || !raw.status) throw new ApiError("The payment response was incomplete. Please refresh the order.", 502);
   return { ...raw, id, orderId: raw.orderId, status: raw.status } as Payment;
+}
+
+function numberFromWire(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+/**
+ * `unitPrice` is the current order contract. Reading the former `price`
+ * field here keeps a rolling frontend/backend deployment from rendering a
+ * zero-price order while the old response is still in flight.
+ */
+function orderItemFromWire(value: unknown): Order["items"][number] {
+  if (!isRecord(value)) throw new ApiError("The order response was incomplete. Please refresh the order.", 502, { retryable: false });
+  const quantity = numberFromWire(value.quantity);
+  const unitPrice = numberFromWire(value.unitPrice) ?? numberFromWire(value.price);
+  if (typeof value.productId !== "string" || typeof quantity !== "number" || !Number.isInteger(quantity) || quantity < 1 || unitPrice === undefined) {
+    throw new ApiError("The order response was incomplete. Please refresh the order.", 502, { retryable: false });
+  }
+  const lineTotal = numberFromWire(value.lineTotal);
+  return {
+    ...(typeof value.id === "string" ? { id: value.id } : {}),
+    productId: value.productId,
+    ...(typeof value.productName === "string" ? { productName: value.productName } : {}),
+    quantity,
+    unitPrice,
+    ...(lineTotal === undefined ? {} : { lineTotal }),
+  };
+}
+
+function orderFromWire(value: unknown): Order {
+  if (!isRecord(value) || !Array.isArray(value.items)) {
+    throw new ApiError("The order response was incomplete. Please refresh the order.", 502, { retryable: false });
+  }
+  return { ...value, items: value.items.map(orderItemFromWire) } as Order;
+}
+
+function sellerOrderFromWire(value: unknown): SellerOrder {
+  if (!isRecord(value) || !Array.isArray(value.items) || typeof value.currency !== "string" || !value.currency) {
+    throw new ApiError("The seller order response was incomplete. Please refresh the queue.", 502, { retryable: false });
+  }
+  return { ...value, items: value.items.map(orderItemFromWire) } as SellerOrder;
+}
+
+function pageFromWire<T>(value: unknown, itemFromWire: (item: unknown) => T): Page<T> {
+  if (isRecord(value) && Array.isArray(value.content)) {
+    return { ...value, content: value.content.map(itemFromWire) } as Page<T>;
+  }
+  if (Array.isArray(value)) {
+    return { content: value.map(itemFromWire), totalElements: value.length, totalPages: 1, number: 0, size: value.length, first: true, last: true };
+  }
+  throw new ApiError("The paged response was incomplete. Please refresh and try again.", 502, { retryable: false });
+}
+
+function orderPageFromWire(value: unknown): Page<Order> {
+  return pageFromWire(value, orderFromWire);
+}
+
+function sellerOrderPageFromWire(value: unknown): Page<SellerOrder> {
+  return pageFromWire(value, sellerOrderFromWire);
 }
 
 function paymentPageFromWire(value: unknown): Page<Payment> {
@@ -108,8 +209,15 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
           : response.status >= 500
             ? "This service is temporarily unavailable. Please try again."
             : "We could not complete that request.";
-    const code = parsed && typeof parsed === "object" && "code" in parsed && typeof parsed.code === "string" ? parsed.code : undefined;
-    throw new ApiError(safeMessage(parsed, fallback), response.status, { code, retryAfter, fields: fieldErrors(parsed) });
+    const envelope = structuredError(parsed);
+    throw new ApiError(safeMessage(parsed, fallback), response.status, {
+      code: envelope?.code,
+      retryAfter,
+      fields: fieldErrors(parsed),
+      retryable: envelope?.retryable,
+      details: envelope?.details,
+      traceId: envelope?.traceId,
+    });
   }
 
   return parsed as T;
@@ -165,13 +273,16 @@ export const api = {
     revokeSession: (token: string, sessionId: string) => request<void>(`/api/v1/users/me/sessions/${sessionId}`, { method: "DELETE", token }),
   },
   orders: {
-    list: (token: string, query = "page=0&size=10") => request<Page<Order>>(`/api/v1/orders?${query}`, { token }),
-    byId: (token: string, orderId: string) => request<Order>(`/api/v1/orders/${orderId}`, { token }),
-    create: (token: string, items: Array<{ productId: string; quantity: number }>, shippingAddress: ShippingAddress, currency: string, idempotencyKey: string) => request<Order>("/api/v1/orders", { method: "POST", token, idempotencyKey, body: { items, shippingAddress, currency } }),
-    cancel: (token: string, orderId: string) => request<Order>(`/api/v1/orders/${orderId}/cancel`, { method: "PUT", token }),
-    sellerList: (token: string, query = "page=0&size=10") => request<Page<Order>>(`/api/v1/seller/orders?${query}`, { token }),
-    adminList: (token: string, query = "page=0&size=10") => request<Page<Order>>(`/api/v1/admin/orders?${query}`, { token }),
-    adminUpdateStatus: (token: string, orderId: string, status: string) => request<Order>(`/api/v1/admin/orders/${orderId}/status`, { method: "PUT", token, body: { status } }),
+    list: (token: string, query = "page=0&size=10") => request<unknown>(`/api/v1/orders?${query}`, { token }).then(orderPageFromWire),
+    byId: (token: string, orderId: string) => request<unknown>(`/api/v1/orders/${encodeURIComponent(orderId)}`, { token }).then(orderFromWire),
+    create: (token: string, items: Array<{ productId: string; quantity: number }>, shippingAddress: ShippingAddress, currency: string, idempotencyKey: string) => request<unknown>("/api/v1/orders", { method: "POST", token, idempotencyKey, body: { items, shippingAddress, currency } }).then(orderFromWire),
+    cancel: (token: string, orderId: string) => request<unknown>(`/api/v1/orders/${encodeURIComponent(orderId)}/cancel`, { method: "PUT", token }).then(orderFromWire),
+    sellerList: (token: string, query = "page=0&size=10") => request<unknown>(`/api/v1/seller/orders?${query}`, { token }).then(sellerOrderPageFromWire),
+    adminList: (token: string, query = "page=0&size=10") => request<unknown>(`/api/v1/admin/orders?${query}`, { token }).then(orderPageFromWire),
+    /** Requests a refund; completion is asynchronous and is reflected in the order/audit response. */
+    adminRequestRefund: (token: string, orderId: string, reason: string) => request<unknown>(`/api/v1/admin/orders/${encodeURIComponent(orderId)}/refund-requests`, { method: "POST", token, body: { reason } }).then(orderFromWire),
+    adminAudit: (token: string, orderId: string) => request<OrderLifecycleAudit[]>(`/api/v1/admin/orders/${encodeURIComponent(orderId)}/audit`, { token }),
+    adminOutboxReconciliation: (token: string) => request<OrderOutboxReconciliation>("/api/v1/admin/orders/reconciliation/outboxes", { token }),
   },
   payments: {
     refresh: (token: string, orderId: string) => request<unknown>(`/api/v1/payments/orders/${encodeURIComponent(orderId)}/refresh`, { method: "POST", token }).then(paymentFromWire),
@@ -291,7 +402,7 @@ async function mockRequest<T>(path: string, options: RequestOptions): Promise<T>
   if (pathname === "/api/v1/orders" && method === "GET") return pageOf(mockOrders, page, size) as T;
   if (pathname === "/api/v1/orders" && method === "POST") {
     const items = (body.items ?? []) as Array<{ productId: string; quantity: number }>;
-    const next: Order = { id: crypto.randomUUID(), userId: mockCustomer.id, totalAmount: items.reduce((total, line) => total + (mockProducts.find((product) => product.id === line.productId)?.price ?? 0) * line.quantity, 0), currency: String(body.currency ?? "INR"), status: "PENDING", createdAt: nowIso(), updatedAt: nowIso(), cancelAllowed: true, shippingAddress: body.shippingAddress as Order["shippingAddress"], items: items.map((line) => { const product = mockProducts.find((entry) => entry.id === line.productId)!; return { productId: line.productId, productName: product.name, quantity: line.quantity, price: product.price, lineTotal: product.price * line.quantity }; }) };
+    const next: Order = { id: crypto.randomUUID(), userId: mockCustomer.id, totalAmount: items.reduce((total, line) => total + (mockProducts.find((product) => product.id === line.productId)?.price ?? 0) * line.quantity, 0), currency: String(body.currency ?? "INR"), status: "PENDING", createdAt: nowIso(), updatedAt: nowIso(), cancelAllowed: true, shippingAddress: body.shippingAddress as Order["shippingAddress"], items: items.map((line) => { const product = mockProducts.find((entry) => entry.id === line.productId)!; return { productId: line.productId, productName: product.name, quantity: line.quantity, unitPrice: product.price, lineTotal: product.price * line.quantity }; }) };
     mockOrders.unshift(next);
     mockPayments.unshift({ id: crypto.randomUUID(), orderId: next.id, amount: next.totalAmount, currency: next.currency, provider: "Mock checkout", status: "REQUIRES_CUSTOMER_ACTION", createdAt: nowIso(), updatedAt: nowIso() });
     return next as T;
@@ -299,8 +410,29 @@ async function mockRequest<T>(path: string, options: RequestOptions): Promise<T>
   if (pathname.startsWith("/api/v1/orders/") && pathname.endsWith("/cancel")) {
     const order = mockOrders.find((entry) => entry.id === pathname.split("/")[4]);
     if (!order) throw new ApiError("Order not found.", 404);
-    order.status = "CANCELLED";
+    if (order.status === "PENDING") {
+      order.status = "CANCELLED";
+      order.cancellationReasonCode = "ORDER_CANCELLATION_NOT_ALLOWED";
+    } else if (order.status === "CONFIRMED") {
+      order.status = "REFUND_REQUESTED";
+      order.cancellationReasonCode = "REFUND_IN_PROGRESS";
+      const payment = mockPayments.find((entry) => entry.orderId === order.id);
+      if (payment) payment.status = "REFUND_PROCESSING";
+      const audit: OrderLifecycleAudit = {
+        id: crypto.randomUUID(),
+        action: "REFUND_REQUESTED",
+        actorId: mockCustomer.id,
+        actorType: "CUSTOMER",
+        reason: null,
+        refundRequestId: crypto.randomUUID(),
+        createdAt: nowIso(),
+      };
+      mockOrderAudits.set(order.id, [...(mockOrderAudits.get(order.id) ?? []), audit]);
+    } else if (order.status !== "REFUND_REQUESTED") {
+      throw new ApiError("This order cannot be cancelled in its current lifecycle state.", 409, { code: "ORDER_CANCELLATION_NOT_ALLOWED", retryable: false });
+    }
     order.cancelAllowed = false;
+    order.updatedAt = nowIso();
     return order as T;
   }
   if (pathname.startsWith("/api/v1/orders/")) {
@@ -338,7 +470,23 @@ async function mockRequest<T>(path: string, options: RequestOptions): Promise<T>
     if (method === "PUT") return Object.assign(product, body, { price: Number(body.price), updatedAt: nowIso() }) as T;
     return product as T;
   }
-  if (pathname === "/api/v1/seller/orders") return pageOf(mockOrders.map((order) => ({ ...order, items: order.items.filter((item) => mockProducts.find((product) => product.id === item.productId)?.sellerId === mockSeller.id) })), page, size) as T;
+  if (pathname === "/api/v1/seller/orders") {
+    const sellerOrders: SellerOrder[] = mockOrders
+      .map((order) => {
+        const items = order.items.filter((item) => mockProducts.find((product) => product.id === item.productId)?.sellerId === mockSeller.id);
+        return {
+          id: order.id,
+          status: order.status,
+          createdAt: order.createdAt,
+          shippingAddress: order.shippingAddress,
+          currency: order.currency,
+          sellerTotalAmount: items.reduce((total, item) => total + (item.lineTotal ?? item.unitPrice * item.quantity), 0),
+          items,
+        };
+      })
+      .filter((order) => order.items.length > 0);
+    return pageOf(sellerOrders, page, size) as T;
+  }
   if (pathname === "/api/v1/seller/inventory" && method === "POST") {
     const productId = String(body.productId);
     if (mockInventory.some((entry) => entry.productId === productId)) throw new ApiError("Inventory already exists for this product.", 409);
@@ -370,11 +518,39 @@ async function mockRequest<T>(path: string, options: RequestOptions): Promise<T>
     return target as T;
   }
   if (pathname === "/api/v1/admin/orders") return pageOf(mockOrders, page, size) as T;
-  if (pathname.includes("/api/v1/admin/orders/") && pathname.endsWith("/status")) {
+  if (pathname === "/api/v1/admin/orders/reconciliation/outboxes") {
+    const emptyCounts = { pending: 0, published: 0, completed: 0, failed: 0, manualReview: 0 };
+    return { observedAt: nowIso(), orderCreated: emptyCounts, inventoryRelease: emptyCounts, checkoutCompensation: emptyCounts, refundRequest: emptyCounts } as T;
+  }
+  if (pathname.startsWith("/api/v1/admin/orders/") && pathname.endsWith("/audit")) {
+    const orderId = pathname.split("/")[5];
+    return (mockOrderAudits.get(orderId) ?? []) as T;
+  }
+  if (pathname.startsWith("/api/v1/admin/orders/") && pathname.endsWith("/refund-requests") && method === "POST") {
     const order = mockOrders.find((entry) => entry.id === pathname.split("/")[5]);
     if (!order) throw new ApiError("Order not found.", 404);
-    order.status = String(body.status) as Order["status"];
-    return order as T;
+    if (!String(body.reason ?? "").trim()) throw new ApiError("Refund reason is required.", 400, { retryable: false });
+    if (order.status === "CONFIRMED") {
+      order.status = "REFUND_REQUESTED";
+      order.cancelAllowed = false;
+      order.cancellationReasonCode = "REFUND_IN_PROGRESS";
+      order.updatedAt = nowIso();
+      const payment = mockPayments.find((entry) => entry.orderId === order.id);
+      if (payment) payment.status = "REFUND_PROCESSING";
+      const audit: OrderLifecycleAudit = {
+        id: crypto.randomUUID(),
+        action: "REFUND_REQUESTED",
+        actorId: mockAdmin.id,
+        actorType: "ADMIN",
+        reason: String(body.reason).trim(),
+        refundRequestId: crypto.randomUUID(),
+        createdAt: nowIso(),
+      };
+      mockOrderAudits.set(order.id, [...(mockOrderAudits.get(order.id) ?? []), audit]);
+      return order as T;
+    }
+    if (order.status === "REFUND_REQUESTED") return order as T;
+    throw new ApiError("A refund can only be requested for a confirmed order.", 409, { code: "ORDER_STATE_CONFLICT", retryable: false });
   }
   if (pathname === "/api/v1/admin/payments") return pageOf(mockPayments, page, size) as T;
   if (pathname.startsWith("/api/v1/admin/payments/")) {

@@ -1,6 +1,6 @@
 # Product Service documentation
 
-Product Service owns catalogue identity, eligible seller ownership, descriptive fields, list price/currency, active status, approved image references, and UTC timestamps. Inventory owns stock and reservations; checkout/order validation remains authoritative for final price and availability.
+Product Service owns catalogue identity, eligible seller ownership, descriptive fields, list price/currency, active status, approved image references, and UTC timestamps. Inventory owns stock/reservations and Order Service owns customer checkout. Product publishes lifecycle snapshots to Inventory and provides an internal gRPC snapshot source for Inventory reconciliation.
 
 All catalogue mutations persist an immutable lifecycle snapshot in a Mongo transactional outbox. Inventory consumes versioned snapshots without resetting stock. Search and facets are provided by Product's bounded Mongo queries; no separate Search service is deployed.
 

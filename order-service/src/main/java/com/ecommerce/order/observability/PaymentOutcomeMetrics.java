@@ -53,6 +53,13 @@ public class PaymentOutcomeMetrics {
         increment("order.inventory_release.terminal_failure.count", "reason", reason);
     }
 
+    public void orderCreatedOutboxPublished() { increment("order.created_outbox.published.count"); }
+    public void orderCreatedOutboxTerminalFailure() { increment("order.created_outbox.terminal_failure.count"); }
+    public void pendingPaymentExpired() { increment("order.payment_expiry.expired.count"); }
+    public void refundRequestOutboxPublished() { increment("order.refund_request_outbox.published.count"); }
+    public void refundRequestOutboxTerminalFailure() { increment("order.refund_request_outbox.terminal_failure.count"); }
+    public void refundRequestRejected() { increment("order.refund_request.rejected.count"); }
+
     private void increment(String name, String... tags) {
         Counter.builder(name).tags(tags).register(meterRegistry).increment();
     }

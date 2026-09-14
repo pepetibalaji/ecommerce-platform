@@ -1,6 +1,6 @@
 # Order Service documentation
 
-Order Service is the checkout and purchase-lifecycle boundary. It owns orders, immutable product snapshots, shipping snapshots, payment outcome state, a processed-event inbox, and a durable inventory-release outbox.
+Order Service is the checkout and purchase-lifecycle boundary. It owns orders, immutable product snapshots, shipping snapshots, payment outcome state, a processed-event inbox, payload-bound idempotency records, and durable order-created, compensation, release, and refund-request outboxes.
 
 | Document | Purpose |
 | --- | --- |
@@ -10,3 +10,4 @@ Order Service is the checkout and purchase-lifecycle boundary. It owns orders, i
 | [Data model](schema.md) | PostgreSQL order, item, inbox, and outbox tables. |
 | [Events and operations](events-and-operations.md) | Kafka contracts, release-worker recovery, metrics, and configuration. |
 | [Current implementation](current-implementation.md) | Delivered behavior and known limits. |
+| [Checkout reliability contract](checkout-reliability.md) | Browser retry/error rules and cancellation/refund lifecycle summary. |

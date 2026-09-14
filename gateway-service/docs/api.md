@@ -21,6 +21,17 @@ JWT role conversion reads an array/string `roles` claim; if no authority results
 
 Allowed origins are `GATEWAY_CORS_ALLOWED_ORIGINS` (default `http://localhost:3000,http://localhost:4200,http://localhost:5173`). Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS. Allowed headers: Authorization, Content-Type, Accept, X-Requested-With, Idempotency-Key. Credentials are allowed; trace headers `X-Trace-Id` and `X-Span-Id` are exposed. Requests that pass route/security policies are proxied unchanged to their configured backend.
 
+## Checkout and cancellation rate limits
+
+The external Config Server route definitions apply `RequestRateLimiter` before the general Order route:
+
+| Route | Key | Default quota | Configuration |
+| --- | --- | --- | --- |
+| `POST /api/v1/orders` | Client IP | 2 requests/second, burst 5 | `GATEWAY_ORDER_CHECKOUT_RATE_LIMIT_PER_SECOND`, `GATEWAY_ORDER_CHECKOUT_RATE_LIMIT_BURST` |
+| `PUT /api/v1/orders/*/cancel` | Client IP | 2 requests/second, burst 5 | `GATEWAY_ORDER_CANCEL_RATE_LIMIT_PER_SECOND`, `GATEWAY_ORDER_CANCEL_RATE_LIMIT_BURST` |
+
+Each request consumes one token. A rejected request is `429`; browser clients must preserve safe input and honor `Retry-After` when the deployment provides it. The IP resolver only trusts forwarded client-IP headers when `GATEWAY_TRUST_FORWARDED_FOR=true` and the deployment proxy is trusted. Route IDs and values live in `ecommerce-config-repo` (`dev`, `stage`, and `prod` Gateway files), not in this service module.
+
 ## Dependency responses
 
 `/__fallback/**` is an internal route target for configured circuit-breaker fallbacks. It returns `503 application/problem+json`:

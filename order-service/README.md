@@ -2,7 +2,7 @@
 
 ## What this service is
 
-Order Service runs on port `8086` and owns checkout and the order lifecycle. It snapshots current catalog data, reserves inventory synchronously, publishes order events, consumes payment outcomes, and compensates inventory through a durable release outbox when an order fails, is refunded, or is cancelled.
+Order Service runs on port `8086` and owns checkout and the order lifecycle. It snapshots current catalog data, reserves inventory synchronously, records durable Kafka hand-offs, consumes payment outcomes, and compensates inventory through durable release work when an order fails, expires, is refunded, or is cancelled.
 
 ## Technology
 
@@ -15,24 +15,25 @@ Order Service runs on port `8086` and owns checkout and the order lifecycle. It 
 
 ## Data owned
 
-- Orders and order items.
-- Processed payment-event inbox for idempotency.
-- Inventory-release outbox and retry schedule.
+- Orders and immutable order items.
+- Customer-scoped, payload-bound checkout idempotency records and processed payment-event inbox.
+- Order-created, checkout-compensation, inventory-release, and refund-request outboxes with retry schedules.
+- Lifecycle audit entries for cancellation, refund, and payment-system decisions.
 
 ## End-to-end flow
 
 ```text
 Create order
-  -> validate customer ownership/request
-  -> call Inventory gRPC to reserve each item
-  -> persist PENDING order and reservations
-  -> publish order-created to Kafka
+  -> require Idempotency-Key and claim normalized request
+  -> snapshot Product data and reserve Inventory with stable reservation IDs
+  -> persist PENDING order, idempotency result, and order-created outbox atomically
+  -> leased worker publishes order-created to Kafka
 
 Payment outcome
-  -> consume event once using eventId
-  -> payment-success: confirm order
-  -> payment-failed/cancelled: fail order and save inventory-release outbox work
-  -> worker retries ReleaseStock until Inventory acknowledges
+  -> consume event once using persistent event ID inbox
+  -> success confirms PENDING; failure/expiry queues durable release work
+  -> confirmed cancellation or admin refund requests a durable Payment refund command
+  -> workers retry Kafka publication and reservation-aware ReleaseStock safely
 ```
 
 ## Run locally
@@ -53,3 +54,4 @@ Detailed integration and design documentation is in [`docs/`](docs/README.md):
 - [Low-level design](docs/lld.md)
 - [Data model](docs/schema.md)
 - [Events and operations](docs/events-and-operations.md)
+- [Checkout reliability contract](docs/checkout-reliability.md)

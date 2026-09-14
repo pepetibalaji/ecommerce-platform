@@ -1,7 +1,6 @@
 package com.ecommerce.order.catalog;
 
-import com.ecommerce.common.exception.BadRequestException;
-import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.order.api.OrderApiException;
 import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -12,6 +11,8 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 
 import java.math.BigDecimal;
 
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Component
@@ -36,17 +37,41 @@ public class ProductSellerClient {
                     .retrieve().body(ProductDetails.class);
         } catch (RestClientResponseException exception) {
             if (exception.getStatusCode() == HttpStatus.NOT_FOUND) {
-                throw new ResourceNotFoundException("CHECKOUT_ITEM_PRODUCT_NOT_FOUND productId=" + productId);
+                throw checkoutError(
+                        "CHECKOUT_ITEM_PRODUCT_NOT_FOUND",
+                        HttpStatus.NOT_FOUND,
+                        "One or more products are no longer available.",
+                        false,
+                        productId
+                );
             }
-            throw new BadRequestException("CHECKOUT_CATALOG_UNAVAILABLE productId=" + productId + " retry=true");
+            throw checkoutError(
+                    "CHECKOUT_CATALOG_UNAVAILABLE",
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "The product catalogue is temporarily unavailable. Please retry this checkout.",
+                    true,
+                    productId
+            );
         } catch (RestClientException exception) {
             // Deliberately fail closed: no order is created or stock reserved while catalog is unavailable.
-            throw new BadRequestException("CHECKOUT_CATALOG_UNAVAILABLE productId=" + productId + " retry=true");
+            throw checkoutError(
+                    "CHECKOUT_CATALOG_UNAVAILABLE",
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "The product catalogue is temporarily unavailable. Please retry this checkout.",
+                    true,
+                    productId
+            );
         }
 
         if (product == null || !productId.equals(product.id()) || product.sellerId() == null || product.price() == null
                 || product.price().signum() < 0 || product.name() == null || product.name().isBlank() || !product.active()) {
-            throw new BadRequestException("CHECKOUT_ITEM_PRODUCT_UNAVAILABLE productId=" + productId);
+            throw checkoutError(
+                    "CHECKOUT_ITEM_PRODUCT_UNAVAILABLE",
+                    HttpStatus.CONFLICT,
+                    "One or more products are no longer available.",
+                    false,
+                    productId
+            );
         }
         return new OrderableProduct(product.id(), product.sellerId(), product.name(), product.price());
     }
@@ -54,6 +79,17 @@ public class ProductSellerClient {
     /** Kept as a compatibility helper for ownership-only callers. */
     public UUID getSellerId(UUID productId) {
         return getOrderableProduct(productId).sellerId();
+    }
+
+    private OrderApiException checkoutError(
+            String code,
+            HttpStatus status,
+            String message,
+            boolean retryable,
+            UUID productId
+    ) {
+        return new OrderApiException(code, status, message, retryable,
+                List.of(Map.of("productId", productId)));
     }
 
     private record ProductDetails(UUID id, UUID sellerId, String name, BigDecimal price, boolean active) { }

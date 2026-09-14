@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { Alert, Button, EmptyState, Field, InfiniteListFooter, LoadingBlock, PageError, ProductImage, SelectField, StatusBadge, TextArea } from "../components/ui";
-import { ApiError, type Inventory, type Order, type Payment, type Product, type Role, type User } from "../domain";
+import { ApiError, type Inventory, type Order, type Payment, type Product, type Role, type SellerOrder, type User } from "../domain";
 import { api } from "../lib/api";
-import { createIdempotencyKey, formatDate, formatMoney, messageForError, toPage } from "../lib/format";
+import { formatDate, formatMoney, messageForError, toPage } from "../lib/format";
 import { useResource } from "../lib/hooks";
 import { ArrowRight, ArrowUpRight, Bell, Boxes, ChevronDown, ClipboardList, CreditCard, Info, Package, Plus, RefreshCw, Search, ShieldCheck, Users, X } from "lucide-react";
 import { filterWorkspaceRecords } from "../lib/workspace-records";
@@ -139,11 +139,22 @@ function productValidation(draft: ProductDraft): string | null {
   return null;
 }
 
-function sellerOrderLineCount(order: Order) {
+function sellerOrderLineCount(order: SellerOrder) {
   return order.items.reduce((sum, item) => sum + item.quantity, 0);
 }
 
-function FulfilmentAddress({ order }: { order: Order }) {
+function sellerOrderTotal(order: SellerOrder) {
+  if (typeof order.sellerTotalAmount !== "number" || !Number.isFinite(order.sellerTotalAmount)) return "Not supplied";
+  // Seller order projections may omit currency. Never pass an absent value to
+  // formatMoney, which intentionally defaults to INR for general catalogue use.
+  const currency = (order as SellerOrder & { currency?: unknown }).currency;
+  if (typeof currency !== "string" || !/^[A-Za-z]{3}$/.test(currency)) {
+    return `${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(order.sellerTotalAmount)} \u00b7 Currency not supplied`;
+  }
+  return formatMoney(order.sellerTotalAmount, currency.toUpperCase());
+}
+
+function FulfilmentAddress({ order }: { order: SellerOrder }) {
   const address = order.shippingAddress;
   if (!address) return <span className="muted">Not supplied</span>;
   return <details className="fulfilment-address"><summary>View address</summary><address>{address.recipientName}<br />{address.line1}{address.line2 ? <><br />{address.line2}</> : null}<br />{address.city}, {address.state} {address.postalCode}<br />{address.country}{address.phone ? <><br />{address.phone}</> : null}</address></details>;
@@ -157,7 +168,7 @@ export function SellerOverviewPage() {
       api.products.sellerList(token, "page=0&size=100"),
       api.orders.sellerList(token, "page=0&size=100"),
     ]);
-    return { products: toPage<Product>(products), orders: toPage<Order>(orders) };
+    return { products: toPage<Product>(products), orders: toPage<SellerOrder>(orders) };
   }, [accessToken]);
   const activeProducts = data?.products.content.filter((product) => product.active !== false).length ?? 0;
   const pendingOrders = data?.orders.content.filter((order) => order.status === "PENDING").length ?? 0;
@@ -340,11 +351,11 @@ function InventoryOperationsPanel() {
 export function SellerOrdersPage() {
   const { accessToken } = useAuth();
   const [pageSearch, setPageSearch] = useState("");
-  const fetchPage = useCallback((page: number) => api.orders.sellerList(accessTokenOrThrow(accessToken), `page=${page}&size=20`).then(toPage<Order>), [accessToken]);
+  const fetchPage = useCallback((page: number) => api.orders.sellerList(accessTokenOrThrow(accessToken), `page=${page}&size=20`).then(toPage<SellerOrder>), [accessToken]);
   const records = useInfinitePage(fetchPage);
   const { items, totalElements, loading, error, reload } = records;
   const visibleRecords = filterWorkspaceRecords(items, pageSearch, record => [record.id, record.status]);
-  return <section className="backoffice-page"><div className="page-heading"><div><span className="eyebrow">Seller orders</span><h1>Order queue</h1><p>Review your order lines and the fulfilment details shared with you.</p></div></div><ContractNote>This is a read-only seller queue. The address snapshot is sensitive fulfilment context: it is revealed only in this queue, never logged by the browser, and no shipment, cancellation, refund, payout, messaging, or order-detail controls are fabricated.</ContractNote><RecordTools noun="orders" query={pageSearch} onQuery={setPageSearch} count={visibleRecords.length} total={totalElements} loading={loading} onReload={() => void reload()} />{loading ? <LoadingBlock label="Loading seller order queue" /> : error ? <PageError message={error} retry={() => void reload()} /> : items.length ? <><div className="table-wrap"><table className="data-table"><thead><tr><th>Order</th><th>Items</th><th>Seller total</th><th>Status</th><th>Fulfilment address</th><th>Placed</th></tr></thead><tbody>{!visibleRecords.length ? <tr><td colSpan={6}><div className="bo-table-empty"><span>No matches among loaded records. Load more records or clear search.</span><Button variant="secondary" onClick={() => setPageSearch("")}>Clear search</Button></div></td></tr> : null}{visibleRecords.map((order) => { const sellerTotal = order.sellerTotalAmount ?? order.sellerSubtotal; return <tr key={order.id}><td><code>{order.id.slice(0, 8)}</code></td><td>{sellerOrderLineCount(order)}</td><td>{sellerTotal === undefined ? "Not supplied" : formatMoney(sellerTotal, order.currency)}</td><td><StatusBadge value={order.status} /></td><td><FulfilmentAddress order={order} /></td><td>{formatDate(order.createdAt)}</td></tr>; })}</tbody></table></div><InfiniteListFooter {...records} loadedCount={items.length} noun="orders" /></> : <EmptyState title="No seller order records" message="New seller-scoped order lines will appear here when the backend publishes them." />}</section>;
+  return <section className="backoffice-page"><div className="page-heading"><div><span className="eyebrow">Seller orders</span><h1>Order queue</h1><p>Review your order lines and the fulfilment details shared with you.</p></div></div><ContractNote>This is a read-only seller queue. The address snapshot is sensitive fulfilment context: it is revealed only in this queue, never logged by the browser, and no shipment, cancellation, refund, payout, messaging, or order-detail controls are fabricated. Seller totals are shown only in the currency supplied by the seller-order projection.</ContractNote><RecordTools noun="orders" query={pageSearch} onQuery={setPageSearch} count={visibleRecords.length} total={totalElements} loading={loading} onReload={() => void reload()} />{loading ? <LoadingBlock label="Loading seller order queue" /> : error ? <PageError message={error} retry={() => void reload()} /> : items.length ? <><div className="table-wrap"><table className="data-table"><thead><tr><th>Order</th><th>Items</th><th>Seller total</th><th>Status</th><th>Fulfilment address</th><th>Placed</th></tr></thead><tbody>{!visibleRecords.length ? <tr><td colSpan={6}><div className="bo-table-empty"><span>No matches among loaded records. Load more records or clear search.</span><Button variant="secondary" onClick={() => setPageSearch("")}>Clear search</Button></div></td></tr> : null}{visibleRecords.map((order) => <tr key={order.id}><td><code>{order.id.slice(0, 8)}</code></td><td>{sellerOrderLineCount(order)}</td><td>{sellerOrderTotal(order)}</td><td><StatusBadge value={order.status} /></td><td><FulfilmentAddress order={order} /></td><td>{formatDate(order.createdAt)}</td></tr>)}</tbody></table></div><InfiniteListFooter {...records} loadedCount={items.length} noun="orders" /></> : <EmptyState title="No seller order records" message="New seller-scoped order lines will appear here when the backend publishes them." />}</section>;
 }
 
 export function AdminOverviewPage() {
@@ -352,7 +363,7 @@ export function AdminOverviewPage() {
     ["/admin/users", "Users & access", "Review accounts, manage roles, and keep access under control.", Users],
     ["/admin/catalogue", "Product catalogue", "Create listings for sellers or update a known product.", Package],
     ["/admin/inventory", "Inventory", "Look up a product and manage its available stock.", Boxes],
-    ["/admin/orders", "Order management", "Review orders and apply supported status changes.", ClipboardList],
+    ["/admin/orders", "Order management", "Review order lifecycle and refund outcomes.", ClipboardList],
     ["/admin/payments", "Payments & refunds", "Inspect payment records before requesting a refund.", CreditCard],
     ["/admin/notifications", "Delivery recovery", "Review redacted delivery failures and recovery options.", Bell],
   ] as const;
@@ -558,65 +569,45 @@ function ProductDeliveryRecovery() {
 
 export function AdminInventoryPage() { return <><InventoryWorkspace area="admin" /><InventoryOperationsPanel /></>; }
 
-function allowedTransitions(order: Order): Array<"CONFIRMED" | "CANCELLED"> {
-  if (order.status === "PENDING") return ["CONFIRMED", "CANCELLED"];
-  if (order.status === "CONFIRMED") return ["CANCELLED"];
-  return [];
-}
-
 export function AdminOrdersPage() {
   const { accessToken } = useAuth();
   const [pageSearch, setPageSearch] = useState("");
-  const [targets, setTargets] = useState<Record<string, "CONFIRMED" | "CANCELLED">>({});
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
   const fetchPage = useCallback((page: number) => api.orders.adminList(accessTokenOrThrow(accessToken), `page=${page}&size=20`).then(toPage<Order>), [accessToken]);
   const records = useInfinitePage(fetchPage);
   const { items, totalElements, loading, error, reload } = records;
   const visibleRecords = filterWorkspaceRecords(items, pageSearch, record => [record.id, record.status]);
-  async function transition(order: Order) {
-    const status = targets[order.id] ?? allowedTransitions(order)[0];
-    if (!status) return;
-    setBusyId(order.id); setActionError(null);
-    try { await api.orders.adminUpdateStatus(accessTokenOrThrow(accessToken), order.id, status); await reload(); }
-    catch (caught) { setActionError(messageForError(caught)); }
-    finally { setBusyId(null); }
-  }
-  return <section className="backoffice-page"><div className="page-heading"><div><span className="eyebrow">Order operations</span><h1>Orders</h1><p>Review incoming orders and update supported order statuses.</p></div></div><ContractNote>Admin order detail is not available. The API only permits PENDING → CONFIRMED or CANCELLED, and CONFIRMED → CANCELLED. Payment and fulfilment results remain backend-owned.</ContractNote>{actionError ? <Alert tone="danger">{actionError}</Alert> : null}<RecordTools noun="orders" query={pageSearch} onQuery={setPageSearch} count={visibleRecords.length} total={totalElements} loading={loading} onReload={() => void reload()} />{loading ? <LoadingBlock label="Loading orders" /> : error ? <PageError message={error} retry={() => void reload()} /> : items.length ? <><div className="table-wrap"><table className="data-table"><thead><tr><th>Order</th><th>Total</th><th>Status</th><th>Placed</th><th>Transition</th></tr></thead><tbody>{!visibleRecords.length ? <tr><td colSpan={5}><div className="bo-table-empty"><span>No matches among loaded records. Load more records or clear search.</span><Button variant="secondary" onClick={() => setPageSearch("")}>Clear search</Button></div></td></tr> : null}{visibleRecords.map((order) => { const transitions = allowedTransitions(order); const target = targets[order.id] ?? transitions[0]; return <tr key={order.id}><td><code>{order.id.slice(0, 8)}</code></td><td>{formatMoney(order.totalAmount, order.currency)}</td><td><StatusBadge value={order.status} /></td><td>{formatDate(order.createdAt)}</td><td>{transitions.length ? <div className="action-row"><select className="input compact-input" aria-label={`New status for ${order.id}`} value={target} onChange={(event) => setTargets({ ...targets, [order.id]: event.target.value as "CONFIRMED" | "CANCELLED" })}>{transitions.map((status) => <option key={status} value={status}>{status}</option>)}</select><Button loading={busyId === order.id} onClick={() => void transition(order)}>Apply</Button></div> : <span className="muted">No UI transition</span>}</td></tr>; })}</tbody></table></div><InfiniteListFooter {...records} loadedCount={items.length} noun="orders" /></> : <EmptyState title="No orders returned" message="There are no order records to show." />}</section>;
+
+  return <section className="backoffice-page"><div className="page-heading"><div><span className="eyebrow">Order operations</span><h1>Orders</h1><p>Review the current order lifecycle and refund outcomes.</p></div><Link className="button button-secondary" to="/admin/payments">Payments &amp; refunds</Link></div><ContractNote>Order status is backend-owned. Checkout, payment, cancellation, fulfilment, and refund workflows record lifecycle changes asynchronously; this page intentionally cannot force a status transition. Inspect a payment before submitting an authorised refund request in Payments &amp; refunds.</ContractNote><RecordTools noun="orders" query={pageSearch} onQuery={setPageSearch} count={visibleRecords.length} total={totalElements} loading={loading} onReload={() => void reload()} />{loading ? <LoadingBlock label="Loading orders" /> : error ? <PageError message={error} retry={() => void reload()} /> : items.length ? <><div className="table-wrap"><table className="data-table"><thead><tr><th>Order</th><th>Total</th><th>Lifecycle</th><th>Placed</th></tr></thead><tbody>{!visibleRecords.length ? <tr><td colSpan={4}><div className="bo-table-empty"><span>No matches among loaded records. Load more records or clear search.</span><Button variant="secondary" onClick={() => setPageSearch("")}>Clear search</Button></div></td></tr> : null}{visibleRecords.map((order) => <tr key={order.id}><td><code>{order.id.slice(0, 8)}</code></td><td>{formatMoney(order.totalAmount, order.currency)}</td><td><StatusBadge value={order.status} /></td><td>{formatDate(order.createdAt)}</td></tr>)}</tbody></table></div><InfiniteListFooter {...records} loadedCount={items.length} noun="orders" /></> : <EmptyState title="No orders returned" message="There are no order records to show." />}</section>;
 }
 
 export function AdminPaymentsPage() {
   const { accessToken } = useAuth();
   const [pageSearch, setPageSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [refundAmount, setRefundAmount] = useState("");
   const [refundReason, setRefundReason] = useState("");
   const [feedback, setFeedback] = useState<{ tone: "success" | "danger" | "warning"; text: string } | null>(null);
   const [refunding, setRefunding] = useState(false);
-  const idempotencyKey = useRef<string | null>(null);
   const fetchPage = useCallback((page: number) => api.payments.adminList(accessTokenOrThrow(accessToken), `page=${page}&size=20`).then(toPage<Payment>), [accessToken]);
   const records = useInfinitePage(fetchPage);
   const { items, totalElements, loading, error, reload } = records;
   const visibleRecords = filterWorkspaceRecords(items, pageSearch, record => [record.id, record.orderId, record.status, record.provider]);
   const { data: detail, loading: detailLoading, error: detailError, reload: reloadDetail } = useResource(() => selectedId ? api.payments.adminById(accessTokenOrThrow(accessToken), selectedId) : Promise.resolve(null), [accessToken, selectedId]);
 
-  useEffect(() => { if (detail) { setRefundAmount(String(detail.amount ?? "")); setRefundReason(""); idempotencyKey.current = null; setFeedback(null); } }, [detail]);
+  useEffect(() => { if (detail) { setRefundReason(""); setFeedback(null); } }, [detail]);
   async function requestRefund(event: FormEvent) {
     event.preventDefault();
     if (!detail) return;
-    const amount = Number(refundAmount);
-    if (!Number.isFinite(amount) || amount <= 0 || !detail.orderId || !detail.currency) { setFeedback({ tone: "danger", text: "This payment must include an order ID, currency, and a positive refund amount." }); return; }
+    const reason = refundReason.trim();
+    if (!detail.orderId || !reason) { setFeedback({ tone: "danger", text: "An order ID and a refund reason are required." }); return; }
     setRefunding(true); setFeedback(null);
     try {
-      const key = idempotencyKey.current ?? createIdempotencyKey();
-      idempotencyKey.current = key;
-      const updated = await api.payments.refund(accessTokenOrThrow(accessToken), detail.id, { orderId: detail.orderId, amount, currency: detail.currency, reason: refundReason.trim() || undefined }, key);
-      setFeedback({ tone: "success", text: `Refund request accepted with status ${updated.status}. Keep this page open until the provider result is reflected.` });
+      const updated = await api.orders.adminRequestRefund(accessTokenOrThrow(accessToken), detail.orderId, reason);
+      setFeedback({ tone: "success", text: `Full refund request accepted. The order is now ${updated.status}; provider completion and the audit trail remain authoritative.` });
       await Promise.all([reload(), reloadDetail()]);
-    } catch (caught) { setFeedback({ tone: "danger", text: `${messageForError(caught)} Retrying this same request reuses its idempotency key.` }); }
+    } catch (caught) { setFeedback({ tone: "danger", text: messageForError(caught) }); }
     finally { setRefunding(false); }
   }
-  return <section className="backoffice-page"><div className="page-heading"><div><span className="eyebrow">Payment operations</span><h1>Payments</h1><p>Inspect a payment before asking the backend to process a refund.</p></div></div><ContractNote>Only list, detail, and refund endpoints are available. A refund request is not an immediate refund result; provider callbacks and backend state are authoritative.</ContractNote><div className="split-layout payment-layout"><section><RecordTools noun="payments" query={pageSearch} onQuery={setPageSearch} count={visibleRecords.length} total={totalElements} loading={loading} onReload={() => void reload()} />{loading ? <LoadingBlock label="Loading payments" /> : error ? <PageError message={error} retry={() => void reload()} /> : items.length ? <><div className="table-wrap"><table className="data-table"><thead><tr><th>Payment</th><th>Order</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>{!visibleRecords.length ? <tr><td colSpan={5}><div className="bo-table-empty"><span>No matches among loaded records. Load more records or clear search.</span><Button variant="secondary" onClick={() => setPageSearch("")}>Clear search</Button></div></td></tr> : null}{visibleRecords.map((payment) => <tr key={payment.id}><td><code>{payment.id.slice(0, 8)}</code></td><td><code>{payment.orderId.slice(0, 8)}</code></td><td>{payment.amount === undefined ? "Not supplied" : formatMoney(payment.amount, payment.currency)}</td><td><StatusBadge value={payment.status} /></td><td><Button variant="ghost" onClick={() => setSelectedId(payment.id)}>Inspect</Button></td></tr>)}</tbody></table></div><InfiniteListFooter {...records} loadedCount={items.length} noun="payments" /></> : <EmptyState title="No payments returned" message="No payment records were returned." />}</section><aside className="panel form-stack"><h2>Payment detail</h2>{!selectedId ? <p className="muted">Select a payment to request its server-backed detail.</p> : detailLoading ? <LoadingBlock label="Loading payment" /> : detailError || !detail ? <Alert tone="danger">{detailError || "Payment detail was unavailable."}</Alert> : <><dl className="detail-list"><div><dt>Payment ID</dt><dd><code>{detail.id}</code></dd></div><div><dt>Order ID</dt><dd><code>{detail.orderId}</code></dd></div><div><dt>Status</dt><dd><StatusBadge value={detail.status} /></dd></div><div><dt>Amount</dt><dd>{detail.amount === undefined ? "Not supplied" : formatMoney(detail.amount, detail.currency)}</dd></div><div><dt>Provider</dt><dd>{detail.provider || "Not supplied"}</dd></div></dl><form className="form-stack" onSubmit={requestRefund}><h3>Request refund</h3><Field label="Amount" type="number" min="0.01" step="0.01" value={refundAmount} onChange={(event) => setRefundAmount(event.target.value)} required /><Field label="Reason (optional)" value={refundReason} onChange={(event) => setRefundReason(event.target.value)} maxLength={200} />{feedback ? <Alert tone={feedback.tone}>{feedback.text}</Alert> : null}<Button type="submit" variant="danger" loading={refunding}>Request refund</Button></form></>}</aside></div></section>;
+  return <section className="backoffice-page"><div className="page-heading"><div><span className="eyebrow">Payment operations</span><h1>Payments</h1><p>Inspect a payment before requesting a full order refund through the audited lifecycle.</p></div></div><ContractNote>Refund commands go to Order Service, which records the actor and reason, requests the provider refund asynchronously, and only releases stock after the authoritative outcome. This screen never calls a direct provider refund endpoint.</ContractNote><div className="split-layout payment-layout"><section><RecordTools noun="payments" query={pageSearch} onQuery={setPageSearch} count={visibleRecords.length} total={totalElements} loading={loading} onReload={() => void reload()} />{loading ? <LoadingBlock label="Loading payments" /> : error ? <PageError message={error} retry={() => void reload()} /> : items.length ? <><div className="table-wrap"><table className="data-table"><thead><tr><th>Payment</th><th>Order</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>{!visibleRecords.length ? <tr><td colSpan={5}><div className="bo-table-empty"><span>No matches among loaded records. Load more records or clear search.</span><Button variant="secondary" onClick={() => setPageSearch("")}>Clear search</Button></div></td></tr> : null}{visibleRecords.map((payment) => <tr key={payment.id}><td><code>{payment.id.slice(0, 8)}</code></td><td><code>{payment.orderId.slice(0, 8)}</code></td><td>{payment.amount === undefined ? "Not supplied" : formatMoney(payment.amount, payment.currency)}</td><td><StatusBadge value={payment.status} /></td><td><Button variant="ghost" onClick={() => setSelectedId(payment.id)}>Inspect</Button></td></tr>)}</tbody></table></div><InfiniteListFooter {...records} loadedCount={items.length} noun="payments" /></> : <EmptyState title="No payments returned" message="No payment records were returned." />}</section><aside className="panel form-stack"><h2>Payment detail</h2>{!selectedId ? <p className="muted">Select a payment to request its server-backed detail.</p> : detailLoading ? <LoadingBlock label="Loading payment" /> : detailError || !detail ? <Alert tone="danger">{detailError || "Payment detail was unavailable."}</Alert> : <><dl className="detail-list"><div><dt>Payment ID</dt><dd><code>{detail.id}</code></dd></div><div><dt>Order ID</dt><dd><code>{detail.orderId}</code></dd></div><div><dt>Status</dt><dd><StatusBadge value={detail.status} /></dd></div><div><dt>Amount</dt><dd>{detail.amount === undefined ? "Not supplied" : formatMoney(detail.amount, detail.currency)}</dd></div><div><dt>Provider</dt><dd>{detail.provider || "Not supplied"}</dd></div></dl><form className="form-stack" onSubmit={requestRefund}><h3>Request full order refund</h3><Field label="Reason" value={refundReason} onChange={(event) => setRefundReason(event.target.value)} maxLength={1000} required />{feedback ? <Alert tone={feedback.tone}>{feedback.text}</Alert> : null}<Button type="submit" variant="danger" loading={refunding}>Request full refund</Button></form></>}</aside></div></section>;
 }
 
 export function AdminNotificationsPage() {

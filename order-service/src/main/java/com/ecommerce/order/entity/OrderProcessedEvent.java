@@ -7,7 +7,7 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -29,13 +29,13 @@ public class OrderProcessedEvent {
     private UUID orderId;
 
     @Column(name = "processed_at", nullable = false)
-    private LocalDateTime processedAt;
+    private Instant processedAt;
 
     public OrderProcessedEvent(UUID eventId, String eventType, UUID orderId) {
         this.id = UUID.randomUUID();
         this.eventId = eventId;
         this.eventType = eventType;
         this.orderId = orderId;
-        this.processedAt = LocalDateTime.now();
+        this.processedAt = Instant.now();
     }
 }

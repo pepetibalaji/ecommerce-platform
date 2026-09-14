@@ -2,7 +2,9 @@ package com.ecommerce.order.kafka;
 
 import com.ecommerce.common.events.order.OrderCreatedEvent;
 import com.ecommerce.common.events.order.OrderCompletedEvent;
+import com.ecommerce.common.events.payment.PaymentRefundRequestedEvent;
 import com.ecommerce.common.events.topic.KafkaTopics;
+import com.ecommerce.order.entity.OrderRefundRequestOutbox;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -26,8 +28,7 @@ public class OrderEventPublisher {
         String topic = KafkaTopics.ORDER_CREATED;
         String key = event.getOrderId().toString();
 
-        CompletableFuture<SendResult<String, Object>> future =
-                kafkaTemplate.send(topic, key, event);
+        CompletableFuture<SendResult<String, Object>> future = sendOrderCreated(event);
 
         future.whenComplete((result, exception) -> {
             if (exception != null) {
@@ -64,6 +65,43 @@ public class OrderEventPublisher {
                     event.getTraceId()
             );
         });
+    }
+
+    public CompletableFuture<SendResult<String, Object>> sendOrderCreated(com.ecommerce.order.entity.Order order) {
+        java.util.List<com.ecommerce.common.events.order.OrderItemEvent> items = order.getItems().stream()
+                .map(item -> new com.ecommerce.common.events.order.OrderItemEvent(item.getProductId(), item.getQuantity(), item.getPrice(), item.getPrice().multiply(java.math.BigDecimal.valueOf(item.getQuantity())))).toList();
+        return sendOrderCreated(new OrderCreatedEvent(order.getId(), order.getUserId(), order.getTotalAmount(), order.getCurrency(), items, order.getId().toString(), null));
+    }
+
+    public CompletableFuture<SendResult<String, Object>> sendOrderCreated(OrderCreatedEvent event) {
+        Objects.requireNonNull(event, "OrderCreatedEvent must not be null");
+        Objects.requireNonNull(event.getOrderId(), "OrderCreatedEvent.orderId must not be null");
+        return kafkaTemplate.send(KafkaTopics.ORDER_CREATED, event.getOrderId().toString(), event);
+    }
+
+    /**
+     * Payment Service consumes this command asynchronously. A successful Kafka send only proves
+     * delivery to Kafka; the order remains REFUND_REQUESTED until its outcome event is consumed.
+     */
+    public CompletableFuture<SendResult<String, Object>> sendPaymentRefundRequested(
+            OrderRefundRequestOutbox request
+    ) {
+        Objects.requireNonNull(request, "Refund request outbox row must not be null");
+        PaymentRefundRequestedEvent event = new PaymentRefundRequestedEvent(
+                request.getId(),
+                request.getPaymentId(),
+                request.getOrderId(),
+                request.getUserId(),
+                request.getRequestedBy(),
+                request.getActorType(),
+                request.getAmount(),
+                request.getCurrency(),
+                request.getReason(),
+                request.getCreatedAt(),
+                null,
+                null
+        );
+        return kafkaTemplate.send(KafkaTopics.PAYMENT_REFUND_REQUESTED, request.getOrderId().toString(), event);
     }
 
     public void publishOrderCompleted(OrderCompletedEvent event) {

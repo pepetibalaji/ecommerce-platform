@@ -34,7 +34,7 @@ runInNewContext(bundled.outputFiles[0].text, { module, exports: module.exports, 
 const pages = module.exports;
 const h = React.createElement;
 const product = { id: "product-1234", name: "Canvas Bag", category: "Accessories", price: 999, currency: "INR", active: true };
-const order = { id: "order-123456", status: "PENDING", totalAmount: 999, sellerTotalAmount: 999, currency: "INR", items: [{ productId: product.id, quantity: 1, price: 999 }] };
+const order = { id: "order-123456", status: "PENDING", totalAmount: 999, sellerTotalAmount: 999, currency: "INR", items: [{ productId: product.id, quantity: 1, unitPrice: 999 }] };
 const page = (content, total = content.length) => ({ content, totalElements: total, totalPages: Math.ceil(total / 10), number: 0, size: 10 });
 function render(name, area, resources = [], options = {}) {
   Object.assign(fixture, { resources, loaders: [], index: 0, loading: false, error: null, stream: {}, roles: [area === "seller" ? "SELLER" : "ADMIN"] }, options);
@@ -107,12 +107,13 @@ test("admin users retain their account links, roles and status", () => {
   assert.ok(html.includes("More users load automatically as you scroll."));
 });
 
-test("order management retains supported transitions only", () => {
+test("order management is read-only and routes refund work through payments", () => {
   const html = render("AdminOrdersPage", "admin", [page([order, { ...order, id: "closed-order", status: "REFUNDED" }])]);
-  assert.ok(html.includes('<option value="CONFIRMED"'));
-  assert.ok(html.includes('<option value="CANCELLED"'));
-  assert.ok(!html.includes('<option value="SHIPPED"'));
-  assert.equal((html.match(/>Apply<\/button>/g) || []).length, 1);
+  assert.ok(html.includes("Order status is backend-owned"));
+  assert.ok(html.includes('href="/admin/payments"'));
+  assert.ok(!html.includes('<option value="CONFIRMED"'));
+  assert.ok(!html.includes('<option value="CANCELLED"'));
+  assert.equal((html.match(/>Apply<\/button>/g) || []).length, 0);
 });
 
 test("seller queue stays read-only and address details stay collapsed", () => {

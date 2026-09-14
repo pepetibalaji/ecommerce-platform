@@ -21,6 +21,16 @@ Base path: `/api/v1`. Bodies are JSON; product and seller identifiers are UUIDs.
 }
 ```
 
+## Internal Product snapshot gRPC
+
+This is not a browser-facing API. Inventory uses `ProductSnapshotService/ListInventorySnapshots` on port `9092` to recover missed lifecycle delivery.
+
+| Request | Response |
+| --- | --- |
+| `page` (zero-based), `size` (1–500) | Product ID, seller ID, active state, lifecycle version, `hasNext`, `nextPage` |
+
+Inventory provides `x-internal-caller: inventory-service`. Production requires mTLS and network policy allowing Inventory only. The snapshot never includes stock, price confirmation, customer information, or management write operations.
+
 Timestamps are UTC `Instant` values serialized with `Z`. Missing/null legacy active flags are treated as active; explicit `false` hides the item publicly. Currency defaults to `USD` when omitted for compatibility.
 
 Create accepts the descriptive fields above, without server-managed ID, ownership, active status, or timestamps. Update fully replaces descriptive fields and accepts optional `active`; omitting it preserves its value. Name/category/brand have surrounding whitespace trimmed, and blank category/brand become null. Omitted/null optional strings become null; omitted/null `imageUrls` becomes `[]`.

@@ -19,12 +19,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -131,7 +132,7 @@ class OrderControllerTest {
 
         when(orderService.getMyOrders(
                 eq(USER_ID),
-                eq(PageRequest.of(0, 10)),
+                eq(PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "createdAt"))),
                 isNull()
         )).thenReturn(page);
 
@@ -149,7 +150,7 @@ class OrderControllerTest {
         verify(orderService)
                 .getMyOrders(
                         eq(USER_ID),
-                        eq(PageRequest.of(0, 10)),
+                        eq(PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "createdAt"))),
                         isNull()
                 );
     }
@@ -161,7 +162,7 @@ class OrderControllerTest {
 
         when(orderService.getMyOrders(
                 eq(USER_ID),
-                eq(PageRequest.of(1, 5)),
+                eq(PageRequest.of(1, 5, Sort.by(Sort.Direction.DESC, "createdAt"))),
                 eq(OrderStatus.PENDING)
         )).thenReturn(page);
 
@@ -179,7 +180,7 @@ class OrderControllerTest {
         verify(orderService)
                 .getMyOrders(
                         eq(USER_ID),
-                        eq(PageRequest.of(1, 5)),
+                        eq(PageRequest.of(1, 5, Sort.by(Sort.Direction.DESC, "createdAt"))),
                         eq(OrderStatus.PENDING)
                 );
     }
@@ -306,8 +307,7 @@ class OrderControllerTest {
             OrderStatus status,
             List<OrderItemResponse> items
     ) {
-        LocalDateTime now =
-                LocalDateTime.now();
+        Instant now = Instant.now();
 
         return new OrderResponse(
                 orderId,
