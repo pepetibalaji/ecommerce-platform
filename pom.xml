@@ -317,6 +317,24 @@
 
         <plugins>
             <!--
+                Keep Testcontainers tests out of the unit-test fork. Surefire's default
+                *Test pattern also matches *IntegrationTest, which otherwise runs these
+                tests twice (and before Failsafe's integration-test phase).
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${maven.surefire.plugin.version}</version>
+                <configuration>
+                    <excludes>
+                        <exclude>**/*IT.java</exclude>
+                        <exclude>**/*ITCase.java</exclude>
+                        <exclude>**/*IntegrationTest.java</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+
+            <!--
                 Integration tests use the *IntegrationTest naming convention and require
                 Docker-backed dependencies through Testcontainers. Bind Failsafe to the
                 Maven lifecycle so `mvn verify` is a real integration-test gate in CI.
@@ -326,6 +344,12 @@
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <version>${maven.failsafe.plugin.version}</version>
                 <configuration>
+                    <!--
+                        Spring Boot's repackage goal replaces the main artifact before
+                        the integration-test phase. Point Failsafe at compiled classes,
+                        not the executable BOOT-INF/classes layout in that artifact.
+                    -->
+                    <classesDirectory>${project.build.outputDirectory}</classesDirectory>
                     <includes>
                         <include>**/*IT.java</include>
                         <include>**/*ITCase.java</include>
