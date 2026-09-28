@@ -575,6 +575,9 @@ img { display: block; max-width: 100%; }
 .order-card { gap: 14px; }
 .order-card > div:first-child { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; }
 .order-card .eyebrow { margin-bottom: 5px; }
+.order-card-summary h2 { margin-bottom: 5px; }
+.order-card-summary > div > span:last-child { color: var(--muted); font-size: .82rem; }
+.order-card-total { color: var(--green-dark); font-size: 1.2rem; white-space: nowrap; }
 .order-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .order-detail-main { display: grid; gap: 17px; }
 .detail-card { display: grid; gap: 15px; padding: 21px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); box-shadow: var(--shadow-sm); }

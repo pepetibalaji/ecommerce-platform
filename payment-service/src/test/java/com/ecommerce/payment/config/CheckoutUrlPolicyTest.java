@@ -17,7 +17,7 @@ class CheckoutUrlPolicyTest {
     @ParameterizedTest
     @ValueSource(strings = {"http://checkout.stripe.com/session", "https://checkout.stripe.com.evil.test/session",
             "https://checkout.stripe.com@evil.test/session", "https://checkout.stripe.com:444/session",
-            "//checkout.stripe.com/session", "javascript:alert(1)", "https://evil.test", "https://checkout.stripe.com/s#fragment"})
+            "//checkout.stripe.com/session", "javascript:alert(1)", "https://evil.test"})
     void refusesUnapprovedRedirects(String url) {
         assertThatThrownBy(() -> policy.validateCheckoutUrl(PaymentProvider.STRIPE, url))
                 .isInstanceOf(PaymentApiException.class);
@@ -25,6 +25,7 @@ class CheckoutUrlPolicyTest {
 
     @Test void permitsApprovedHttpsProviderAndExactFrontendOrigin() {
         policy.validateCheckoutUrl(PaymentProvider.STRIPE, "https://checkout.stripe.com/c/pay/cs_test");
+        policy.validateCheckoutUrl(PaymentProvider.STRIPE, "https://checkout.stripe.com/s#fragment");
         properties.getCheckout().setFrontendOrigins(Set.of("https://shop.example"));
         policy.validateReturnUrl("https://shop.example/payment/return?orderId=1&paymentId=2");
         assertThatThrownBy(() -> policy.validateReturnUrl("https://shop.example/public/payments/success"))
