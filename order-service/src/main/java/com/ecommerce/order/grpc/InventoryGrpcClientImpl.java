@@ -11,13 +11,18 @@ import com.ecommerce.proto.inventory.InventoryResponse;
 import com.ecommerce.proto.inventory.InventoryServiceGrpc;
 import com.ecommerce.proto.inventory.ReleaseStockRequest;
 import com.ecommerce.proto.inventory.ReserveStockRequest;
+import io.grpc.Metadata;
 import io.grpc.StatusRuntimeException;
+import io.grpc.stub.MetadataUtils;
 import org.springframework.stereotype.Service;
 
 @Service
 public class InventoryGrpcClientImpl implements InventoryGrpcClient {
 
     private static final String CLIENT_NAME = "inventory";
+    private static final Metadata.Key<String> INTERNAL_CALLER =
+            Metadata.Key.of("x-internal-caller", Metadata.ASCII_STRING_MARSHALLER);
+    private static final String CALLER_IDENTITY = "order-service";
 
     private final GrpcClientFactory grpcClientFactory;
 
@@ -113,9 +118,12 @@ public class InventoryGrpcClientImpl implements InventoryGrpcClient {
     }
 
     private InventoryServiceGrpc.InventoryServiceBlockingStub inventoryStub() {
-        return grpcClientFactory.stub(
+        InventoryServiceGrpc.InventoryServiceBlockingStub stub = grpcClientFactory.stub(
                 CLIENT_NAME,
                 InventoryServiceGrpc::newBlockingStub
         );
+        Metadata headers = new Metadata();
+        headers.put(INTERNAL_CALLER, CALLER_IDENTITY);
+        return stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers));
     }
 }

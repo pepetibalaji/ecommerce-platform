@@ -32,6 +32,19 @@ function shortOrderId(orderId: string) {
   return orderId.length > 10 ? `#${orderId.slice(-8).toUpperCase()}` : `#${orderId}`;
 }
 
+function orderItemSummary(order: Order) {
+  const itemCount = order.items.reduce((total, item) => total + item.quantity, 0);
+  const primaryItem = order.items.find((item) => item.productName?.trim());
+  if (!primaryItem) return `${itemCount} item${itemCount === 1 ? "" : "s"}`;
+
+  const primaryQuantity = primaryItem.quantity > 1 ? ` × ${primaryItem.quantity}` : "";
+  const remainingCount = itemCount - primaryItem.quantity;
+  const remaining = remainingCount > 0
+    ? ` + ${remainingCount} more item${remainingCount === 1 ? "" : "s"}`
+    : "";
+  return `${primaryItem.productName!.trim()}${primaryQuantity}${remaining}`;
+}
+
 function paymentIsTerminal(payment: Payment | null, order: Order | null = null) {
   if (["REFUND_FAILED", "REFUND_REQUIRES_FULFILMENT_REVIEW"].includes(order?.status ?? "")) return true;
   if (payment?.status === "SUCCESS") return order?.status === "CONFIRMED";
@@ -413,7 +426,7 @@ export function OrdersPage() {
   const orders = useInfinitePage(fetchPage);
   const { items, loading, error, reload } = orders;
   function setStatus(status: string) { const next = new URLSearchParams(params); if (status) next.set("status", status); else next.delete("status"); next.delete("page"); next.delete("size"); setParams(next); }
-  return <section className="orders-page"><div className="page-heading"><div><span className="eyebrow">Your purchases</span><h1>Orders</h1><p>Only the latest order and payment responses determine what is shown here.</p></div><SelectField label="Filter by status" value={selectedStatus} onChange={(event) => setStatus(event.target.value)}>{orderStatusOptions.map((value) => <option key={value} value={value}>{value ? value.replace(/_/g, " ") : "All statuses"}</option>)}</SelectField></div>{loading ? <LoadingBlock label="Loading your orders" /> : error ? <PageError message={error} retry={() => void reload()} /> : items.length ? <><div className="order-list">{items.map((order) => <article className="order-card" key={order.id}><div><span className="eyebrow">{shortOrderId(order.id)} · {formatDate(order.createdAt)}</span><h2>{formatMoney(order.totalAmount, order.currency)}</h2><span>{order.items.length} item{order.items.length === 1 ? "" : "s"}</span></div><div className="order-card-actions"><StatusBadge value={order.status} /><Link className="button button-secondary" to={`/orders/${order.id}`}>View order</Link></div></article>)}</div><InfiniteListFooter {...orders} loadedCount={items.length} noun="orders" /></> : <EmptyState title={selectedStatus ? "No orders match this status" : "No orders yet"} message={selectedStatus ? "Try another order status or view all orders." : "When you complete checkout, your orders will appear here."} action={selectedStatus ? <Button onClick={() => setStatus("")}>Clear filter</Button> : <Link className="button button-primary" to="/">Browse products</Link>} />}</section>;
+  return <section className="orders-page"><div className="page-heading"><div><span className="eyebrow">Your purchases</span><h1>Orders</h1><p>Only the latest order and payment responses determine what is shown here.</p></div><SelectField label="Filter by status" value={selectedStatus} onChange={(event) => setStatus(event.target.value)}>{orderStatusOptions.map((value) => <option key={value} value={value}>{value ? value.replace(/_/g, " ") : "All statuses"}</option>)}</SelectField></div>{loading ? <LoadingBlock label="Loading your orders" /> : error ? <PageError message={error} retry={() => void reload()} /> : items.length ? <><div className="order-list">{items.map((order) => <article className="order-card" key={order.id}><div className="order-card-summary"><div><span className="eyebrow">Order {shortOrderId(order.id)} · {formatDate(order.createdAt)}</span><h2>{orderItemSummary(order)}</h2><span>{order.items.reduce((total, item) => total + item.quantity, 0)} item{order.items.reduce((total, item) => total + item.quantity, 0) === 1 ? "" : "s"}</span></div><strong className="order-card-total">{formatMoney(order.totalAmount, order.currency)}</strong></div><div className="order-card-actions"><StatusBadge value={order.status} /><Link className="button button-secondary" to={`/orders/${order.id}`}>View order</Link></div></article>)}</div><InfiniteListFooter {...orders} loadedCount={items.length} noun="orders" /></> : <EmptyState title={selectedStatus ? "No orders match this status" : "No orders yet"} message={selectedStatus ? "Try another order status or view all orders." : "When you complete checkout, your orders will appear here."} action={selectedStatus ? <Button onClick={() => setStatus("")}>Clear filter</Button> : <Link className="button button-primary" to="/">Browse products</Link>} />}</section>;
 }
 
 type OrderDetailData = { order: Order; payment: Payment | null };

@@ -26,6 +26,7 @@ import com.stripe.net.Webhook;
 import com.stripe.param.RefundCreateParams;
 import com.stripe.param.checkout.SessionCreateParams;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -36,6 +37,7 @@ import java.util.Locale;
 import java.util.Optional;
 
 @Component
+@Slf4j
 @RequiredArgsConstructor
 public class StripePaymentGateway implements PaymentGateway {
 
@@ -361,16 +363,19 @@ public class StripePaymentGateway implements PaymentGateway {
 
     private void validateStripeConfig() {
         if (!properties.getProvider().getStripe().isEnabled()) {
+            log.error("Stripe checkout configuration is invalid: stripeEnabled=false");
             throw new com.ecommerce.payment.exception.PaymentApiException(com.ecommerce.payment.exception.PaymentErrorCode.PAYMENT_PROVIDER_CONFIGURATION_ERROR);
         }
 
         if (properties.getProvider().getStripe().getApiKey() == null
                 || properties.getProvider().getStripe().getApiKey().isBlank()) {
+            log.error("Stripe checkout configuration is invalid: apiKeyConfigured=false");
             throw new com.ecommerce.payment.exception.PaymentApiException(com.ecommerce.payment.exception.PaymentErrorCode.PAYMENT_PROVIDER_CONFIGURATION_ERROR);
         }
 
         if (properties.getProvider().getStripe().getWebhookSecret() == null
                 || properties.getProvider().getStripe().getWebhookSecret().isBlank()) {
+            log.error("Stripe checkout configuration is invalid: webhookSecretConfigured=false");
             throw new com.ecommerce.payment.exception.PaymentApiException(com.ecommerce.payment.exception.PaymentErrorCode.PAYMENT_PROVIDER_CONFIGURATION_ERROR);
         }
     }
