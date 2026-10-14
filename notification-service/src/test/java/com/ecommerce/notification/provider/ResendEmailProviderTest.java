@@ -49,8 +49,8 @@ class ResendEmailProviderTest {
     RestClient.Builder builder = RestClient.builder();
     MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
     server.expect(requestTo("https://api.resend.com/emails"))
-        .andExpect(jsonPath("$.subject").value("We received your order"))
-        .andExpect(jsonPath("$.text").value("We received your order. Order: order-123"))
+        .andExpect(jsonPath("$.subject").value("Your Pepekart order is confirmed"))
+        .andExpect(jsonPath("$.text").value("Your Pepekart order is confirmed. Order: order-123"))
         .andExpect(jsonPath("$.template").doesNotExist())
         .andRespond(withSuccess("{\"id\":\"text-message-id\"}", MediaType.APPLICATION_JSON));
     ObjectMapper mapper = new ObjectMapper();
