@@ -13,6 +13,7 @@ volumes:
     prometheus-data:
     grafana-data:
     loki-data:
+    mailpit-data:
 
 x-logging: &default-logging
     driver: json-file
@@ -21,6 +22,23 @@ x-logging: &default-logging
         max-file: "3"
 
 services:
+    mailpit:
+        image: axllent/mailpit:latest
+        container_name: ecommerce-mailpit
+        restart: unless-stopped
+        ports:
+            # UI and SMTP for Notification Service running on the host.
+            - "127.0.0.1:8025:8025"
+            - "127.0.0.1:1025:1025"
+        environment:
+            MP_DATABASE: /data/mailpit.db
+            MP_MAX_MESSAGES: 10000
+        volumes:
+            - mailpit-data:/data
+        networks:
+            - ecommerce-network
+        logging: *default-logging
+
     postgres:
         # Default local DEV database for Auth, Inventory, Order, and Payment.
         image: postgres:16.14-alpine

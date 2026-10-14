@@ -23,5 +23,11 @@
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
         <dependency><groupId>org.springframework.kafka</groupId><artifactId>spring-kafka-test</artifactId><scope>test</scope></dependency>
     </dependencies>
-    <build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId></plugin><plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId><configuration><mainClass>com.ecommerce.notification.NotificationServiceApplication</mainClass></configuration><executions><execution><goals><goal>repackage</goal></goals></execution></executions></plugin></plugins></build>
+    <build>
+        <resources>
+            <resource><directory>src/main/resources</directory></resource>
+            <resource><directory>templates</directory><targetPath>email</targetPath><includes><include>*.html</include></includes></resource>
+        </resources>
+        <plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId></plugin><plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId><configuration><mainClass>com.ecommerce.notification.NotificationServiceApplication</mainClass></configuration><executions><execution><goals><goal>repackage</goal></goals></execution></executions></plugin></plugins>
+    </build>
 </project>

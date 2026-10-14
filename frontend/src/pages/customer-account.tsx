@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Clock3, KeyRound, Laptop, Mail, RefreshCw, ShieldCheck, Trash2, UserRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight, Check, CheckCircle2, ChevronRight, CircleAlert, Clock3, CreditCard, KeyRound, Laptop, LockKeyhole, Mail, MapPin, Package, ReceiptText, RefreshCw, ShieldCheck, ShoppingBag, SlidersHorizontal, Sparkles, Trash2, UserRound } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { useCart } from "../cart/CartProvider";
@@ -10,6 +10,7 @@ import { useResource } from "../lib/hooks";
 import { useInfinitePage } from "../lib/useInfinitePage";
 import { pollPaymentConfirmation, approvedCheckoutUrl, paymentPreparationDelay } from "../lib/payment-confirmation";
 import { Alert, Button, EmptyState, Field, InfiniteListFooter, LoadingBlock, PageError, ProductImage, SafeLink, SelectField, StatusBadge } from "../components/ui";
+import "../styles/customer-experience.css";
 
 const emptyAddress: ShippingAddress = {
   recipientName: "",
@@ -79,6 +80,27 @@ function addressFingerprint(address: ShippingAddress) {
 
 function ProductSummary({ product }: { product: Product }) {
   return <div className="checkout-product"><ProductImage product={product} compact /><div><strong>{product.name}</strong><span>{formatMoney(product.price, product.currency)}</span></div></div>;
+}
+
+function CheckoutSteps({ current }: { current: "address" | "payment" | "result" }) {
+  const steps = [
+    { key: "address", label: "Delivery details", icon: MapPin },
+    { key: "payment", label: "Secure payment", icon: CreditCard },
+    { key: "result", label: "Confirmation", icon: CheckCircle2 },
+  ];
+  const activeIndex = steps.findIndex((step) => step.key === current);
+  return <ol className="cx-checkout-steps" aria-label="Checkout progress">{steps.map((step, index) => <li key={step.key} className={index === activeIndex ? "cx-step-active" : index < activeIndex ? "cx-step-complete" : ""} aria-current={index === activeIndex ? "step" : undefined}><span className="cx-step-marker">{index < activeIndex ? <Check size={17} aria-hidden="true" /> : <step.icon size={17} aria-hidden="true" />}</span><span><small>Step {index + 1}</small><strong>{step.label}</strong></span></li>)}</ol>;
+}
+
+function OrderReceipt({ order, label = "Your order receipt" }: { order: Order; label?: string }) {
+  return <aside className="cu-paper-receipt">
+    <header className="cu-receipt-header"><span className="cu-receipt-brand">pepekart<span>.</span></span><ReceiptText size={25} strokeWidth={1.4} aria-hidden="true" /></header>
+    <div className="cu-receipt-intro"><span className="eyebrow">{label}</span><h2>{shortOrderId(order.id)}</h2><p>{formatDate(order.createdAt)}</p></div>
+    <div className="cu-receipt-items">{order.items.map((item, index) => <div key={item.id ?? `${item.productId}-${index}`}><div><strong>{item.productName || "Product"}</strong><span>Qty {item.quantity} · {formatMoney(item.unitPrice, order.currency)} each</span></div><strong>{formatMoney(item.lineTotal ?? item.unitPrice * item.quantity, order.currency)}</strong></div>)}</div>
+    <div className="cu-receipt-total"><span>Order total</span><strong>{formatMoney(order.totalAmount, order.currency)}</strong></div>
+    <div className="cu-receipt-status"><span>Recorded order status</span><StatusBadge value={order.status} /></div>
+    <footer className="cu-receipt-footer"><span>THANK YOU FOR CHOOSING PEPEKART</span><div className="cu-receipt-bars" aria-hidden="true" /></footer>
+  </aside>;
 }
 
 type CheckoutIntent = { key: string; fingerprint: string };
@@ -266,22 +288,18 @@ export function CheckoutPage() {
   if (cartError) return <PageError message={cartError} retry={() => void refreshCart()} />;
   if (!cart?.items.length) return <EmptyState title="Your cart is empty" message="Add an item before beginning checkout." action={<Link className="button button-primary" to="/">Browse products</Link>} />;
 
-  return <section className="checkout-page">
-    <div className="page-heading"><div><span className="eyebrow">Secure checkout</span><h1>Where should we send your order?</h1><p>Enter an address for this order only. Addresses are not stored in this release.</p></div><SafeLink to="/cart">Return to cart</SafeLink></div>
+  return <section className="checkout-page customer-experience customer-editorial">
+    <header className="cu-flow-masthead"><div><SafeLink className="cu-back-link" to="/cart"><ArrowLeft size={15} aria-hidden="true" /> Back to the bag</SafeLink><span className="eyebrow">The final few details</span><h1>Good things.<br /><em>Coming your way.</em></h1><p>Tell us where your finds belong.</p></div><CheckoutSteps current="address" /></header>
     {mixedCurrencies ? <Alert tone="warning" title="Cart needs review">This cart contains items in more than one currency. Review the cart before checkout can continue.</Alert> : null}
     {checkoutError ? <Alert tone={checkoutError.requiresNewIntent ? "warning" : "danger"} title={checkoutError.title} action={<div className="button-row">{checkoutError.requiresNewIntent ? <Button variant="secondary" onClick={startNewCheckoutIntent}>Start new checkout attempt</Button> : null}{checkoutError.refreshCart ? <Button variant="secondary" onClick={() => refreshCheckoutData(checkoutError.refreshCatalogue)}>Refresh cart and items</Button> : null}</div>}><div><p>{checkoutError.message}</p>{checkoutError.details.length ? <ul>{checkoutError.details.map((detail, index) => <li key={`${detail}-${index}`}>{detail}</li>)}</ul> : null}{checkoutError.code ? <p className="muted">Error code: {checkoutError.code}{checkoutError.traceId ? ` · Support reference: ${checkoutError.traceId}` : ""}</p> : null}</div></Alert> : null}
-    <div className="checkout-layout">
-      <form className="checkout-form form-stack" onSubmit={submit}>
-        <h2>Shipping address</h2>
-        <div className="form-grid"><Field label="Recipient name" autoComplete="shipping name" value={address.recipientName} onChange={(event) => setAddressValue("recipientName", event.target.value)} required /><Field label="Phone number" type="tel" autoComplete="shipping tel" value={address.phone} onChange={(event) => setAddressValue("phone", event.target.value)} required /></div>
-        <Field label="Address line 1" autoComplete="shipping address-line1" value={address.line1} onChange={(event) => setAddressValue("line1", event.target.value)} required />
-        <Field label="Address line 2 (optional)" autoComplete="shipping address-line2" value={address.line2 ?? ""} onChange={(event) => setAddressValue("line2", event.target.value)} />
-        <div className="form-grid"><Field label="City" autoComplete="shipping address-level2" value={address.city} onChange={(event) => setAddressValue("city", event.target.value)} required /><Field label="State / region" autoComplete="shipping address-level1" value={address.state} onChange={(event) => setAddressValue("state", event.target.value)} required /></div>
-        <div className="form-grid"><Field label="Postal code" autoComplete="shipping postal-code" value={address.postalCode} onChange={(event) => setAddressValue("postalCode", event.target.value)} required /><Field label="Country code" autoComplete="shipping country" maxLength={2} value={address.country} onChange={(event) => setAddressValue("country", event.target.value.toUpperCase())} required /></div>
-        <Alert title="Final confirmation">When you place the order, the platform checks current price, eligibility, and availability. You are not charged on this page.</Alert>
-        <Button type="submit" loading={submitting} disabled={mixedCurrencies || productLoading || checkoutError?.requiresNewIntent}>Place order and continue to payment</Button>
+    <div className="cu-checkout-grid">
+      <form className="cu-delivery-form" onSubmit={submit}>
+        <fieldset className="cu-form-section"><legend><span>01</span> The recipient</legend><p>Who are we delivering to?</p><div className="form-grid"><Field label="Recipient name" autoComplete="shipping name" value={address.recipientName} onChange={(event) => setAddressValue("recipientName", event.target.value)} required /><Field label="Phone number" type="tel" autoComplete="shipping tel" value={address.phone} onChange={(event) => setAddressValue("phone", event.target.value)} required /></div></fieldset>
+        <fieldset className="cu-form-section"><legend><span>02</span> The destination</legend><p>This address will be used for this order.</p><div className="cu-address-fields"><Field label="Address line 1" autoComplete="shipping address-line1" value={address.line1} onChange={(event) => setAddressValue("line1", event.target.value)} required /><Field label="Address line 2 (optional)" autoComplete="shipping address-line2" value={address.line2 ?? ""} onChange={(event) => setAddressValue("line2", event.target.value)} /><div className="form-grid"><Field label="City" autoComplete="shipping address-level2" value={address.city} onChange={(event) => setAddressValue("city", event.target.value)} required /><Field label="State / region" autoComplete="shipping address-level1" value={address.state} onChange={(event) => setAddressValue("state", event.target.value)} required /></div><div className="form-grid"><Field label="Postal code" autoComplete="shipping postal-code" value={address.postalCode} onChange={(event) => setAddressValue("postalCode", event.target.value)} required /><Field label="Country code" autoComplete="shipping country" maxLength={2} value={address.country} onChange={(event) => setAddressValue("country", event.target.value.toUpperCase())} required /></div></div></fieldset>
+        <div className="cu-checkout-next"><div><span className="cu-section-number">03</span><h2>Next, make it yours.</h2><p>We’ll check prices and availability, then prepare your payment.</p></div><Button type="submit" loading={submitting} disabled={mixedCurrencies || productLoading || checkoutError?.requiresNewIntent}>Place order &amp; continue <ArrowRight size={18} aria-hidden="true" /></Button></div>
+        <div className="cu-trust-line"><LockKeyhole size={15} aria-hidden="true" /><span>Payment happens with your payment provider after this step.</span></div>
       </form>
-      <aside className="summary-card checkout-summary"><h2>Order summary</h2>{productLoading ? <LoadingBlock label="Loading item details" /> : <div className="checkout-product-list">{cart.items.map((item) => { const product = productsById.get(item.productId); return product ? <div key={item.itemId} className="checkout-product-row"><ProductSummary product={product} /><span>× {item.quantity}</span></div> : <div key={item.itemId} className="checkout-product-row"><span>Product details unavailable</span><span>× {item.quantity}</span></div>; })}</div>}<div className="summary-total"><span>Estimated total</span><strong>{formatMoney(estimatedTotal, currency)}</strong></div><p>Final item prices and the total come from the order response after validation.</p></aside>
+      <aside className="cu-paper-receipt cu-bag-receipt"><header className="cu-receipt-header"><span className="cu-receipt-brand">pepekart<span>.</span></span><ShoppingBag size={24} strokeWidth={1.4} aria-hidden="true" /></header><div className="cu-receipt-intro"><span className="eyebrow">Your selection</span><h2>The bag.</h2><p>{cart.items.reduce((total, item) => total + item.quantity, 0)} items, chosen by you.</p></div>{productLoading ? <LoadingBlock label="Loading item details" /> : <div className="checkout-product-list">{cart.items.map((item) => { const product = productsById.get(item.productId); return product ? <div key={item.itemId} className="checkout-product-row"><ProductSummary product={product} /><span className="cu-quantity">× {item.quantity}</span></div> : <div key={item.itemId} className="checkout-product-row"><span>Product details unavailable</span><span className="cu-quantity">× {item.quantity}</span></div>; })}</div>}<div className="cu-receipt-total"><span>Estimated total</span><strong>{formatMoney(estimatedTotal, currency)}</strong></div><p className="cu-receipt-note">Final prices and total are confirmed when your order is created.</p><footer className="cu-bag-footer"><ShieldCheck size={20} aria-hidden="true" /><span>Review your bag.<br /><strong>We’ll handle the next step.</strong></span></footer></aside>
     </div>
   </section>;
 }
@@ -347,7 +365,20 @@ function PaymentPreparation({ order, token, onReviewOrder }: { order: Order; tok
     }
   }
 
-  return <section className="payment-page payment-preparing"><span className="eyebrow">Order {shortOrderId(order.id)}</span><h1>{phase === "ready" ? "Your payment is ready" : "Preparing secure payment"}</h1>{phase === "preparing" ? <><LoadingBlock label="Confirming your order and preparing payment" /><p>Do not refresh or place another order while this is in progress.</p></> : null}{phase === "ready" ? <><Alert tone="info" title="Continue securely">You will leave Pepekart for the payment provider. We verify the final payment result after you return.</Alert><Button disabled={redirecting} onClick={continueToProvider}>Continue to secure payment</Button><Button variant="ghost" onClick={onReviewOrder}>Review order instead</Button></> : null}{phase === "unavailable" ? <><Alert tone="warning" title="Payment is not ready yet">{error}</Alert><div className="button-row"><Button variant="secondary" onClick={() => { started.current = true; void prepare(); }}>Check payment again</Button><Button variant="ghost" onClick={() => navigate(`/payment/return?orderId=${encodeURIComponent(order.id)}`)}>View payment status</Button><Button variant="ghost" onClick={onReviewOrder}>View order</Button></div></> : null}</section>;
+  return <section className="customer-experience customer-editorial cu-payment-preparation">
+    <div className="cu-flow-topline"><span className="eyebrow">Pepekart checkout</span><CheckoutSteps current="payment" /></div>
+    <div className="cu-payment-split">
+      <div className="cu-provider-stage">
+        <div className="cu-payment-art" aria-hidden="true"><div className="cu-art-ring" /><div className="cu-art-card"><span>PEPEKART</span><CreditCard size={44} strokeWidth={1.15} /><div><span>THE NEXT STEP</span><ArrowUpRight size={23} /></div></div><span className="cu-art-lock"><LockKeyhole size={23} strokeWidth={1.5} /></span><span className="cu-art-dot" /></div>
+        <span className="eyebrow">02 / Secure payment</span>
+        <h1>{phase === "ready" ? <>One last step.<br /><em>Then it’s yours.</em></> : <>A moment,<br /><em>while we get ready.</em></>}</h1>
+        {phase === "preparing" ? <div className="cu-stage-message"><LoadingBlock label="Preparing your payment" /><p>Keep this page open. Your order has been created; please don’t place another one while we prepare payment.</p></div> : null}
+        {phase === "ready" ? <><p className="cu-stage-intro">Your order is created. Continue to your payment provider to complete checkout.</p><div className="cu-provider-destination"><span className="cu-provider-icon"><CreditCard size={22} aria-hidden="true" /></span><div><span>Continue with</span><strong>{payment?.provider || "Your payment provider"}</strong></div><ArrowUpRight size={20} aria-hidden="true" /></div><Button className="cu-stage-primary" disabled={redirecting} onClick={continueToProvider}>Continue to payment <ArrowRight size={18} aria-hidden="true" /></Button><Button variant="ghost" onClick={onReviewOrder}>Review order instead</Button><div className="cu-trust-line"><ShieldCheck size={16} aria-hidden="true" /><span>We verify the payment result when you return.</span></div></> : null}
+        {phase === "unavailable" ? <><Alert tone="warning" title="Payment is not ready yet">{error}</Alert><div className="cu-stage-actions"><Button variant="secondary" onClick={() => { started.current = true; void prepare(); }}><RefreshCw size={16} aria-hidden="true" />Check again</Button><Button variant="ghost" onClick={() => navigate(`/payment/return?orderId=${encodeURIComponent(order.id)}`)}>View payment status</Button><Button variant="ghost" onClick={onReviewOrder}>View order</Button></div></> : null}
+      </div>
+      <OrderReceipt order={order} label="Ready for the next step" />
+    </div>
+  </section>;
 }
 
 type VerificationState = { order: Order | null; payment: Payment | null; loading: boolean; error: string | null; stopped: boolean; attempts: number };
@@ -406,7 +437,24 @@ export function PaymentReturnPage() {
   if (state.loading && !state.order) return <LoadingBlock label="Verifying your payment" />;
   if (state.error && !state.order) return <PageError message={state.error} retry={() => setVerificationRun(run => run + 1)} />;
   const status = paymentMessage(state.payment, state.order);
-  return <section className="payment-page"><span className="eyebrow">Order {state.order ? shortOrderId(state.order.id) : ""}</span><h1>{status.title}</h1><Alert tone={status.tone} title={status.title}>{status.text}</Alert>{state.error ? <Alert tone="warning" title="Status update delayed">{state.error}</Alert> : null}{!paymentIsTerminal(state.payment, state.order) && !state.error ? <div className="payment-polling"><LoadingBlock label={state.stopped ? "Automatic checks paused" : "Checking the latest payment result"} />{state.stopped ? <p>We stopped automatic checks to avoid repeated requests. Refresh when you are ready.</p> : <p>Checking securely. Provider return details are never used as payment confirmation.</p>}</div> : null}<div className="order-status-grid"><div><span>Order status</span><StatusBadge value={state.order?.status} /></div><div><span>Payment status</span><StatusBadge value={state.payment?.status === "REQUIRES_CUSTOMER_ACTION" ? "AWAITING_CONFIRMATION" : state.payment?.status ?? "PREPARING"} /></div></div><div className="button-row"><Button variant="secondary" disabled={state.loading} onClick={() => setVerificationRun((run) => run + 1)}>Refresh status</Button>{state.order ? <Link className="button button-primary" to={`/orders/${state.order.id}`}>View order</Link> : null}{needsNewCheckout ? <Link className="button button-ghost" to="/cart">Return to cart</Link> : <Link className="button button-ghost" to="/orders">Order history</Link>}</div></section>;
+  const orderConfirmed = state.payment?.status === "SUCCESS" && state.order?.status === "CONFIRMED";
+  const resultTone = orderConfirmed ? "success" : status.tone === "success" ? "info" : status.tone;
+  return <section className={`customer-experience customer-editorial cu-payment-return cu-result-${resultTone}`}>
+    <div className="cu-flow-topline"><SafeLink className="cu-back-link" to="/orders"><ArrowLeft size={15} aria-hidden="true" /> Your orders</SafeLink><span className="eyebrow">Pepekart / Payment update</span></div>
+    <div className="cu-result-canvas">
+      <div className="cu-result-story">
+        <div className="cu-result-emblem" aria-hidden="true">{orderConfirmed ? <Check size={88} strokeWidth={1.15} /> : resultTone === "danger" || resultTone === "warning" ? <CircleAlert size={79} strokeWidth={1.15} /> : <Clock3 size={79} strokeWidth={1.15} />}<span className="cu-result-emblem-orbit" /></div>
+        <span className="eyebrow">{orderConfirmed ? "03 / Order confirmed" : "Your latest update"}</span>
+        <h1>{orderConfirmed ? <>A good choice.<br /><em>Now, all yours.</em></> : status.title}</h1>
+        <p className="cu-result-description">{orderConfirmed ? "Your payment is received and your order is confirmed. Here’s everything you need for what comes next." : status.text}</p>
+        {state.error ? <Alert tone="warning" title="Status update delayed">{state.error}</Alert> : null}
+        {!paymentIsTerminal(state.payment, state.order) && !state.error ? <div className="cu-result-polling"><LoadingBlock label={state.stopped ? "Automatic checks paused" : "Checking your payment result"} /><p>{state.stopped ? "Refresh whenever you’re ready to check again." : "We’re waiting for the payment provider’s confirmed result."}</p></div> : null}
+        <div className="cu-recorded-status"><div><span>Order</span><StatusBadge value={state.order?.status} /></div><div><span>Payment</span><StatusBadge value={state.payment?.status === "REQUIRES_CUSTOMER_ACTION" ? "AWAITING_CONFIRMATION" : state.payment?.status ?? "PREPARING"} /></div></div>
+      </div>
+      {state.order ? <OrderReceipt order={state.order} label={orderConfirmed ? "Your confirmed order" : "Your order receipt"} /> : null}
+    </div>
+    <nav className="cu-next-actions" aria-label="Next steps"><div><span className="eyebrow">What’s next?</span><h2>{orderConfirmed ? "Keep the good things going." : "Your next step."}</h2></div>{state.order ? <Link className="cu-next-action cu-next-action-primary" to={`/orders/${state.order.id}`}><Package size={22} strokeWidth={1.5} aria-hidden="true" /><span><strong>View your order</strong><small>Details &amp; latest status</small></span><ArrowUpRight size={22} aria-hidden="true" /></Link> : null}<Button className="cu-next-action" variant="secondary" disabled={state.loading} onClick={() => setVerificationRun((run) => run + 1)}><RefreshCw size={21} strokeWidth={1.5} aria-hidden="true" /><span><strong>Check again</strong><small>Refresh payment status</small></span><ArrowUpRight size={21} aria-hidden="true" /></Button>{needsNewCheckout ? <Link className="cu-next-action" to="/cart"><ShoppingBag size={22} strokeWidth={1.5} aria-hidden="true" /><span><strong>Review your bag</strong><small>Start a new checkout</small></span><ArrowUpRight size={21} aria-hidden="true" /></Link> : <Link className="cu-next-action" to="/orders"><ReceiptText size={22} strokeWidth={1.5} aria-hidden="true" /><span><strong>All your orders</strong><small>Your purchase collection</small></span><ArrowUpRight size={21} aria-hidden="true" /></Link>}</nav>
+  </section>;
 }
 
 const orderStatusOptions = ["", "PENDING", "CONFIRMED", "PAYMENT_FAILED", "PAYMENT_EXPIRED", "CANCELLATION_REQUESTED", "CANCELLED", "REFUND_REQUESTED", "REFUND_FAILED", "PARTIALLY_REFUNDED", "REFUNDED", "REFUND_REQUIRES_FULFILMENT_REVIEW"];
@@ -426,7 +474,17 @@ export function OrdersPage() {
   const orders = useInfinitePage(fetchPage);
   const { items, loading, error, reload } = orders;
   function setStatus(status: string) { const next = new URLSearchParams(params); if (status) next.set("status", status); else next.delete("status"); next.delete("page"); next.delete("size"); setParams(next); }
-  return <section className="orders-page"><div className="page-heading"><div><span className="eyebrow">Your purchases</span><h1>Orders</h1><p>Only the latest order and payment responses determine what is shown here.</p></div><SelectField label="Filter by status" value={selectedStatus} onChange={(event) => setStatus(event.target.value)}>{orderStatusOptions.map((value) => <option key={value} value={value}>{value ? value.replace(/_/g, " ") : "All statuses"}</option>)}</SelectField></div>{loading ? <LoadingBlock label="Loading your orders" /> : error ? <PageError message={error} retry={() => void reload()} /> : items.length ? <><div className="order-list">{items.map((order) => <article className="order-card" key={order.id}><div className="order-card-summary"><div><span className="eyebrow">Order {shortOrderId(order.id)} · {formatDate(order.createdAt)}</span><h2>{orderItemSummary(order)}</h2><span>{order.items.reduce((total, item) => total + item.quantity, 0)} item{order.items.reduce((total, item) => total + item.quantity, 0) === 1 ? "" : "s"}</span></div><strong className="order-card-total">{formatMoney(order.totalAmount, order.currency)}</strong></div><div className="order-card-actions"><StatusBadge value={order.status} /><Link className="button button-secondary" to={`/orders/${order.id}`}>View order</Link></div></article>)}</div><InfiniteListFooter {...orders} loadedCount={items.length} noun="orders" /></> : <EmptyState title={selectedStatus ? "No orders match this status" : "No orders yet"} message={selectedStatus ? "Try another order status or view all orders." : "When you complete checkout, your orders will appear here."} action={selectedStatus ? <Button onClick={() => setStatus("")}>Clear filter</Button> : <Link className="button button-primary" to="/">Browse products</Link>} />}</section>;
+  return <section className="orders-page customer-experience customer-editorial">
+    <header className="cu-account-masthead"><div><span className="eyebrow">Your account / Orders</span><h1>The things<br /><em>you’ve chosen.</em></h1></div><div className="cu-masthead-aside"><p>A little history of your good taste. <br />Every order and its latest details, right here.</p><Link className="cu-text-link" to="/">Find your next favourite <ArrowUpRight size={16} aria-hidden="true" /></Link></div></header>
+    <div className="cu-orders-workspace">
+      <aside className="cu-account-menu"><span className="eyebrow">Your space</span><nav aria-label="Your account"><Link className="is-current" aria-current="page" to="/orders"><ShoppingBag size={18} aria-hidden="true" />Orders<ChevronRight size={16} aria-hidden="true" /></Link><Link to="/account"><UserRound size={18} aria-hidden="true" />Account &amp; settings<ChevronRight size={16} aria-hidden="true" /></Link></nav><div className="cu-menu-note"><Sparkles size={23} strokeWidth={1.25} aria-hidden="true" /><p>Good finds.<br /><strong>All in one place.</strong></p></div></aside>
+      <div className="cu-orders-content">
+        <div className="cu-orders-controls"><div className="cu-status-tabs" aria-label="Order status filters">{[{ value: "", label: "All orders" }, { value: "CONFIRMED", label: "Confirmed" }, { value: "PENDING", label: "Pending" }].map((filter) => <button type="button" key={filter.value} aria-pressed={selectedStatus === filter.value} className={selectedStatus === filter.value ? "is-active" : ""} onClick={() => setStatus(filter.value)}>{filter.label}</button>)}</div><div className="cu-status-select"><SlidersHorizontal size={17} aria-hidden="true" /><SelectField label="Status" value={selectedStatus} onChange={(event) => setStatus(event.target.value)}>{orderStatusOptions.map((value) => <option key={value} value={value}>{value ? value.replace(/_/g, " ") : "All statuses"}</option>)}</SelectField></div></div>
+        <div className="cu-orders-count"><span>{loading ? "Finding your orders" : `${orders.totalElements} order${orders.totalElements === 1 ? "" : "s"}`}</span><span>Current recorded status</span></div>
+        {loading ? <LoadingBlock label="Loading your orders" /> : error ? <PageError message={error} retry={() => void reload()} /> : items.length ? <><div className="cu-purchase-list">{items.map((order, index) => <article className="cu-purchase-row" key={order.id}><div className={`cu-purchase-cover cu-purchase-cover-${index % 3}`} aria-hidden="true"><Package size={41} strokeWidth={1.15} /><span>PEPEKART</span></div><div className="cu-purchase-description"><div className="cu-purchase-meta"><span>{shortOrderId(order.id)}</span><time dateTime={order.createdAt}>{formatDate(order.createdAt)}</time></div><h2>{orderItemSummary(order)}</h2><p>{order.items.reduce((total, item) => total + item.quantity, 0)} item{order.items.reduce((total, item) => total + item.quantity, 0) === 1 ? "" : "s"} · <span>{formatMoney(order.totalAmount, order.currency)}</span></p><StatusBadge value={order.status} /></div><Link className="cu-order-open" to={`/orders/${order.id}`} aria-label={`View order ${shortOrderId(order.id)}`}><ArrowUpRight size={23} strokeWidth={1.4} aria-hidden="true" /><span>View order</span></Link></article>)}</div><InfiniteListFooter {...orders} loadedCount={items.length} noun="orders" /></> : <EmptyState title={selectedStatus ? "No orders match this status" : "The beginning of something good."} message={selectedStatus ? "Try another order status or view all orders." : "Your orders will appear here once you begin checkout. Find your first favourite."} action={selectedStatus ? <Button onClick={() => setStatus("")}>Clear filter</Button> : <Link className="button button-primary" to="/">Explore Pepekart <ArrowRight size={17} aria-hidden="true" /></Link>} />}
+      </div>
+    </div>
+  </section>;
 }
 
 type OrderDetailData = { order: Order; payment: Payment | null };
@@ -471,39 +529,18 @@ export function OrderDetailPage() {
   const lifecycleNotice = ["CANCELLATION_REQUESTED", "REFUND_REQUESTED", "REFUND_FAILED", "REFUND_REQUIRES_FULFILMENT_REVIEW", "PAYMENT_EXPIRED"].includes(order.status) || Boolean(order.cancellationReasonCode)
     ? cancellationMessage(order)
     : null;
-  return <section className="order-detail-page">
-    <div className="page-heading">
-      <div><SafeLink to="/orders">← Back to orders</SafeLink><span className="eyebrow">{shortOrderId(order.id)} · {formatDate(order.createdAt)}</span><h1>Order details</h1></div>
-      <StatusBadge value={order.status} />
-    </div>
+  return <section className="order-detail-page customer-experience customer-editorial">
+    <header className="cu-order-detail-masthead"><div><SafeLink className="cu-back-link" to="/orders"><ArrowLeft size={15} aria-hidden="true" /> Back to your orders</SafeLink><span className="eyebrow">Your purchase, in detail</span><h1>Order <em>{shortOrderId(order.id)}.</em></h1><p>Placed on {formatDate(order.createdAt)}</p></div><span className="cu-order-detail-mark" aria-hidden="true"><Package size={65} strokeWidth={1} /></span></header>
     {actionError ? <Alert tone="danger" title="Cancellation needs attention">{actionError}</Alert> : null}
     {actionNotice ? <Alert tone="info" title="Cancellation update">{actionNotice}</Alert> : null}
     {lifecycleNotice && !actionNotice ? <Alert tone={order.status === "REFUND_REQUIRES_FULFILMENT_REVIEW" ? "warning" : "info"} title={order.status === "REFUND_REQUESTED" ? "Refund in progress" : "Order update"}>{lifecycleNotice}</Alert> : null}
-    <div className="order-detail-layout">
-      <div className="order-detail-main">
-        <section className="detail-card">
-          <h2>Items</h2>
-          <div className="order-item-list">
-            {order.items.map((item, index) => <div key={item.id ?? `${item.productId}-${index}`} className="order-item">
-              <div><strong>{item.productName ?? "Product"}</strong><span>Quantity {item.quantity}</span></div>
-              <div><span>{formatMoney(item.unitPrice, order.currency)} each</span><strong>{formatMoney(item.lineTotal ?? item.unitPrice * item.quantity, order.currency)}</strong></div>
-            </div>)}
-          </div>
-          <div className="detail-total"><span>Order total</span><strong>{formatMoney(order.totalAmount, order.currency)}</strong></div>
-        </section>
-        <section className="detail-card">
-          <h2>Payment</h2>
-          <StatusBadge value={data?.payment?.status ?? "PREPARING"} />
-          <p>{paymentStatus.text}</p>
-          <Link className="link" to={`/payment/return?orderId=${encodeURIComponent(order.id)}`}>Check payment status</Link>
-        </section>
-        {shipping ? <section className="detail-card"><h2>Shipping address</h2><address>{shipping.recipientName}<br />{shipping.line1}<br />{shipping.line2 ? <>{shipping.line2}<br /></> : null}{shipping.city}, {shipping.state} {shipping.postalCode}<br />{shipping.country}<br />{shipping.phone}</address><p className="muted">This is the address snapshot for this order.</p></section> : <section className="detail-card"><h2>Shipping address</h2><p>The address snapshot is not available in this order response.</p></section>}
+    <div className="cu-order-detail-grid">
+      <OrderReceipt order={order} />
+      <div className="cu-order-story">
+        <section className="cu-status-story"><div className="cu-story-heading"><span className="eyebrow">The order story</span><h2>Here’s where things stand.</h2></div><div className="cu-status-fact"><span className="cu-fact-icon"><ReceiptText size={20} aria-hidden="true" /></span><div><span className="eyebrow">Order created</span><strong>{formatDate(order.createdAt)}</strong><p>{order.items.reduce((total, item) => total + item.quantity, 0)} items in your selection.</p></div></div><div className="cu-status-fact"><span className="cu-fact-icon"><Package size={20} aria-hidden="true" /></span><div><span className="eyebrow">Current order status</span><StatusBadge value={order.status} /><p>{order.status === "CONFIRMED" ? "Your order is confirmed. Any new updates will appear here." : "This is the latest status recorded for your order."}</p></div></div><div className="cu-status-fact"><span className="cu-fact-icon"><CreditCard size={20} aria-hidden="true" /></span><div><span className="eyebrow">Payment update</span><StatusBadge value={data?.payment?.status ?? "PREPARING"} /><p>{paymentStatus.text}</p><Link className="cu-text-link" to={`/payment/return?orderId=${encodeURIComponent(order.id)}`}>Review payment status <ArrowUpRight size={16} aria-hidden="true" /></Link></div></div></section>
+        <section className="cu-order-address"><div><MapPin size={21} strokeWidth={1.5} aria-hidden="true" /><span className="eyebrow">Delivery details</span></div>{shipping ? <address><strong>{shipping.recipientName}</strong><span>{shipping.line1}{shipping.line2 ? <>, {shipping.line2}</> : null}</span><span>{shipping.city}, {shipping.state} {shipping.postalCode}</span><span>{shipping.country} · {shipping.phone}</span></address> : <p>The delivery address is not available for this order.</p>}</section>
+        <section className="cu-order-management"><div><span className="eyebrow">Need to make a change?</span><h2>Manage this order.</h2></div>{order.cancelAllowed ? <>{confirmCancellation ? <div className="cu-cancel-confirmation"><Alert tone="warning" title="Cancel this order?">This sends a cancellation request. For a paid order, the platform requests a refund and records the final outcome asynchronously.</Alert><div className="button-row"><Button variant="danger" loading={cancelling} onClick={() => void cancelOrder()}>Yes, request cancellation</Button><Button variant="ghost" disabled={cancelling} onClick={() => setConfirmCancellation(false)}>Keep order</Button></div></div> : <Button variant="secondary" onClick={() => setConfirmCancellation(true)}>Request cancellation</Button>}</> : <p>{cancellationMessage(order)}</p>}<Button variant="ghost" onClick={() => void reload()}><RefreshCw size={16} aria-hidden="true" />Refresh order</Button></section>
       </div>
-      <aside className="summary-card">
-        <h2>Order actions</h2>
-        {order.cancelAllowed ? <>{confirmCancellation ? <><Alert tone="warning" title="Cancel this order?">This sends a cancellation request. For a paid order, the platform requests a refund and records the final outcome asynchronously.</Alert><Button variant="danger" loading={cancelling} onClick={() => void cancelOrder()}>Yes, request cancellation</Button><Button variant="ghost" disabled={cancelling} onClick={() => setConfirmCancellation(false)}>Keep order</Button></> : <Button variant="secondary" onClick={() => setConfirmCancellation(true)}>Cancel order</Button>}</> : <p>{cancellationMessage(order)}</p>}
-        <Button variant="ghost" onClick={() => void reload()}>Refresh order</Button>
-      </aside>
     </div>
   </section>;
 }
@@ -584,78 +621,19 @@ export function AccountPage() {
   const roles = user?.roles?.length ? user.roles : user?.role ? [user.role] : [];
   const emailUnchanged = newEmail.trim().toLowerCase() === user?.email.toLowerCase();
 
-  return <section className="account-page account-experience">
-    <header className="account-hero-card">
-      <div className="account-hero-profile">
-        <div className="account-avatar-large" aria-hidden="true">{user?.name.slice(0, 1).toUpperCase() || "P"}</div>
-        <div>
-          <span className="eyebrow">Your Pepekart space</span>
-          <h1>Good to see you, <em>{firstName(user?.name)}.</em></h1>
-          <p>{user?.email || "Your account"} <span aria-hidden="true">·</span> Your account details and sign-in security, in one calm place.</p>
-          <div className="account-hero-tags"><StatusBadge value={user?.status} />{roles.map((role) => <span className="account-role-chip" key={role}>{role.toLowerCase()}</span>)}</div>
-        </div>
-      </div>
-      <aside className="account-protection-card">
-        <span className="account-protection-icon"><ShieldCheck size={21} aria-hidden="true" /></span>
-        <div><strong>Protected browser session</strong><p>Your refresh credential stays in an HttpOnly cookie and is never exposed to this page.</p></div>
-      </aside>
-    </header>
-
+  return <section className="account-page account-experience customer-experience customer-editorial">
+    <header className="cu-profile-masthead"><span className="cu-profile-avatar" aria-hidden="true">{user?.name.slice(0, 1).toUpperCase() || "P"}<Sparkles size={20} strokeWidth={1.3} /></span><div><span className="eyebrow">Your account / The personal details</span><h1>Hello, <em>{firstName(user?.name)}.</em></h1><p>A space that’s entirely yours.</p></div><div className="cu-profile-membership"><span className="eyebrow">Your Pepekart identity</span><strong>{user?.email || "Your account"}</strong><div><StatusBadge value={user?.status} />{roles.map((role) => <span className="cu-role-label" key={role}>{role.toLowerCase()}</span>)}</div></div></header>
+    <div className="cu-settings-overview"><a href="#account-profile"><UserRound size={24} strokeWidth={1.4} aria-hidden="true" /><span><small>The essentials</small><strong>Personal details</strong></span><ArrowUpRight size={21} aria-hidden="true" /></a><a href="#account-security"><ShieldCheck size={25} strokeWidth={1.4} aria-hidden="true" /><span><small>Stay in control</small><strong>Password &amp; security</strong></span><ArrowUpRight size={21} aria-hidden="true" /></a><a href="#account-sessions"><Laptop size={25} strokeWidth={1.4} aria-hidden="true" /><span><small>{sessionsLoading || sessionsError ? "Manage access" : `${sessions?.length ?? 0} active browser sessions`}</small><strong>Your devices</strong></span><ArrowUpRight size={21} aria-hidden="true" /></a></div>
     {accountMessage ? <Alert tone="danger" title="Account action needs attention">{accountMessage}</Alert> : null}
-
-    <div className="account-dashboard">
-      <aside className="account-rail" aria-label="Account settings">
-        <div className="account-rail-heading"><span>Settings</span><small>Choose what you want to manage</small></div>
-        <nav className="account-section-nav">
-          <a href="#account-profile"><UserRound size={16} aria-hidden="true" />Profile</a>
-          <a href="#account-email"><Mail size={16} aria-hidden="true" />Email address</a>
-          <a href="#account-security"><KeyRound size={16} aria-hidden="true" />Password &amp; security</a>
-          <a href="#account-sessions"><Laptop size={16} aria-hidden="true" />Your devices</a>
-        </nav>
-        <div className="account-rail-note"><Clock3 size={16} aria-hidden="true" /><p>Inactive browser sessions end automatically. We will always warn you before your active session expires.</p></div>
-      </aside>
-
-      <main className="account-settings-stack">
-        <section className="account-setting-card" id="account-profile">
-          <div className="account-card-heading"><span className="account-card-icon"><UserRound size={18} aria-hidden="true" /></span><div><h2>Profile</h2><p>Keep the name shown across Pepekart up to date.</p></div></div>
-          <form className="form-stack account-form" onSubmit={updateProfile}>
-            <Field label="Full name" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} required />
-            <div className="account-readonly-field"><span>Email address</span><strong>{user?.email || "—"}</strong><small>Email changes use a separate verified flow.</small></div>
-            {profileMessage ? <Alert tone={profileMessage.startsWith("Your profile") ? "success" : "danger"}>{profileMessage}</Alert> : null}
-            <div className="account-form-actions"><Button type="submit" loading={busy === "profile"}>Save changes</Button></div>
-          </form>
-        </section>
-
-        <section className="account-setting-card" id="account-email">
-          <div className="account-card-heading"><span className="account-card-icon account-card-icon-sun"><Mail size={18} aria-hidden="true" /></span><div><h2>Email address</h2><p>Change it safely with a one-time confirmation link sent to the new address.</p></div></div>
-          <form className="form-stack account-form" onSubmit={requestEmailChange}>
-            <Field label="New email address" type="email" autoComplete="email" value={newEmail} onChange={(event) => setNewEmail(event.target.value)} hint="You will remain signed in until the email link is confirmed." required />
-            {emailMessage ? <Alert tone={emailMessage.startsWith("Check") ? "success" : "danger"}>{emailMessage}</Alert> : null}
-            <div className="account-form-actions"><Button type="submit" loading={busy === "email"} disabled={!newEmail.trim() || emailUnchanged}>Send confirmation link</Button></div>
-          </form>
-        </section>
-
-        <section className="account-setting-card" id="account-security">
-          <div className="account-card-heading"><span className="account-card-icon account-card-icon-violet"><KeyRound size={18} aria-hidden="true" /></span><div><h2>Password &amp; security</h2><p>Use a long, unique password. Updating it signs out every device for your protection.</p></div></div>
-          <form className="form-stack account-form" onSubmit={changePassword}>
-            <Field label="Current password" type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required />
-            <div className="form-grid"><Field label="New password" type="password" autoComplete="new-password" minLength={12} hint="At least 12 characters." value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required /><Field label="Confirm new password" type="password" autoComplete="new-password" minLength={12} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required /></div>
-            {passwordMessage ? <Alert tone="danger">{passwordMessage}</Alert> : null}
-            <div className="account-form-actions"><Button type="submit" loading={busy === "password"}>Update password &amp; sign out</Button></div>
-          </form>
-        </section>
-
-        <section className="account-setting-card" id="account-sessions">
-          <div className="account-card-heading account-card-heading-split"><div className="account-card-heading"><span className="account-card-icon account-card-icon-blue"><Laptop size={18} aria-hidden="true" /></span><div><h2>Your devices</h2><p>Review every active browser session and remove anything you do not recognise.</p></div></div><Button variant="ghost" onClick={() => void reloadSessions()} disabled={sessionsLoading}><RefreshCw size={15} aria-hidden="true" />Refresh</Button></div>
-          {sessionsLoading ? <LoadingBlock label="Loading your active devices" /> : sessionsError ? <PageError message={sessionsError} retry={() => void reloadSessions()} /> : sessions?.length ? <div className="account-session-list">{sessions.map((session) => <article className="account-session" key={session.id}><span className="account-session-icon"><Laptop size={18} aria-hidden="true" /></span><div className="account-session-details"><strong>{sessionName(session)}</strong><div className="account-session-meta"><span>Last active {formatDate(session.lastUsedAt ?? session.createdAt)}</span><span>Started {formatDate(session.createdAt)}</span>{session.ipAddress ? <span>Network {session.ipAddress}</span> : null}</div>{session.userAgent && session.userAgent !== sessionName(session) ? <details><summary>Browser details</summary><p>{session.userAgent}</p></details> : null}</div><Button variant="secondary" onClick={() => setSessionToRevoke(session)} disabled={busy === "session"}>Revoke</Button></article>)}</div> : <EmptyState title="No active devices" message="No active browser sessions were returned. Sign in again if you expected to see this device." />}
-          {sessionToRevoke ? <div className="confirm-panel account-revoke-panel"><div><strong>Remove this device?</strong><p>{sessionName(sessionToRevoke)} will need to sign in again.</p></div><div className="action-row"><Button variant="danger" loading={busy === "session"} onClick={() => void revokeSession()}>Revoke device</Button><Button variant="ghost" disabled={busy === "session"} onClick={() => setSessionToRevoke(null)}>Cancel</Button></div></div> : null}
-        </section>
-
-        <section className="account-setting-card account-delete-card">
-          <div className="account-card-heading"><span className="account-card-icon account-card-icon-danger"><Trash2 size={18} aria-hidden="true" /></span><div><h2>Close account</h2><p>This permanently disables your Pepekart profile and revokes every browser session.</p></div></div>
-          <div className="account-delete-content"><Field label='Type DELETE to confirm' value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} hint="This cannot be undone from this screen." /><Button variant="danger" loading={busy === "delete"} disabled={deleteConfirmation !== "DELETE"} onClick={() => void deleteAccount()}>Delete account</Button></div>
-        </section>
-      </main>
+    <div className="cu-settings-hub">
+      <aside className="cu-account-menu"><span className="eyebrow">Account settings</span><nav aria-label="Account settings"><a href="#account-profile"><UserRound size={17} aria-hidden="true" />Personal details</a><a href="#account-email"><Mail size={17} aria-hidden="true" />Email address</a><a href="#account-security"><KeyRound size={17} aria-hidden="true" />Security</a><a href="#account-sessions"><Laptop size={17} aria-hidden="true" />Devices &amp; sessions</a><Link to="/orders"><ShoppingBag size={17} aria-hidden="true" />Your orders<ArrowUpRight size={16} aria-hidden="true" /></Link></nav><div className="cu-menu-note"><LockKeyhole size={23} strokeWidth={1.25} aria-hidden="true" /><p>Your details.<br /><strong>Your control.</strong></p></div></aside>
+      <div className="cu-settings-content">
+        <section className="cu-setting-section" id="account-profile"><div className="cu-setting-label"><span className="cu-section-number">01</span><h2>The essentials.</h2><p>The name you go by and the address we use to reach you.</p></div><div className="cu-setting-body"><form className="form-stack" onSubmit={updateProfile}><Field label="Full name" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} required />{profileMessage ? <Alert tone={profileMessage.startsWith("Your profile") ? "success" : "danger"}>{profileMessage}</Alert> : null}<Button type="submit" loading={busy === "profile"}>Save name <Check size={16} aria-hidden="true" /></Button></form><div className="cu-identity-readout"><Mail size={19} strokeWidth={1.4} aria-hidden="true" /><div><span>Your email address</span><strong>{user?.email || "—"}</strong><a href="#account-email">Change email <ArrowUpRight size={13} aria-hidden="true" /></a></div></div></div></section>
+        <section className="cu-setting-section" id="account-email"><div className="cu-setting-label"><span className="cu-section-number">02</span><h2>A new address?</h2><p>We’ll send a one-time confirmation link to your new email.</p></div><form className="form-stack cu-setting-body" onSubmit={requestEmailChange}><Field label="New email address" type="email" autoComplete="email" value={newEmail} onChange={(event) => setNewEmail(event.target.value)} hint="You will remain signed in until the email link is confirmed." required />{emailMessage ? <Alert tone={emailMessage.startsWith("Check") ? "success" : "danger"}>{emailMessage}</Alert> : null}<Button type="submit" loading={busy === "email"} disabled={!newEmail.trim() || emailUnchanged}>Send confirmation <ArrowRight size={16} aria-hidden="true" /></Button></form></section>
+        <section className="cu-setting-section cu-security-section" id="account-security"><div className="cu-setting-label"><span className="cu-section-number">03</span><h2>Keep it yours.</h2><p>A long, unique password makes a difference. Changing it signs out every device.</p><KeyRound size={40} strokeWidth={1.1} aria-hidden="true" /></div><form className="form-stack cu-setting-body" onSubmit={changePassword}><Field label="Current password" type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /><div className="form-grid"><Field label="New password" type="password" autoComplete="new-password" minLength={12} hint="At least 12 characters." value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required /><Field label="Confirm new password" type="password" autoComplete="new-password" minLength={12} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required /></div>{passwordMessage ? <Alert tone="danger">{passwordMessage}</Alert> : null}<Button type="submit" loading={busy === "password"}>Update password &amp; sign out <ArrowRight size={16} aria-hidden="true" /></Button></form></section>
+        <section className="cu-devices-section" id="account-sessions"><header><div><span className="eyebrow">04 / Devices &amp; sessions</span><h2>Know who’s signed in.</h2><p>Review active browsers. Remove a device you don’t recognise.</p></div><Button variant="ghost" onClick={() => void reloadSessions()} disabled={sessionsLoading}><RefreshCw size={15} aria-hidden="true" />Refresh</Button></header>{sessionsLoading ? <LoadingBlock label="Loading your active devices" /> : sessionsError ? <PageError message={sessionsError} retry={() => void reloadSessions()} /> : sessions?.length ? <div className="cu-device-list">{sessions.map((session) => <article className="cu-device-row" key={session.id}><span className="cu-device-icon"><Laptop size={28} strokeWidth={1.3} aria-hidden="true" /></span><div><strong>{sessionName(session)}</strong><dl><div><dt>Last active</dt><dd>{formatDate(session.lastUsedAt ?? session.createdAt)}</dd></div><div><dt>Started</dt><dd>{formatDate(session.createdAt)}</dd></div>{session.ipAddress ? <div><dt>Network</dt><dd>{session.ipAddress}</dd></div> : null}</dl>{session.userAgent && session.userAgent !== sessionName(session) ? <details><summary>Browser details</summary><p>{session.userAgent}</p></details> : null}</div><Button variant="secondary" onClick={() => setSessionToRevoke(session)} disabled={busy === "session"}>Revoke</Button></article>)}</div> : <EmptyState title="No active devices" message="No active browser sessions were returned. Sign in again if you expected to see this device." />}{sessionToRevoke ? <div className="confirm-panel cu-revoke-confirmation"><div><strong>Remove this device?</strong><p>{sessionName(sessionToRevoke)} will need to sign in again.</p></div><div className="button-row"><Button variant="danger" loading={busy === "session"} onClick={() => void revokeSession()}>Revoke device</Button><Button variant="ghost" disabled={busy === "session"} onClick={() => setSessionToRevoke(null)}>Cancel</Button></div></div> : null}</section>
+        <details className="cu-account-close"><summary><Trash2 size={18} strokeWidth={1.4} aria-hidden="true" /><span>Close your account</span><ChevronRight size={18} aria-hidden="true" /></summary><div><h2>Before you go.</h2><p>This permanently disables your Pepekart profile and revokes every browser session.</p><div className="cu-close-controls"><Field label='Type DELETE to confirm' value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} hint="This cannot be undone from this screen." /><Button variant="danger" loading={busy === "delete"} disabled={deleteConfirmation !== "DELETE"} onClick={() => void deleteAccount()}>Delete account</Button></div></div></details>
+      </div>
     </div>
   </section>;
 }

@@ -446,6 +446,7 @@ public class OrderServiceImpl implements OrderService {
                     event.getPaymentId(), order.getTotalAmount(), order.getItems().stream()
                     .map(item -> new OrderItemEvent(item.getProductId(), item.getQuantity(), item.getPrice(), item.getPrice().multiply(java.math.BigDecimal.valueOf(item.getQuantity())))).toList(),
                     event.getCorrelationId(), event.getTraceId());
+            completedEvent.setCurrency(order.getCurrency());
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override public void afterCommit() { orderEventPublisher.publishOrderCompleted(completedEvent); }
             });

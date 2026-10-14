@@ -4,6 +4,7 @@ This folder documents the production design and implemented baseline for the rep
 
 | Document | Purpose |
 | --- | --- |
+| [Visual map](visual-map.md) | Component connections, storage, outbox, Kafka, and Redis flows. |
 | [High-level design](hld.md) | Service boundaries, responsibilities, and component architecture. |
 | [Low-level design](lld.md) | Modules, workflows, token lifecycle, and implementation rules. |
 | [Database schema](schema.md) | PostgreSQL tables, relationships, indexes, and migration order. |

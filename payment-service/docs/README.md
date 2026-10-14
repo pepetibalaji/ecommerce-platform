@@ -4,6 +4,7 @@ Payment Service owns trusted payment preparation, durable checkout/refund work, 
 
 | Document | Purpose |
 | --- | --- |
+| [Visual map](visual-map.md) | Payment components, provider webhooks, outbox, and Kafka outcomes. |
 | [API and frontend contract](api.md) | Owned endpoints, stable errors, bounded pagination and browser polling. |
 | [Confirmation and recovery](confirmation-recovery.md) | Webhook-only confirmation and delayed-outcome recovery. |
 | [Data model](schema.md) | UTC storage, uniqueness and V4-V6 migration prerequisites. |

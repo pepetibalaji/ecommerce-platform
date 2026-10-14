@@ -4,6 +4,7 @@ Gateway Service is the reactive edge entry point. It owns route dispatch, gatewa
 
 | Document | Purpose |
 | --- | --- |
+| [Visual map](visual-map.md) | Security, routing, Redis, and external configuration connections. |
 | [API and contracts](api.md) | Edge authorization, public paths, CORS, fallback, and forwarding contract. |
 | [High-level design](hld.md) | Boundary, downstream routing model, and dependencies. |
 | [Low-level design](lld.md) | Security matcher order, JWT roles, rate-limit keys, error handlers. |

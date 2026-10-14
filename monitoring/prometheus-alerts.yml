@@ -116,7 +116,7 @@ groups:
           description: "Notification Service has permanently failed at least one delivery in the last five minutes. Inspect failed notifications and provider health."
 
       - alert: NotificationConsumerLag
-        expr: sum(kafka_consumergroup_lag{consumergroup="notification-service",topic=~"order-created|payment-success|payment-failed|order-cancelled|payment-refund-completed|order-shipped|order-delivered|low-inventory|seller-order-paid|user-contact-updated"}) > 100
+        expr: sum(kafka_consumergroup_lag{consumergroup="notification-service",topic=~"order-completed|payment-failed|order-cancelled|payment-refund-completed|order-shipped|order-delivered|low-inventory|seller-order-paid|user-contact-updated"}) > 100
         for: 10m
         labels:
           severity: warning

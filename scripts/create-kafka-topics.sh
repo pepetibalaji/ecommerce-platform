@@ -13,6 +13,7 @@ echo "Kafka broker is online. Creating topics..."
 
 topics="
 order-created:3
+order-completed:3
 payment-success:3
 payment-failed:3
 payment-expired:3
@@ -28,6 +29,7 @@ order-cancelled:3
 order-shipped:3
 order-delivered:3
 low-inventory:3
+out-of-stock:3
 seller-order-paid:3
 user-contact-updated:3
 auth.user-verification-requested.v1:3

@@ -6,6 +6,7 @@ All catalogue mutations persist an immutable lifecycle snapshot in a Mongo trans
 
 | Document | Purpose |
 | --- | --- |
+| [Visual map](visual-map.md) | Component connections, MongoDB outbox, Kafka, and snapshot gRPC flows. |
 | [API and contracts](api.md) | Public, seller and admin routes; payloads, search/ranking, filters, stable paging and errors. |
 | [Lifecycle and operations](lifecycle-operations.md) | Transaction requirements, deployment, migration, delivery/recovery, metrics and acceptance checks. |
 | [High-level design](hld.md) | Service boundaries, dependencies and major flows. |

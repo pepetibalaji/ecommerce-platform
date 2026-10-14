@@ -521,6 +521,7 @@ class OrderServiceTest {
         assertThat(completed.getValue().getUserId()).isEqualTo(userId);
         assertThat(completed.getValue().getPaymentId()).isEqualTo(paymentId);
         assertThat(completed.getValue().getTotalAmount()).isEqualByComparingTo("200.00");
+        assertThat(completed.getValue().getCurrency()).isEqualTo("INR");
         assertThat(completed.getValue().getCorrelationId()).isEqualTo("correlation-1");
         assertThat(completed.getValue().getTraceId()).isEqualTo("trace-1");
         assertThat(completed.getValue().getItems()).singleElement().satisfies(item -> {

@@ -2,7 +2,7 @@
 
 ## Kafka inputs
 
-Consumer group defaults to `notification-service`. Business topics: `order-created`, `payment-success`, `payment-failed`, `order-cancelled`, `payment-refund-completed`, `order-shipped`, `order-delivered`, `low-inventory`, and `seller-order-paid`. It also consumes `user-contact-updated` plus Auth verification/password-reset/email-change request topics.
+Consumer group defaults to `notification-service`. Business topics: `order-completed`, `payment-failed`, `order-cancelled`, `payment-refund-completed`, `order-shipped`, `order-delivered`, `low-inventory`, and `seller-order-paid`. Order confirmation email is created only from `order-completed`, after Order Service confirms payment. It also consumes `user-contact-updated` plus Auth verification/password-reset/email-change request topics.
 
 Business payloads must have an `eventId`. Most require `userId`; low-inventory uses `sellerUserId` or `adminUserId`. Notification Service currently produces no Kafka events.
 
