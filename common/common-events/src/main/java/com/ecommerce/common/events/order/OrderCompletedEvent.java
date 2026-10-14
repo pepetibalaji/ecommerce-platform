@@ -13,6 +13,7 @@ public class OrderCompletedEvent extends AbstractDomainEvent {
   private UUID userId;
   private UUID paymentId;
   private BigDecimal totalAmount;
+  private String currency;
   private List<OrderItemEvent> items = List.of();
 
   public OrderCompletedEvent() {
@@ -70,6 +71,8 @@ public class OrderCompletedEvent extends AbstractDomainEvent {
   public void setTotalAmount(BigDecimal totalAmount) {
     this.totalAmount = totalAmount;
   }
+  public String getCurrency() { return currency; }
+  public void setCurrency(String currency) { this.currency = currency; }
   public List<OrderItemEvent> getItems() { return items; }
   public void setItems(List<OrderItemEvent> items) { this.items = items == null ? List.of() : List.copyOf(items); }
 }

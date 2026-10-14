@@ -1,11 +1,12 @@
 import { useEffect, useRef, type FormEvent, type MouseEvent } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { ArrowUpRight, ChevronDown, ClipboardList, LayoutDashboard, LogOut, Search, ShoppingBag, Store, UserRound } from "lucide-react";
+import { ArrowUpRight, ChevronDown, ClipboardList, House, LayoutDashboard, LockKeyhole, LogOut, NotebookPen, Search, Shirt, ShoppingBag, Sparkles, Store, UserRound } from "lucide-react";
 import { useAuth } from "../auth/AuthProvider";
 import { useCart } from "../cart/CartProvider";
 import "../styles/storefront-shell.css";
 
 const storefrontCategories = ["Apparel", "Home", "Accessories", "Stationery"] as const;
+const categoryIcons = { Apparel: Shirt, Home: House, Accessories: ShoppingBag, Stationery: NotebookPen };
 
 export function StorefrontLayout() {
   const { user, isAuthenticated, hasAnyRole, logout } = useAuth();
@@ -16,6 +17,7 @@ export function StorefrontLayout() {
   const searchParams = new URLSearchParams(location.search);
   const selectedCategory = location.pathname === "/" ? searchParams.get("category") : null;
   const itemCount = cart?.items.reduce((total, item) => total + item.quantity, 0) ?? 0;
+  const checkoutFlow = location.pathname === "/checkout" || location.pathname === "/payment/return";
 
   useEffect(() => {
     const pathChanged = previousPathname.current !== location.pathname;
@@ -54,21 +56,20 @@ export function StorefrontLayout() {
   }
 
   const categoryLinks = <>
-    <Link className={location.pathname === "/" && !selectedCategory ? "is-current" : undefined} to="/#catalogue">Shop all</Link>
-    {storefrontCategories.map(category => <Link key={category} className={selectedCategory === category ? "is-current" : undefined} to={`/?category=${encodeURIComponent(category)}#catalogue`}>{category}</Link>)}
+    <Link className={location.pathname === "/" && !selectedCategory ? "is-current" : undefined} to="/#catalogue"><Sparkles size={14} aria-hidden="true" />Shop all</Link>
+    {storefrontCategories.map(category => { const Icon = categoryIcons[category]; return <Link key={category} className={selectedCategory === category ? "is-current" : undefined} to={`/?category=${encodeURIComponent(category)}#catalogue`}><Icon size={14} aria-hidden="true" />{category}</Link>; })}
   </>;
 
-  return <div className="app-shell storefront-v2">
+  return <div className={`app-shell storefront-v2 ${checkoutFlow ? "sf-checkout-shell" : ""}`}>
     <a className="sf-skip-link" href="#store-content">Skip to content</a>
-    <div className="sf-announcement"><span>Everyday finds. A little more you.</span><Link to="/#catalogue">Explore the collection <ArrowUpRight size={13} aria-hidden="true" /></Link></div>
+    <div className="sf-announcement"><span><Sparkles size={13} aria-hidden="true" />A little discovery. A better everyday.</span><Link to={isAuthenticated ? "/orders" : "/register"}>{isAuthenticated ? "Your orders, all together" : "Make yourself at home"}<ArrowUpRight size={13} aria-hidden="true" /></Link></div>
     <header className="sf-header">
       <div className="sf-header-inner">
-        <Link className="sf-wordmark" to="/" aria-label="Pepekart home">pepekart<span aria-hidden="true">.</span></Link>
-        <nav className="sf-desktop-nav" aria-label="Main navigation">{categoryLinks}</nav>
-        <form className="sf-search" role="search" onSubmit={searchCatalogue}>
+        <div className="sf-brand-lockup"><Link className="sf-wordmark" to="/" aria-label="Pepekart home"><i className="sf-brand-mark" aria-hidden="true"><ShoppingBag size={23} strokeWidth={1.6} /></i>pepekart<span aria-hidden="true">.</span></Link><span>THE EVERYDAY, EXTRAORDINARY.</span></div>
+        {checkoutFlow ? <div className="sf-checkout-label"><LockKeyhole size={16} aria-hidden="true" />YOUR CHECKOUT</div> : <form className="sf-search" role="search" onSubmit={searchCatalogue}>
           <input key={`${location.pathname}${location.search}`} type="search" name="q" defaultValue={location.pathname === "/" ? searchParams.get("q") ?? "" : ""} placeholder="Find your next favourite" aria-label="Search products" maxLength={200} />
           <button type="submit" aria-label="Search"><Search size={18} strokeWidth={1.7} aria-hidden="true" /></button>
-        </form>
+        </form>}
         <div className="sf-header-actions">
           {isAuthenticated && user ? <details className="sf-account-menu" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute("open"); }} onKeyDown={event => { if (event.key === "Escape") { event.currentTarget.removeAttribute("open"); event.currentTarget.querySelector("summary")?.focus(); } }}>
             <summary aria-label={`Account menu for ${user.name}`}><UserRound size={21} strokeWidth={1.6} aria-hidden="true" /><span className="sf-account-label">{user.name.split(" ")[0]}</span><ChevronDown size={12} aria-hidden="true" /></summary>
@@ -84,12 +85,13 @@ export function StorefrontLayout() {
           <Link className="sf-bag-link" to="/cart" aria-label={`Shopping bag, ${itemCount} ${itemCount === 1 ? "item" : "items"}`}><ShoppingBag size={21} strokeWidth={1.6} aria-hidden="true" /><span className="sf-bag-count">{itemCount > 99 ? "99+" : itemCount}</span></Link>
         </div>
       </div>
-      <nav className="sf-mobile-categories" aria-label="Browse categories">{categoryLinks}</nav>
+      {!checkoutFlow ? <div className="sf-navigation-bar"><nav className="sf-desktop-nav" aria-label="Main navigation">{categoryLinks}</nav><nav className="sf-mobile-categories" aria-label="Browse categories">{categoryLinks}</nav><span className="sf-navigation-note">Thoughtful finds. Everyday possibilities.<Sparkles size={14} aria-hidden="true" /></span></div> : null}
     </header>
-    <main className="store-main" id="store-content" tabIndex={-1}><Outlet /></main>
+    <main className="store-main" id="store-content" tabIndex={-1}><div className="sf-page-stage" key={location.pathname}><Outlet /></div></main>
     <footer className="sf-footer">
       <div className="sf-footer-inner">
-        <div className="sf-footer-intro"><Link className="sf-wordmark" to="/">pepekart<span aria-hidden="true">.</span></Link><p>A little something<br />for your everyday.</p><span>Good finds for your wardrobe, your home,<br className="sf-desktop-break" /> and all the moments in between.</span></div>
+        {!checkoutFlow ? <div className="sf-footer-invitation"><div><span>THERE'S ALWAYS SOMETHING TO DISCOVER</span><h2>Your everyday.<br /><em>Extraordinary.</em></h2></div><Link to="/#catalogue" aria-label="Explore the Pepekart collection"><ArrowUpRight size={42} strokeWidth={1.2} aria-hidden="true" /></Link></div> : null}
+        <div className="sf-footer-intro"><Link className="sf-wordmark" to="/"><i className="sf-brand-mark" aria-hidden="true"><ShoppingBag size={23} strokeWidth={1.6} /></i>pepekart<span aria-hidden="true">.</span></Link><p>Make the everyday yours.</p><span>Good finds for your wardrobe, your home,<br className="sf-desktop-break" /> and all the moments in between.</span><span className="sf-footer-signature"><Sparkles size={15} aria-hidden="true" />A world of possibility.</span></div>
         <nav className="sf-footer-links" aria-label="Shop collections"><h2>Make yourself at home</h2>{storefrontCategories.map(category => <Link key={category} to={`/?category=${encodeURIComponent(category)}#catalogue`}>{category}<ArrowUpRight size={14} aria-hidden="true" /></Link>)}</nav>
         <nav className="sf-footer-links" aria-label="Your Pepekart"><h2>Your Pepekart</h2><Link to="/account">My account<ArrowUpRight size={14} aria-hidden="true" /></Link><Link to="/orders">My orders<ArrowUpRight size={14} aria-hidden="true" /></Link><Link to="/cart">Shopping bag<ArrowUpRight size={14} aria-hidden="true" /></Link>{!isAuthenticated ? <Link to="/register">Create an account<ArrowUpRight size={14} aria-hidden="true" /></Link> : <Link to="/#catalogue">Discover more<ArrowUpRight size={14} aria-hidden="true" /></Link>}</nav>
         <div className="sf-footer-bottom"><span>&copy; {new Date().getFullYear()} Pepekart</span><span>Final price and availability confirmed at checkout.</span><span>Made for the everyday.</span></div>

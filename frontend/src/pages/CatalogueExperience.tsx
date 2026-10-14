@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowDown, ArrowRight, ArrowUp, Check, ChevronDown, LayoutGrid, LoaderCircle, Plus, Search, ShieldCheck, SlidersHorizontal, X } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, ArrowUpRight, Check, ChevronDown, Grid2X2, House, LayoutGrid, LoaderCircle, NotebookPen, Plus, Search, Shirt, ShoppingBag, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useCart } from "../cart/CartProvider";
 import type { Product } from "../domain";
@@ -14,10 +14,10 @@ const filterKeys = ["q", "category", "brand", "minPrice", "maxPrice"] as const;
 type FilterKey = typeof filterKeys[number];
 type FilterDraft = Record<FilterKey, string>;
 const collections = [
-  { name: "Apparel", caption: "Wear it your way", image: "https://cdn.dummyjson.com/product-images/mens-shirts/blue-&-black-check-shirt/thumbnail.webp", tone: "sand" },
-  { name: "Home", caption: "Make yourself at home", image: "https://cdn.dummyjson.com/product-images/home-decoration/table-lamp/thumbnail.webp", tone: "sage" },
-  { name: "Accessories", caption: "The finishing touches", image: "https://cdn.dummyjson.com/product-images/womens-bags/heshe-women's-leather-bag/thumbnail.webp", tone: "rose" },
-  { name: "Stationery", caption: "Room for your ideas", image: "https://images.pexels.com/photos/5594263/pexels-photo-5594263.jpeg?auto=compress&cs=tinysrgb&w=600", tone: "paper" },
+  { name: "Apparel", caption: "Wear it your way", image: "https://cdn.dummyjson.com/product-images/mens-shirts/blue-&-black-check-shirt/thumbnail.webp", tone: "sand", icon: Shirt },
+  { name: "Home", caption: "Make yourself at home", image: "https://cdn.dummyjson.com/product-images/home-decoration/table-lamp/thumbnail.webp", tone: "sage", icon: House },
+  { name: "Accessories", caption: "The finishing touches", image: "https://cdn.dummyjson.com/product-images/womens-bags/heshe-women's-leather-bag/thumbnail.webp", tone: "rose", icon: ShoppingBag },
+  { name: "Stationery", caption: "Room for your ideas", image: "https://images.pexels.com/photos/5594263/pexels-photo-5594263.jpeg?auto=compress&cs=tinysrgb&w=600", tone: "paper", icon: NotebookPen },
 ];
 
 function readDraft(params: URLSearchParams): FilterDraft {
@@ -86,6 +86,7 @@ export function CataloguePage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filterToggleRef = useRef<HTMLButtonElement>(null);
   const [heroFailed, setHeroFailed] = useState(false);
+  const [compactGrid, setCompactGrid] = useState(false);
   const { data: facets } = useResource(() => api.products.facets(), []);
   const { products, totalElements, loading, loadingMore, error, loadMoreError, hasMore, loadMore, retry, sentinelRef } = useInfiniteProducts(query);
   const categoryFacets = facets?.categories ?? collections.map(collection => ({ name: collection.name, count: 0 }));
@@ -145,41 +146,52 @@ export function CataloguePage() {
     const next = new URLSearchParams(filterParams); next.delete(key); updateFilters(next);
   }
 
-  return <div className="shop-experience">
+  return <div className="shop-experience shop-editorial">
     {!hasFilters ? <>
       <section className="shop-hero" aria-labelledby="shop-hero-title">
         <div className="shop-hero-copy">
-          <span className="shop-kicker"><span /> THE EVERYDAY EDIT</span>
-          <h1 id="shop-hero-title">Good things.<br />For your <em>everyday.</em></h1>
-          <p>A little more you. Discover pieces for your wardrobe, your home, and everything in between.</p>
-          <div className="shop-hero-actions"><a className="shop-primary-link" href="#catalogue">Explore the collection <ArrowRight size={18} aria-hidden="true" /></a><button className="shop-text-button" type="button" onClick={() => selectCategory("Home")}>Make yourself at home</button></div>
-          <div className="shop-hero-caption"><span>01 — Discover</span><span>A fresh perspective on the everyday.</span></div>
+          <span className="shop-kicker shop-hero-kicker"><span className="shop-live-dot" /> THE EVERYDAY, REIMAGINED</span>
+          <h1 id="shop-hero-title">Good things.<br /><em>Anything but<br /> ordinary.</em></h1>
+          <p>For the way you live, the things you love, and the little moments that make it all yours.</p>
+          <div className="shop-hero-actions"><a className="shop-primary-link" href="#catalogue">Discover your next favourite <ArrowUpRight size={19} aria-hidden="true" /></a></div>
+          <a className="shop-hero-scroll" href="#shop-collections-title"><span><ArrowDown size={17} aria-hidden="true" /></span>Four collections. Endless possibilities.</a>
+          <span className="shop-hero-edition">PEPEKART / THE EVERYDAY EDIT</span>
         </div>
         <div className={`shop-hero-scene ${heroFailed ? "is-unavailable" : ""}`}>
-          {!heroFailed ? <img src="https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg?auto=compress&cs=tinysrgb&w=1400" alt="A light-filled living room with natural textures and a comfortable sofa" fetchPriority="high" onError={() => setHeroFailed(true)} /> : <span className="shop-hero-fallback">Make space<br />for good things.</span>}
-          <span className="shop-scene-label">THE HOME COLLECTION</span>
-          <button className="shop-scene-link" type="button" onClick={() => selectCategory("Home")}><span>Small details.<strong>A place that feels like you.</strong></span><ArrowRight size={22} aria-hidden="true" /></button>
+          {!heroFailed ? <img src="/images/pepekart-editorial-hero.png" alt="Lifestyle inspiration: a sculptural cream chair, travertine table, and cobalt glass vase in warm morning light" width={1122} height={1402} fetchPriority="high" onError={() => setHeroFailed(true)} /> : <span className="shop-hero-fallback">Make space<br />for good things.</span>}
+          <span className="shop-scene-label"><House size={14} aria-hidden="true" />THE ART OF FEELING AT HOME</span>
+          <div className="shop-scene-copy"><span>Spaces with soul.</span><strong>Your everyday,<br />beautifully lived.</strong></div>
+          <button className="shop-scene-link" type="button" onClick={() => selectCategory("Home")} aria-label="Explore the home collection"><ArrowUpRight size={28} aria-hidden="true" /></button>
+          <span className="shop-scene-credit">Lifestyle inspiration / Home</span>
+        </div>
+        <div className="shop-hero-side">
+          {products[0] && !loading ? <Link className="shop-featured-find" to={`/products/${products[0].id}`}><span className="shop-kicker">A FIND TO MAKE YOURS <ArrowUpRight size={17} aria-hidden="true" /></span><div className="shop-featured-image"><ProductImage product={products[0]} /></div><div><span>{products[0].category || "The collection"}</span><strong>{products[0].name}</strong><b>{formatMoney(products[0].price, products[0].currency)}</b></div></Link> : <button className="shop-featured-find" type="button" onClick={() => selectCategory("Accessories")}><span className="shop-kicker">THE FINISHING TOUCH <ArrowUpRight size={17} aria-hidden="true" /></span><div className="shop-featured-image"><CollectionImage src={collections[2].image} name="Accessories" /></div><div><span>Accessories</span><strong>Little details.<br />Big personality.</strong></div></button>}
+          <button className="shop-creative-tile" type="button" onClick={() => selectCategory("Stationery")}><NotebookPen size={30} strokeWidth={1.3} aria-hidden="true" /><span>FOR YOUR NEXT BIG IDEA</span><strong>Make room<br />for possibility.</strong><span className="shop-creative-link">Explore stationery <ArrowUpRight size={18} aria-hidden="true" /></span></button>
         </div>
       </section>
-      <div className="shop-values"><span><LayoutGrid size={17} aria-hidden="true" /> One shop. So much to discover.</span><span><ShieldCheck size={17} aria-hidden="true" /> A clear, simple checkout.</span><span><ArrowDown size={17} aria-hidden="true" /> Keep scrolling. Keep discovering.</span></div>
+      <div className="shop-discovery-strip"><span>YOUR WORLD. YOUR WAY.</span>{collections.map(collection => <button key={collection.name} type="button" onClick={() => selectCategory(collection.name)}>{collection.name}<Sparkles size={17} aria-hidden="true" /></button>)}</div>
       <section className="shop-collections" aria-labelledby="shop-collections-title">
-        <div className="shop-section-heading"><div><span className="shop-kicker">A GOOD PLACE TO START</span><h2 id="shop-collections-title">Find your kind of good.</h2></div><a href="#catalogue">Shop everything <ArrowRight size={17} aria-hidden="true" /></a></div>
+        <div className="shop-section-heading"><div><span className="shop-kicker">01 / EXPLORE YOUR WORLD</span><h2 id="shop-collections-title" tabIndex={-1}>Different worlds.<br /><em>All yours.</em></h2></div><p>From your first outfit of the day<br />to your favourite corner at home.</p><a href="#catalogue">View the collection <ArrowUpRight size={19} aria-hidden="true" /></a></div>
         <div className="shop-collection-grid">{collections.map((collection, index) => {
           const count = categoryFacets.find(facet => facet.name === collection.name)?.count;
+          const Icon = collection.icon;
           return <button className={`shop-collection shop-collection-${collection.tone}`} key={collection.name} type="button" onClick={() => selectCategory(collection.name)}>
-            <span className="shop-collection-number">0{index + 1}</span><div className="shop-collection-photo"><CollectionImage src={collection.image} name={collection.name} /></div>
+            <span className="shop-collection-number">0{index + 1}<Icon size={18} aria-hidden="true" /></span><div className="shop-collection-photo"><CollectionImage src={collection.image} name={collection.name} /></div>
             <div className="shop-collection-copy"><span><strong>{collection.name}</strong><small>{collection.caption}{count ? ` · ${count} finds` : ""}</small></span><ArrowRight size={20} aria-hidden="true" /></div>
           </button>;
         })}</div>
       </section>
+      <section className="shop-editor-note" aria-labelledby="shop-editor-title"><div className="shop-editor-symbol" aria-hidden="true"><Sparkles size={60} strokeWidth={1} /><span>THE PEPEKART POINT OF VIEW</span></div><div><span className="shop-kicker">GOOD DESIGN. EVERY DAY.</span><h2 id="shop-editor-title">Life happens in the details.<br /><em>Make them feel like you.</em></h2><p>A wardrobe with personality. A corner that feels like home. A fresh page for a new idea. Find the pieces that belong in your everyday.</p></div><button type="button" onClick={() => selectCategory("Apparel")}>Find your style <ArrowUpRight size={21} aria-hidden="true" /></button></section>
     </> : <div className="shop-breadcrumb"><Link to="/">Shop</Link><span>/</span><span>{activeCategory || "Your selection"}</span></div>}
 
     <section className="shop-catalogue" id="catalogue" tabIndex={-1} aria-labelledby="shop-catalogue-title">
-      <div className="shop-section-heading shop-results-heading"><div><span className="shop-kicker">{hasFilters ? "MADE PERSONAL" : "THE COLLECTION"}</span><CatalogueHeading id="shop-catalogue-title">{title}</CatalogueHeading></div><p role="status">{loading ? "Finding your next favorite…" : error ? "Collection temporarily unavailable" : `${totalElements.toLocaleString("en-IN")} ${totalElements === 1 ? "product" : "products"} to explore`}</p></div>
+      <div className="shop-section-heading shop-results-heading"><div><span className="shop-kicker">{hasFilters ? "YOUR PERSONAL EDIT" : "02 / THE COLLECTION"}</span><CatalogueHeading id="shop-catalogue-title">{title}</CatalogueHeading></div><p role="status">{loading ? "Finding your next favorite…" : error ? "Collection temporarily unavailable" : `${totalElements.toLocaleString("en-IN")} ${totalElements === 1 ? "product" : "products"} to explore`}</p></div>
+      <div className="shop-browser-layout"><aside className="shop-directory" aria-label="Collection directory"><span className="shop-kicker">THE DIRECTORY</span><h3>Find your<br /><em>kind of good.</em></h3><button type="button" className={!activeCategory ? "is-current" : ""} onClick={() => selectCategory("")}>All collections <ArrowRight size={16} aria-hidden="true" /></button>{categoryFacets.map(facet => <button key={facet.name} className={activeCategory === facet.name ? "is-current" : ""} type="button" onClick={() => selectCategory(facet.name)}>{facet.name}<span>{facet.count || <ArrowUpRight size={14} aria-hidden="true" />}</span></button>)}<div className="shop-directory-note"><SlidersHorizontal size={22} aria-hidden="true" /><strong>A little more specific?</strong><p>Refine by brand and price to find what feels right.</p><button type="button" onClick={toggleFilters}>{filtersOpen ? "Close filters" : "Explore filters"}<ArrowUpRight size={16} aria-hidden="true" /></button></div></aside><div className="shop-browser-main">
       <div className="shop-toolbar">
         <form className="shop-search" role="search" aria-label="Search products" onSubmit={search}><Search size={19} aria-hidden="true" /><input aria-label="Search products" type="search" placeholder="What are you looking for?" value={draft.q} onChange={event => setDraft({ ...draft, q: event.target.value })} /><button type="submit" aria-label="Submit product search"><ArrowRight size={18} aria-hidden="true" /></button></form>
         <button ref={filterToggleRef} className={`shop-filter-toggle ${filtersOpen ? "is-open" : ""}`} type="button" aria-expanded={filtersOpen} aria-controls={filtersOpen ? "shop-filter-panel" : undefined} onClick={toggleFilters}><SlidersHorizontal size={17} aria-hidden="true" />Filters{appliedFilters.length ? <span>{appliedFilters.length}</span> : null}</button>
         <label className="shop-sort"><span className="sr-only">Sort products</span><select value={params.get("sort") ?? "newest"} onChange={event => { const next = new URLSearchParams(filterParams); next.set("sort", event.target.value); updateFilters(next); }}><option value="newest">Newest first</option><option value="price_asc">Price: low to high</option><option value="price_desc">Price: high to low</option><option value="name_asc">Name: A–Z</option><option value="name_desc">Name: Z–A</option></select><ChevronDown size={15} aria-hidden="true" /></label>
+        <div className="shop-view-controls" role="group" aria-label="Product grid density"><button type="button" className={!compactGrid ? "is-active" : ""} aria-label="Comfortable grid" aria-pressed={!compactGrid} onClick={() => setCompactGrid(false)}><Grid2X2 size={18} aria-hidden="true" /></button><button type="button" className={compactGrid ? "is-active" : ""} aria-label="Compact grid" aria-pressed={compactGrid} onClick={() => setCompactGrid(true)}><LayoutGrid size={18} aria-hidden="true" /></button></div>
       </div>
       {filtersOpen ? <form className="shop-filter-panel" id="shop-filter-panel" onSubmit={applyFilters} onKeyDown={event => { if (event.key === "Escape") closeFilters(); }}>
         <div className="shop-filter-panel-heading"><h3>A little more specific.</h3><button type="button" aria-label="Close filters" onClick={closeFilters}><X size={18} aria-hidden="true" /></button></div>
@@ -190,7 +202,7 @@ export function CataloguePage() {
       {hasFilters ? <div className="shop-applied-filters">{appliedFilters.map(key => <button type="button" key={key} onClick={() => removeFilter(key)} aria-label={`Remove ${key} filter: ${params.get(key)}`}><span>{key === "minPrice" ? "Min: " : key === "maxPrice" ? "Max: " : key === "q" ? "Search: " : ""}{params.get(key)}</span><X size={13} aria-hidden="true" /></button>)}<button className="shop-clear-all" type="button" onClick={clearFilters}>Clear all</button></div> : null}
 
       {error ? <Alert tone="danger" title="We couldn’t load the collection" action={<Button variant="secondary" onClick={retry}>Try again</Button>}>{error}</Alert> : null}
-      <div className="shop-product-grid" aria-busy={loading || loadingMore}>
+      <div className={`shop-product-grid ${compactGrid ? "is-compact" : ""}`} aria-busy={loading || loadingMore}>
         {loading ? <ProductSkeletons /> : products.map(product => <ShopProductCard key={product.id} product={product} />)}
       </div>
       {!loading && !error && products.length === 0 ? <EmptyState title="Nothing here just yet." message="Try another search or loosen your filters. Your next good find could be one click away." action={<Button onClick={clearFilters}>Explore all products</Button>} /> : null}
@@ -203,6 +215,7 @@ export function CataloguePage() {
           {hasMore ? <><p className="shop-scroll-hint">More finds appear as you scroll.</p><button className="shop-load-button" type="button" disabled={loadingMore} onClick={loadMore}>Load more products <ArrowDown size={16} aria-hidden="true" /></button></> : <><p className="shop-end-message">That’s the whole collection. Found your favorite?</p><button className="shop-text-button" type="button" onClick={focusCollection}>Back to the collection <ArrowUp size={15} aria-hidden="true" /></button></>}
         </> : null}
       </div>
+      </div></div>
     </section>
   </div>;
 }

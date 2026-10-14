@@ -4,6 +4,7 @@ Inventory Service is the PostgreSQL stock authority. It owns available/reserved 
 
 | Document | Purpose |
 | --- | --- |
+| [Visual map](visual-map.md) | Stock components, product synchronization, gRPC, and outbox flows. |
 | [API and contracts](api.md) | Admin/seller REST and Inventory gRPC contracts. |
 | [High-level design](hld.md) | Service boundaries, dependencies, security, and flows. |
 | [Low-level design](lld.md) | Pessimistic locks, reservation state transitions, ownership checks. |

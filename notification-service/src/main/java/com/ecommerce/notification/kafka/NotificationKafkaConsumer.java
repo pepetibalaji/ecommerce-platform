@@ -24,8 +24,7 @@ public class NotificationKafkaConsumer {
 
   @KafkaListener(
       topics = {
-        KafkaTopics.ORDER_CREATED,
-        KafkaTopics.PAYMENT_SUCCESS,
+        KafkaTopics.ORDER_COMPLETED,
         KafkaTopics.PAYMENT_FAILED,
         KafkaTopics.ORDER_CANCELLED,
         KafkaTopics.PAYMENT_REFUND_COMPLETED,

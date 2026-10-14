@@ -40,9 +40,18 @@ npm run build
 
 ## Storefront experience
 
-The customer storefront uses a warm, image-led homepage, collection shortcuts,
-responsive product cards, and a product gallery. Its styling is scoped to
-`.storefront-v2`; seller/admin screens use the separately scoped `.bo-shell` workspace design.
+The storefront uses ivory, charcoal, chartreuse, cobalt, and lavender with editorial
+type and Lucide icons. Pages have distinct compositions: an asymmetric discovery
+homepage, a catalogue directory with grid-density controls, an editorial product
+gallery and purchase rail, a bag workspace with a dark receipt, a purple photo-led
+authentication panel, numbered checkout sections, and a payment result with its
+own receipt. Orders and account settings have dedicated navigation workspaces.
+Styling is scoped to `.storefront-v2`; seller/admin screens use `.bo-shell`.
+
+`premium-foundation.css` supplies shared colors, controls, and focus styles.
+Page styles add responsive layouts, image hover interactions, and a subtle page
+entrance, and respect reduced-motion preferences. Payment result colors and
+messages follow the recorded Order and Payment states.
 
 The catalogue loads 12 products at a time and automatically fetches another batch
 near the bottom of the grid. Search, category, brand, price and sort remain in the
@@ -56,9 +65,11 @@ Catalogue regression checks (Node 22.6+):
 npm test
 ```
 
-Homepage photography uses HTTPS images from `images.pexels.com` and collection
-assets from `cdn.dummyjson.com`, with local UI fallbacks when an image fails.
-The living-room image is [Pexels photo 1571460](https://www.pexels.com/photo/interior-design-of-a-house-1571460/).
+The homepage uses a local original editorial hero at
+`public/images/pepekart-editorial-hero.png`, labelled as lifestyle inspiration.
+Its generation prompt and provenance are in [asset notes](docs/visual-assets.md).
+Collection/auth photography uses HTTPS images from `images.pexels.com` and
+`cdn.dummyjson.com`, with UI fallbacks when an image fails.
 
 ## Cart loading and recovery
 
@@ -162,8 +173,9 @@ the guest-cart cookie domain/SameSite policy, `Idempotency-Key` CORS support, an
 all `/seller/**` and `/admin/**` routes. The UI never falls back to service ports.
 
 Storefront headers, catalogue filters, and workspace topbars scroll with the page,
-so they do not cover results. Surfaces use slate neutrals, opaque white tables, and
-deep-teal accents; table overflow remains horizontally scrollable on small screens.
+so they do not cover results. Workspaces use grouped charcoal navigation, mist
+panels, cobalt accents, command headers, and task workboards. Table overflow remains
+horizontally scrollable on small screens.
 
 ## Session security note
 

@@ -19,7 +19,7 @@ public class NotificationEmailContent {
       case "EMAIL_VERIFICATION" -> "Verify your email address";
       case "PASSWORD_RESET" -> "Reset your password";
       case "EMAIL_CHANGE_CONFIRMATION" -> "Confirm your new email address";
-      case "ORDER_RECEIVED" -> "We received your order";
+      case "ORDER_RECEIVED" -> "Your Pepekart order is confirmed";
       case "PAYMENT_SUCCESSFUL" -> "Your payment was successful";
       case "PAYMENT_FAILED" -> "Your payment failed";
       case "ORDER_CANCELLED" -> "Your order was cancelled";
@@ -27,8 +27,9 @@ public class NotificationEmailContent {
       case "ORDER_SHIPPED" -> "Your order has shipped";
       case "ORDER_DELIVERED" -> "Your order was delivered";
       case "LOW_STOCK_WARNING" -> "Low stock warning";
+      case "OUT_OF_STOCK_WARNING" -> "Out of stock warning";
       case "SELLER_NEW_ORDER" -> "You have a new paid order";
-      default -> "Ecommerce Platform notification";
+      default -> "Pepekart notification";
     };
   }
 

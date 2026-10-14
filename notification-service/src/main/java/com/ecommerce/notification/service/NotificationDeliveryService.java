@@ -68,6 +68,17 @@ public class NotificationDeliveryService {
   public void deliver(UUID notificationId) {
     Notification n = notifications.findById(notificationId).orElseThrow();
     if (n.getStatus() != NotificationStatus.PENDING) return;
+    if (isSupersededOrderEmail(n)) {
+      n.setStatus(NotificationStatus.SKIPPED);
+      notifications.save(n);
+      return;
+    }
+    if ("OUT_OF_STOCK_WARNING".equals(n.getType())
+        && !properties.isOutOfStockEmailEnabled()) {
+      n.setStatus(NotificationStatus.SKIPPED);
+      notifications.save(n);
+      return;
+    }
     NotificationDelivery previous =
         deliveries.findTopByNotificationIdOrderByAttemptCountDesc(n.getId()).orElse(null);
     if (previous != null
@@ -111,6 +122,18 @@ public class NotificationDeliveryService {
       return email == null || email.isBlank() ? Optional.empty() : Optional.of(email);
     } catch (Exception exception) {
       throw new IllegalArgumentException("Invalid Auth action notification payload", exception);
+    }
+  }
+
+  /** Drop queued emails created under the old pre-payment confirmation flow. */
+  private boolean isSupersededOrderEmail(Notification notification) {
+    if ("PAYMENT_SUCCESSFUL".equals(notification.getType())) return true;
+    if (!"ORDER_RECEIVED".equals(notification.getType())) return false;
+    try {
+      return !"order-completed".equals(
+          mapper.readTree(notification.getPayload()).path("sourceTopic").asText());
+    } catch (Exception exception) {
+      return true;
     }
   }
 

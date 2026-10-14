@@ -16,13 +16,20 @@ import org.springframework.web.client.RestClient;
 @ConditionalOnProperty(name = "notification.provider", havingValue = "mailtrap")
 public class MailtrapEmailProvider implements EmailProvider {
   private static final String SEND_URL = "https://send.api.mailtrap.io/api/send";
-  private final RestClient client = RestClient.create();
+  private final RestClient client;
   private final NotificationProperties properties;
   private final NotificationEmailContent content;
+  private final MailtrapTemplateContent templates;
 
-  public MailtrapEmailProvider(NotificationProperties properties, NotificationEmailContent content) {
+  public MailtrapEmailProvider(
+      NotificationProperties properties,
+      NotificationEmailContent content,
+      MailtrapTemplateContent templates,
+      RestClient.Builder clientBuilder) {
     this.properties = properties;
     this.content = content;
+    this.templates = templates;
+    this.client = clientBuilder.build();
   }
 
   @Override
@@ -30,22 +37,21 @@ public class MailtrapEmailProvider implements EmailProvider {
     var config = properties.getMailtrap();
     if (!StringUtils.hasText(config.getApiToken()) || !StringUtils.hasText(config.getFromEmail()))
       throw new IllegalStateException("Mailtrap API token and from email are required");
+    Object body =
+        StringUtils.hasText(templates.templateUuid(notification.getType()))
+            ? templates.request(email, notification, config.getFromEmail(), config.getFromName())
+            : Map.of(
+                "from", Map.of("email", config.getFromEmail(), "name", config.getFromName()),
+                "to", List.of(Map.of("email", email)),
+                "subject", content.subject(notification),
+                "text", content.body(notification));
     JsonNode response =
         client
             .post()
             .uri(SEND_URL)
             .contentType(MediaType.APPLICATION_JSON)
             .header("Authorization", "Bearer " + config.getApiToken())
-            .body(
-                Map.of(
-                    "from",
-                    Map.of("email", config.getFromEmail(), "name", config.getFromName()),
-                    "to",
-                    List.of(Map.of("email", email)),
-                    "subject",
-                    content.subject(notification),
-                    "text",
-                    content.body(notification)))
+            .body(body)
             .retrieve()
             .body(JsonNode.class);
     JsonNode ids = response == null ? null : response.get("message_ids");

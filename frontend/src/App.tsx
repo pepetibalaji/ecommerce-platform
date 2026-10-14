@@ -1,4 +1,5 @@
 import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router-dom";
+import { ArrowLeft, ArrowUpRight, Compass, LockKeyhole, ShoppingBag, Sparkles } from "lucide-react";
 import { AuthProvider } from "./auth/AuthProvider";
 import { CartProvider } from "./cart/CartProvider";
 import { RequireAuth, RequireRole } from "./components/guards";
@@ -38,22 +39,18 @@ import {
 
 function AccessDeniedPage() {
   return (
-    <main className="route-message page-container">
-      <span className="eyebrow">Access restricted</span>
-      <h1>You do not have access to that workspace.</h1>
-      <p>Use an account with the required role, or return to the customer storefront.</p>
-      <Link className="button button-primary" to="/">Go to storefront</Link>
-    </main>
+    <section className="route-message page-container route-experience">
+      <div className="route-art route-art-restricted" aria-hidden="true"><span>Private<br /><em>workspace.</em></span><LockKeyhole size={86} strokeWidth={1} /><Sparkles size={26} /></div>
+      <div className="route-copy"><span className="eyebrow">Your next step / Access restricted</span><h1>This space needs<br />a different key.</h1><p>Your account does not have access to this workspace. You can sign in with an eligible account or keep exploring the storefront.</p><Link className="button button-primary" to="/login">Go to sign in <ArrowUpRight size={17} aria-hidden="true" /></Link><Link className="route-return" to="/"><ArrowLeft size={15} aria-hidden="true" />Return to Pepekart</Link></div>
+    </section>
   );
 }
 
 function MissingPage() {
   return (
-    <main className="route-message page-container">
-      <span className="eyebrow">404</span>
-      <h1>That page is not available.</h1>
-      <p>The link may be old, or the resource may no longer be available in this stage environment.</p>
-      <Link className="button button-primary" to="/">Browse the catalogue</Link>
+    <main className="route-message page-container route-experience">
+      <div className="route-art" aria-hidden="true"><span>404</span><Compass size={86} strokeWidth={1} /><Sparkles size={26} /></div>
+      <div className="route-copy"><Link className="route-brand" to="/"><ShoppingBag size={20} aria-hidden="true" />pepekart.</Link><span className="eyebrow">A little detour / Page not found</span><h1>A good find.<br />A missing page.</h1><p>This page has moved, or the link is no longer available. There’s still a world of good things waiting for you.</p><Link className="button button-primary" to="/">Explore the collection <ArrowUpRight size={17} aria-hidden="true" /></Link><Link className="route-return" to="/cart"><ArrowLeft size={15} aria-hidden="true" />Back to your bag</Link></div>
     </main>
   );
 }

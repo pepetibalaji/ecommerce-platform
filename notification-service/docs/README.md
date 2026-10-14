@@ -4,6 +4,7 @@ Notification Service turns business and identity events into durable email notif
 
 | Document | Purpose |
 | --- | --- |
+| [Visual map](visual-map.md) | Kafka ingestion, durable notification work, and email delivery connections. |
 | [API and contracts](api.md) | User preference/history and admin investigation endpoints. |
 | [High-level design](hld.md) | Event-to-email architecture, ownership, and dependencies. |
 | [Low-level design](lld.md) | Event dedupe, preference handling, delivery/retry, auth action links. |

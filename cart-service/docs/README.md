@@ -9,6 +9,7 @@ Cart Service is the Redis-backed, short-lived shopping-cart boundary. It stores 
 
 | Document | Purpose |
 | --- | --- |
+| [Visual map](visual-map.md) | Component connections, Redis storage, locking, and Kafka cart cleanup. |
 | [API and contracts](api.md) | Endpoints, payloads, cookies, security, validation, and errors. |
 | [High-level design](hld.md) | Responsibilities, boundaries, dependencies, and flows. |
 | [Low-level design](lld.md) | Code paths, merge behavior, storage, and locking. |

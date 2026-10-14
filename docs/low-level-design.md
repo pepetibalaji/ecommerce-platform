@@ -4,8 +4,9 @@
 
 | Topic | Producer | Consumer | Key | Purpose |
 | --- | --- | --- | --- | --- |
-| `order-created` | Order | Payment, Notification | `orderId` | Prepare payment and create order-received notification. |
-| `payment-success` | Payment | Order, Notification | `orderId` | Confirm order and notify customer. |
+| `order-created` | Order | Payment | `orderId` | Prepare payment; no customer confirmation yet. |
+| `payment-success` | Payment | Order | `orderId` | Confirm order in Order Service. |
+| `order-completed` | Order | Cart, Notification | `orderId` | Clear purchased cart quantities and create one customer order confirmation. |
 | `payment-failed` | Payment | Order, Notification | `orderId` | Fail order and notify customer. |
 | `payment-expired` | Payment | Order | `orderId` | Expire the Order and queue eligible inventory release. |
 | `payment-cancellation-requested` | Order | Payment | `orderId` | Durably resolve unpaid cancellation or expiry; orchestrate a refund if payment races with cancellation. |

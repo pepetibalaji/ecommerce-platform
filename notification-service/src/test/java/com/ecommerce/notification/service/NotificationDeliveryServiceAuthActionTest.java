@@ -19,6 +19,54 @@ import org.mockito.ArgumentCaptor;
 
 class NotificationDeliveryServiceAuthActionTest {
   @Test
+  void skipsQueuedPrePaymentOrderEmail() {
+    NotificationRepository notifications = mock(NotificationRepository.class);
+    DeliveryRepository deliveries = mock(DeliveryRepository.class);
+    RecipientDirectoryService recipients = mock(RecipientDirectoryService.class);
+    EmailProvider provider = mock(EmailProvider.class);
+    UUID notificationId = UUID.randomUUID();
+    Notification notification = new Notification();
+    notification.setId(notificationId);
+    notification.setType("ORDER_RECEIVED");
+    notification.setPayload("{\"type\":\"ORDER_RECEIVED\",\"orderId\":\"old-order\"}");
+    notification.setStatus(NotificationStatus.PENDING);
+    when(notifications.findById(notificationId)).thenReturn(Optional.of(notification));
+
+    new NotificationDeliveryService(
+            notifications, deliveries, recipients, provider, new NotificationProperties(),
+            mock(AuthDeliveryTokenClient.class), new AuthActionDeliveryProperties(),
+            new ObjectMapper(), new SimpleMeterRegistry())
+        .deliver(notificationId);
+
+    assertThat(notification.getStatus()).isEqualTo(NotificationStatus.SKIPPED);
+    verifyNoInteractions(deliveries, recipients, provider);
+  }
+
+  @Test
+  void skipsPreviouslyQueuedOutOfStockEmails() {
+    NotificationRepository notifications = mock(NotificationRepository.class);
+    DeliveryRepository deliveries = mock(DeliveryRepository.class);
+    RecipientDirectoryService recipients = mock(RecipientDirectoryService.class);
+    EmailProvider provider = mock(EmailProvider.class);
+    AuthDeliveryTokenClient tokens = mock(AuthDeliveryTokenClient.class);
+    UUID notificationId = UUID.randomUUID();
+    Notification notification = new Notification();
+    notification.setId(notificationId);
+    notification.setType("OUT_OF_STOCK_WARNING");
+    notification.setStatus(NotificationStatus.PENDING);
+    when(notifications.findById(notificationId)).thenReturn(Optional.of(notification));
+
+    new NotificationDeliveryService(
+            notifications, deliveries, recipients, provider, new NotificationProperties(), tokens,
+            new AuthActionDeliveryProperties(), new ObjectMapper(), new SimpleMeterRegistry())
+        .deliver(notificationId);
+
+    assertThat(notification.getStatus()).isEqualTo(NotificationStatus.SKIPPED);
+    verify(notifications).save(same(notification));
+    verifyNoInteractions(deliveries, recipients, provider, tokens);
+  }
+
+  @Test
   void fetchesTheDeliveryTokenOnlyAtSendTimeAndDoesNotPersistIt() throws Exception {
     NotificationRepository notifications = mock(NotificationRepository.class);
     DeliveryRepository deliveries = mock(DeliveryRepository.class);

@@ -1,5 +1,6 @@
 package com.ecommerce.notification.service;
 
+import com.ecommerce.notification.config.NotificationProperties;
 import com.ecommerce.notification.domain.*;
 import com.ecommerce.notification.repository.*;
 import com.fasterxml.jackson.databind.*;
@@ -16,16 +17,19 @@ public class NotificationEventService {
   private final ProcessedEventRepository processed;
   private final NotificationRepository notifications;
   private final PreferenceRepository preferences;
+  private final NotificationProperties properties;
 
   public NotificationEventService(
       ObjectMapper mapper,
       ProcessedEventRepository processed,
       NotificationRepository notifications,
-      PreferenceRepository preferences) {
+      PreferenceRepository preferences,
+      NotificationProperties properties) {
     this.mapper = mapper;
     this.processed = processed;
     this.notifications = notifications;
     this.preferences = preferences;
+    this.properties = properties;
   }
 
   @Transactional
@@ -49,8 +53,11 @@ public class NotificationEventService {
         return;
       }
       UUID userId = UUID.fromString(user.asText());
-      String type = typeFor(topic);
+      String type = typeFor(topic, event);
       if (type == null) {
+        return;
+      }
+      if ("OUT_OF_STOCK_WARNING".equals(type) && !properties.isOutOfStockEmailEnabled()) {
         return;
       }
       Notification n = new Notification();
@@ -58,7 +65,7 @@ public class NotificationEventService {
       n.setRecipientUserId(userId);
       n.setChannel(Channel.EMAIL);
       n.setType(type);
-      n.setPayload(mapper.writeValueAsString(safePayload(event, type)));
+      n.setPayload(mapper.writeValueAsString(safePayload(event, type, topic)));
       boolean optedOut =
           preferences
               .findByUserIdAndChannelAndNotificationType(userId, Channel.EMAIL, type)
@@ -71,14 +78,22 @@ public class NotificationEventService {
     }
   }
 
-  private Map<String, Object> safePayload(JsonNode e, String type) {
+  private Map<String, Object> safePayload(JsonNode e, String type, String topic) {
     Map<String, Object> p = new LinkedHashMap<>();
     p.put("type", type);
+    p.put("sourceTopic", topic);
     copy(e, p, "orderId");
     copy(e, p, "paymentId");
     copy(e, p, "refundId");
     copy(e, p, "amount");
+    if ("order-completed".equals(topic) && e.hasNonNull("totalAmount")) {
+      p.put("amount", e.get("totalAmount").asText());
+    }
     copy(e, p, "currency");
+    if ("LOW_STOCK_WARNING".equals(type) || "OUT_OF_STOCK_WARNING".equals(type)) {
+      copy(e, p, "productId");
+      copy(e, p, "availableStock");
+    }
     return p;
   }
 
@@ -94,11 +109,11 @@ public class NotificationEventService {
     return event.get("userId");
   }
 
-  private String typeFor(String t) {
+  private String typeFor(String t, JsonNode event) {
     return switch (t) {
-      case "order-created" -> "ORDER_RECEIVED";
-      case "payment-success" -> "PAYMENT_SUCCESSFUL";
-      case "payment-failed" -> "PAYMENT_FAILED";
+      case "order-completed" -> "ORDER_RECEIVED";
+      case "payment-failed" -> "PAYMENT_CANCELLED".equals(event.path("failureCode").asText())
+          ? "ORDER_CANCELLED" : "PAYMENT_FAILED";
       case "order-cancelled" -> "ORDER_CANCELLED";
       case "payment-refund-completed" -> "REFUND_PROCESSED";
       case "order-shipped" -> "ORDER_SHIPPED";

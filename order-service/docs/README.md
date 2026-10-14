@@ -4,6 +4,7 @@ Order Service is the checkout and purchase-lifecycle boundary. It owns orders, i
 
 | Document | Purpose |
 | --- | --- |
+| [Visual map](visual-map.md) | Checkout components, service calls, outboxes, and payment event flows. |
 | [API and contracts](api.md) | Customer, seller, and admin REST endpoints and payloads. |
 | [High-level design](hld.md) | Checkout ownership, dependencies, and event flows. |
 | [Low-level design](lld.md) | Catalog/inventory coordination, state changes, idempotency, and compensation. |
